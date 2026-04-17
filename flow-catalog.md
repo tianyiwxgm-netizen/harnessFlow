@@ -56,6 +56,8 @@ ECC:prp-implement (@impl)
 
 ## § 2 路线 A — 零 PRP 直改提交（XS）
 
+<!-- @stage-contract: stage-contracts.md § 2 (A-CLARIFY, A-IMPL, A-VERIFY, A-COMMIT) -->
+
 **精神**：最快路径，无中间仪式。
 
 **定位**：单函数 / 单行改动 / typo / docstring 修复。启动成本低于 harnessFlow 自身开销时默认走 A。
@@ -96,6 +98,8 @@ DoD = (pytest_exit_code(<focused_test>) == 0)
 ---
 
 ## § 3 路线 B — 轻 PRP 快速交付（S-M）
+
+<!-- @stage-contract: stage-contracts.md § 3 (B-CLARIFY, B-ROUTE_SELECT, B-PLAN, B-CHECKPOINT_SAVE, B-IMPL, B-IMPL-CODEREVIEW, B-VERIFY, B-COMMIT, B-RETRO_CLOSE) -->
 
 **精神**：小仪式，快闭环。
 
@@ -147,6 +151,8 @@ DoD = (pytest_exit_code("<module>") == 0)
 ---
 
 ## § 4 路线 C — 全 PRP 重验证（L-XL）
+
+<!-- @stage-contract: stage-contracts.md § 4 (C-CLARIFY, C-CLARIFY-PRD, C-PLAN, C-CHECKPOINT_SAVE, C-IMPL, C-IMPL-CODEREVIEW, C-MID_CHECKPOINT, C-MID_RETRO[XL only], C-VERIFY, C-SANTA_LOOP[on FAIL], C-COMMIT, C-COMMIT-PR, C-RETRO_CLOSE) -->
 
 **精神**：端到端真完成，一步不少。对标方案 C 真完成升级版。
 
@@ -218,6 +224,8 @@ DoD = (pytest_exit_code("<module>") == 0)
 
 ## § 5 路线 D — UI 视觉专线（S-M UI）
 
+<!-- @stage-contract: stage-contracts.md § 5 (D-CLARIFY, D-ROUTE_SELECT, D-PLAN, D-IMPL, D-UI_SCREENSHOT, D-VERIFY, D-COMMIT, D-RETRO_CLOSE) -->
+
 **精神**：像素级验证 + screenshot 做硬证据。
 
 **定位**：Vue 页面 / Vue Flow 视觉优化 / 组件视觉调整 / UI bug 修复。视觉任务传统上最容易假完成（"我觉得好看了"），必须 screenshot + browser 导航做硬证据。
@@ -265,6 +273,8 @@ DoD = (vite_started("localhost:5173"))
 ---
 
 ## § 6 路线 E — agent graph 专线（L-XL graph）
+
+<!-- @stage-contract: stage-contracts.md § 6 (E-CLARIFY, E-ROUTE_SELECT, E-PLAN-GRAPHDIFF, E-PLAN, E-CHECKPOINT_SAVE, E-IMPL, E-IMPL-CODEREVIEW, E-EVAL, E-VERIFY, E-COMMIT, E-COMMIT-PR, E-RETRO_CLOSE) -->
 
 **精神**：节点隔离测试 + 图级回归。
 
@@ -316,6 +326,8 @@ DoD = (pytest_exit_code("tests/test_graph_<name>.py") == 0)
 ---
 
 ## § 7 路线 F — 研究方案探索专线
+
+<!-- @stage-contract: stage-contracts.md § 7 (F-CLARIFY, F-ROUTE_SELECT, F-RESEARCH, F-DECISION_LOG, F-VERIFY, F-RETRO_CLOSE) -->
 
 **精神**：多轮 brainstorm + 外部资料 + 决策 log，不写代码。
 

@@ -38,6 +38,7 @@
 | `red_lines[]` | array of `{code, triggered_at, context, resolution}` | `[]` | Supervisor / 主 skill | 红线触发时 | retro | 红线事件 |
 | `route_changes[]` | array of `{from_route, to_route, reason, approved_by, timestamp}` | `[]` | 主 skill / Supervisor | 路线切换 | retro / evolution | 路线切换审计（含降级） |
 | `skills_invoked[]` | array of `{source, name, at_state, timestamp}` | `[]` | 主 skill（每次 tool call 前写） | tool call 前 | retro | 调用轨迹（来源前缀见 flow-catalog § 1.2） |
+| `stage_artifacts[]` | array of `{stage_id, produced_at, artifacts[{artifact_ref, location, size_bytes, schema_valid}], gate_eval{predicate, result, evaluated_at}}` | `[]` | 主 skill（每阶段退出时写） | stage exit | Verifier / Supervisor / Stop gate | **v1.1 新增**：stage-contract 产物追踪（stage-contracts.md § 10），`validate_stage_io` 的输入；任一 `artifacts[].missing` 或 `gate_eval.result==false` → Supervisor `DOD_GAP_ALERT` |
 
 ### 1.3 度量与预算字段
 

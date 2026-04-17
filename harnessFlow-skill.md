@@ -238,6 +238,13 @@ def execute_route(route_id: str, task_board: dict):
     supervisor = spawn_supervisor(task_board)
 
     for step in seq:
+        # v1.1: stage-contract 入口校验（stage-contracts.md § 9）
+        verdict, violations = validate_stage_io(task_board, step["stage_id"], phase="enter")
+        if verdict == "BLOCK":
+            supervisor_log("BLOCK", "DOD_GAP_ALERT", f"missing inputs for {step['stage_id']}", violations)
+            transition(task_board, "PAUSED_ESCALATED")
+            return
+
         # 状态转移 guard
         if not state_machine.allowed(task_board["current_state"], step["enter"]):
             block_and_report()
@@ -259,9 +266,23 @@ def execute_route(route_id: str, task_board: dict):
                 retries_append(task_board, recovery)
                 continue  # retry current step
 
-        # 成功推进
+        # 成功推进 — 写 outputs + 再校验 stage-contract 出口
         task_board_write(step["outputs"])
+        stage_artifacts_append(task_board, step["stage_id"], step["outputs"])
+        verdict, violations = validate_stage_io(task_board, step["stage_id"], phase="exit")
+        if verdict == "BLOCK":
+            supervisor_log("BLOCK", "DOD_GAP_ALERT", f"stage {step['stage_id']} produced incomplete outputs or gate FAIL", violations)
+            transition(task_board, "PAUSED_ESCALATED")
+            return
 ```
+
+### 5.5 `validate_stage_io` — v1.1 stage-contract 入口 / 出口校验器
+
+详细定义与伪代码见 [`stage-contracts.md § 9`](stage-contracts.md)。
+
+- **phase='enter'**：检查本 stage 所有 `inputs_required[].must_exist=true` 的 artifact 已被上游 producer stage 写入（`task_board.stage_artifacts[]` 或磁盘 path_pattern 对应文件存在）。缺 → 返 `on_input_missing`（`WARN/BLOCK/ABORT`）。
+- **phase='exit'**：检查本 stage 声明的 `outputs_produced[]` 全部落地，再 eval `gate_predicate`（白名单 AST 解析，v1.1 仅文档契约，v1.2 真跑）。任一失败 → 返 `on_output_missing`。
+- **BLOCK 返回**：主 skill 立即转 `PAUSED_ESCALATED` + Supervisor 写 `DOD_GAP_ALERT` 红线 entry；不允许静默推进到下一 step。
 
 ### 5.2 六路线调度骨架（**完整序列以 flow-catalog 对应 § 为准**；本表仅做快速对照）
 

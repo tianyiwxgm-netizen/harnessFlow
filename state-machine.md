@@ -142,6 +142,8 @@
 
 ## § 3 转移边表（含 guard / side effects / 回滚）
 
+<!-- @stage-contract: 每条边的 guard 列对应 stage-contracts.md 里消费者 stage 的 inputs_required；side effects 列对应生产者 stage 的 outputs_produced。主 skill 在每次转移前调 validate_stage_io(task_board, target_stage_id, 'enter') 检查 inputs 齐，转移后调 'exit' 检查 outputs + gate_predicate（harnessFlow-skill § 5.5）。 -->
+
 ### 3.1 主路径转移边
 
 | 边号 | from | to | trigger | guard | side effects | 允许回滚 |
