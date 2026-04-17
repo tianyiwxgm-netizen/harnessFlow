@@ -652,6 +652,21 @@ archive 的第一条 entry 将是方案 C P20 假完成事件（见反模式 § 
 - **问题**：schema 破坏后，下次 `auditor.audit()` 或 `Stop-final-gate.sh` 校验会 raise，污染整个归档 —— 更糟是"看起来能写 / 跑起来才报错"的延迟失败。
 - **规避**：**唯一入口** `archive.writer.write_archive_entry()`；subagent md 显式禁止绕路；CI / pre-commit 可选加 "禁止直接 echo 进 failure-archive.jsonl" 的 grep 检查（Phase 8 候选）。
 
+### 8.11 跨项目 scope 串误（v1.1 新增，2026-04-17 纠偏）
+
+- **特征**：harness 在 summary / assessment / README 里**把另一个项目的任务列为本项目 TODO**。典型：harnessFlow（meta-skill 项目）把 aigcv2 项目的 "P20 真出片" 列进自己的 P0 待办；一路延续到 assessment.md § 3 P0、§ 5 路径 B、§ 7 推荐。
+- **真实案例（2026-04-17）**：harnessFlow v1.1 assessment 把 P20 当"自身 MVP 签收硬线"，用户截图红框质问"我这个 harnessflow 任务跟 P20 有什么关系"。根因：把 **PRD 的"MVP 验收手段"**（"拉一次 P20 任务全程跑 harnessFlow" 作为验证场景）误读成 **"harnessFlow 项目要做 P20"**。验收**场景**和项目**TODO** 是两码事。
+- **问题**：
+  - 等于 harnessFlow 自己的 `DRIFT_CRITICAL`（goal_anchor 跨项目 drift）Supervisor 本该抓到
+  - 用户每次 summary 都被强推另一项目的任务，产生"无关紧要"疲劳
+  - 可能让本项目签收无限期拖延（"没跑 P20 就不算完"）
+- **规避硬线**：
+  1. 所有 "harnessFlow 待办 / TODO / 下一步" 清单条目必须**仅包含本 repo scope 的任务**（新文档 / 新 schema / 新 test / 规则修订）
+  2. harnessFlow 发布验收标准 = **L1 机制 + L2 自举任务**（method3 § 6.1 + delivery-checklist § 7.2）；**不强制** L3 应用场景（被其他项目调用）跑通
+  3. 提供给其他项目的 handoff 脚本（如 `scripts/run-p20-validation.sh`）属于**工具交付**（Phase 8.3 已完成），不构成 harnessFlow 的 TODO 残项
+  4. 任何把"其他项目任务"写进 harnessFlow assessment/README/PRD 的语句必须加 scope 前缀：**"跨项目应用场景"/"下游项目调用"**
+- **审计钩子**：Supervisor 6 类干预新增"scope drift"类（v1.2 候选）；Stop-gate 拒绝含 `P20\|aigcv2\|aigc/` 且归属"harnessFlow TODO"的新 assessment 写入。
+
 ---
 
 ## § 9 快速索引

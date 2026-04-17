@@ -241,7 +241,7 @@ harnessFlow/
 
 **测试**：100 pytest 全绿（90 Phase 1-8 + 10 v1.1 Stage Contract 自检，0 regression；concurrency test 已加 flaky rerun 标注）
 **自举**：8.1 self-test + 8.2 archive CLI 两任务 end-to-end Verifier=PASS、retro 11 段自动生成、archive.jsonl L1+L2 schema-valid
-**P20 真出片**：handoff 脚手架就绪（`scripts/run-p20-validation.sh`），按键触发。
+**跨项目工具**：`scripts/run-p20-validation.sh` + `verify-p20-artifacts.py` 是给下游项目（如 aigcv2 视频出片流水线）调用 harnessFlow 做 DoD 验证的 handoff 脚手架，**不是 harnessFlow 自身的任务**。
 
 ---
 

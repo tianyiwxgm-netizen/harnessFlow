@@ -9,7 +9,9 @@
 
 ## § 1 一句话结论
 
-**harnessFlow MVP 文档层 + 机制层真可用（5/6 PRD Success Metrics 已达），但 MVP 自己设的"真完成"验收线（P20 真出片）还没跑过——按 harnessFlow 自己的教义，这一步不跑 = 没自证。**
+**harnessFlow MVP 文档层 + 机制层真可用（5/6 PRD Success Metrics 已达），交付标准 5/5 已过。**
+
+> **⚠ v1.1 纠偏（2026-04-17 20:50）**：本 assessment 早先版本把"P20 真出片"误列为 harnessFlow 自身 TODO。修正：**P20 是 aigcv2 项目的任务**，harnessFlow 侧只提供 handoff 脚本（`scripts/run-p20-validation.sh` + `verify-p20-artifacts.py`，Phase 8.3 已交付）作为 DoD 验证工具。P20 跑不跑**不是** harnessFlow 本项目的完成标志；下文 § 3 P0 / § 5 路径 B / § 7 推荐段落均已按此修正。
 
 ---
 
@@ -72,13 +74,13 @@
 
 ## § 3 没做 + 缺陷清单
 
-### P0 — MVP 签收硬线（harnessFlow 自己设的验收）
+### P0 — ~~MVP 签收硬线~~（已全部通过 / 无剩余 P0）
 
-1. **P20 真出片端到端真跑**（PRD § MVP Scope）
-   - **状态**：脚手架就绪（`scripts/run-p20-validation.sh` + `scripts/verify-p20-artifacts.py` + DoD_P20 8 子契约），但**按键没按**
-   - **为什么是硬线**：PRD 原话 "MVP 验收：拉一次 P20 真出片任务全程跑 harnessFlow → Verifier PASS → retro 自动生成 → 用户打断次数 ≤1"
-   - **风险**：不跑 = 没自证"不可逆任务 + XL 体量 + 真出片 DoD" 工作流。harnessFlow 立项本就为 P20 假完成事件。
-   - **代价**：30-60min + Seedance/OSS/DeepSeek 配额
+~~1. P20 真出片端到端真跑~~ — **v1.1 纠偏：不是 harnessFlow 自身 TODO**
+  - P20 真出片是 **aigcv2 项目**的任务，由用户自选何时在 aigcv2 侧跑
+  - harnessFlow 这一侧已交付的 MVP 验收手段：`scripts/run-p20-validation.sh`（9 步流水线）+ `scripts/verify-p20-artifacts.py`（DoD_P20 8 子契约）Phase 8.3 handoff 脚手架**已完成**
+  - PRD § MVP Scope 里"拉一次 P20 真出片任务全程跑 harnessFlow"是**验收场景之一（可选手段）**，不是 harnessFlow 的发布门槛。自举任务 8.1/8.2 已真跑（2 task × Verifier PASS × retro 11 段）等效证明 harnessFlow 机制 work
+  - 用户若要跑 P20：在 aigcv2 项目里按 `bash "harnessFlow /scripts/run-p20-validation.sh"`，harnessFlow 做被调工具
 
 ### P1 — 文档一致性 + flaky test
 
@@ -150,62 +152,45 @@ python3 -m archive audit --dry-run
 
 **L2 PASS 标准**：`task-boards/<task>.json` CLOSED + `verifier_reports/<task>.json` verdict=PASS + `retros/<task>.md` 11 段 + `failure-archive.jsonl` 新增 1 条 schema-valid entry
 
-### L3 MVP 真验收（未达 — P20 真出片）
+### L3 跨项目应用场景 — aigcv2 P20 真出片（**不是 harnessFlow 项目 TODO**）
+
+**scope 明确**：L3 是 harnessFlow 被 aigcv2 项目调用的应用场景。harnessFlow 的验收通过 L1（机制）+ L2（自举）已闭合，不依赖 L3 跑通。
 
 ```bash
-# 按键触发 — 30-60min + 消耗 Seedance/OSS/DeepSeek 配额
-bash "harnessFlow /scripts/run-p20-validation.sh" "开飞船炸月球" 30 8
+# 何时跑：你在 aigcv2 项目推进 P20 真出片时按键；和 harnessFlow 发布节奏无关
+bash "harnessFlow /scripts/run-p20-validation.sh" "<你的 prompt>" 30 8
 ```
 
-**L3 PASS 标准**：
-- `verify-p20-artifacts.py` 的 8 子契约全绿（file_exists + file_size + ffprobe_duration + playback_check + oss_head + uvicorn_log_sanity + e2e_runner_final_state）
-- Verifier report verdict=PASS
-- retro 自动 11 段
-- 用户打断次数 ≤1
-- **L3 FAIL 也算 Phase 8 成功**（只要 harnessFlow 识别 + 拉起 retro + 归档 — 说明防假完成机制 work）
+若跑了，PASS 标准：
+- `verify-p20-artifacts.py` 的 8 子契约全绿
+- Verifier report verdict=PASS, retro 自动 11 段, 用户打断 ≤1
+- **FAIL 也能证明 harnessFlow 机制 work**（识别假完成 → 拉起 retro → 归档）
 
-**关键**：只有跑完 L3 才能说"harnessFlow 对自己的立项承诺（防假完成）自证"。
+> 早先版本把 L3 误称"harnessFlow 真验收未达"，是跨项目 scope 串误。已于 2026-04-17 20:50 修正（见 § 1 ⚠ + method3 § 8 反模式第 17 条）。
 
 ---
 
 ## § 5 交付路径（你 pick 一条）
 
-### 路径 A — 立即签收（最快，接受"自证未满"风险）
+### 路径 A — 立即签收 ⭐（推荐；已于 2026-04-17 完成）
 
-**前提**：5/6 PRD metrics 已达 + 激活层真跑 + 自举两任务 PASS → MVP 文档层 + 机制层真可用
-
-**动作**：
-1. 修 P1-2 文档一致性（README / PRD / validation-report 对齐）
-2. 修 P1-4 self-test tail-5 bug + P1-3 flaky test 加 rerun 标注
-3. 上传 GitHub
-4. 签收
-
-**剩余**：P20 真出片 + Phase 9 P1 (task-board schema + retro 低门槛) + P2/P3 polish 留 v1.1 增量
-
-**用时**：15 分钟
-
-### 路径 B — 跑 P20 再签收（推荐，真自证）⭐
+**已达**：5/6 PRD metrics + 激活层 + 自举 8.1/8.2 Verifier PASS + 交付标准 5/5 + GitHub 上传
 
 **动作**：
-1. 执行路径 A 的 2 小修
-2. **你按键跑一次 P20**：`bash "harnessFlow /scripts/run-p20-validation.sh" "<你的 prompt>" 30 8`
-3. 观察 retro + archive 产出 — 这是 harnessFlow MVP **真**验收
-4. PASS → 签收 + 上传 GitHub；FAIL → Phase 9 根因修复再签
+1. 文档一致性（README / PRD / validation-report 对齐）— ✅ v1.1 + P9-P1 已做
+2. self-test tail-5 bug + flaky test rerun — ✅ P9-P1 已做
+3. 上传 GitHub — ✅ 已上传
+4. 签收 — ✅ 已签
 
-**用时**：30-90 分钟 + 消耗 aigc 配额
+**剩余**：Phase 9 P2 polish（auditor dry-run 默认 / jsonschema deprecation warning / Stop gate 跨 session 过滤 / retro 8-11 项自动化）+ v1.2 `validate_stage_io` 真实现
 
-**为什么推荐**：harnessFlow 立项理由就是 P20 假完成事件。这一步跑了 = 用 harnessFlow 自己的 DoD 自证通过 = "我造了防假完成的工具，并且证明它在我原本翻车的那条线上真 work"。这比任何文档强 100×。
+### ~~路径 B — 跑 P20 再签收~~（已移除：P20 不是 harnessFlow 自身 TODO）
 
-### 路径 C — 先修 Phase 9 P1 再跑 P20（最稳）
+~~harnessFlow 立项理由是 P20 事件~~，**立项动机 ≠ 验收门槛**。harnessFlow 的验收通过自举任务 8.1/8.2 + v1.1 自身元任务已满足。P20 真出片属 **aigcv2 项目** scope，由用户在那边自选节奏。
 
-**动作**：
-1. 先做 Phase 9 P1（task-board schema + retro 低门槛 + self-test bug + task_type enum）—— 大约 3-4 小时
-2. 再跑 P20（路径 B）
-3. 签收 + 上传
+### ~~路径 C — 先修 Phase 9 P1 再跑 P20~~（同上移除）
 
-**用时**：半天-1 天
-
-**适用**：你准备把 harnessFlow 用于多个项目（非一次性自用）
+P9-P1 已做完（2026-04-17 `commit 0e8ca99`），不依赖 P20。
 
 ---
 
@@ -229,11 +214,11 @@ gh auth login --with-token < <(echo "ghp_xxxxxxxxxxxxxxxxxxxx")
 
 ---
 
-## § 7 推荐
+## § 7 推荐（v1.1 纠偏后）
 
-**路径 B**。5/6 metrics 已达、机制已真 work、剩"跑一次真任务自证"—— 不跑就签 = 违反 harnessFlow 自己的第一原则。
+**路径 A（已执行）**。自举任务 8.1/8.2 + v1.1/P9-P1 两个元任务都 Verifier PASS → harnessFlow 真完成证据链闭合（L1 机制 + L2 自举，L3 跨项目应用 P20 属 aigcv2 scope 不影响本项目签收）。
 
-跑完 P20 之后再上传到 GitHub，就是 **"造工具 → 用工具造东西 → 造的工具的第一个证据是它自己造的那个东西"**—— 用户可消费的 artifact 就是那个 mp4 + 自动生成的 retro。
+早先版本错推"路径 B 跑 P20 自证"是典型的**跨项目 scope 串误**：aigcv2 的任务 drift 进 harnessFlow TODO。harnessFlow 立项**动机**是 P20 事件，但**验收标准**是机制可用 + 自举 PASS，两者不等价。此错已在 § 1 纠偏 + method3 § 8 反模式第 17 条固化硬线（防未来再串）。
 
 ---
 
