@@ -142,21 +142,24 @@ else
   _fail "python3 not on PATH"
 fi
 
-# === 模块 5: pytest 全绿 ===
+# === 模块 5: pytest 全绿（Phase 6 + 7 + v1.1 = 100 个）===
+# v1.1 修：不再 tail -5 裁剪（会漏全量跑里 flaky fail 行），改用 pytest exit code 判断
 echo ""
-echo "[5/6] pytest 全绿（Phase 6 + Phase 7 = 85 个）"
+echo "[5/6] pytest 全绿"
 if command -v python3 >/dev/null 2>&1; then
-  pytest_out="$(cd "$HARNESS_DIR" && python3 -m pytest -q --no-header 2>&1 | tail -5)"
-  if echo "$pytest_out" | grep -qE '[0-9]+ passed'; then
-    passed_count="$(echo "$pytest_out" | grep -oE '[0-9]+ passed' | head -1 | awk '{print $1}')"
-    if echo "$pytest_out" | grep -qE 'failed|error'; then
-      _fail "pytest has failures/errors: $pytest_out"
-    else
-      _pass "pytest: $passed_count passed"
-    fi
+  pytest_log="$(mktemp)"
+  ( cd "$HARNESS_DIR" && python3 -m pytest -q --no-header > "$pytest_log" 2>&1 )
+  pytest_exit=$?
+  # 从 pytest 输出里找 "... passed|failed|error in T.Ts" 行；宽松匹配多种 pytest 版本
+  summary="$(grep -E '(passed|failed|error).*in [0-9.]+s' "$pytest_log" | tail -1 | tr -s ' =')"
+  [ -z "$summary" ] && summary="$(tail -1 "$pytest_log")"
+  if [ "$pytest_exit" -eq 0 ]; then
+    _pass "pytest: exit=0 | $summary"
   else
-    _fail "pytest produced no parseable output: $pytest_out"
+    _fail "pytest: exit=$pytest_exit | $summary (full log: $pytest_log)"
+    cat "$pytest_log" | tail -15 >&2
   fi
+  rm -f "$pytest_log"
 fi
 
 # === 模块 6: auditor 不改 routing-matrix（进化边界硬线）===

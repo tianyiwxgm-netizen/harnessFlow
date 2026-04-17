@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://harnessFlow/schemas/task-board.schema.json",
+  "title": "harnessFlow task-board",
+  "description": "Per-task runtime state persisted to harnessFlow /task-boards/<task_id>.json. Prose definition lives in task-board-template.md; this schema is the MACHINE source of truth (Stop gate / Supervisor use it). Matches task-board-template.md § 1.",
+  "type": "object",
+  "required": [
+    "task_id",
+    "created_at",
+    "current_state",
+    "goal_anchor"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "^p-[a-z0-9-]+(-[0-9]{8}T[0-9]{6}Z)?$",
+      "description": "Format: p-<short>-<utc_ts> (utc_ts optional)"
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "current_state": {
+      "type": "string",
+      "enum": [
+        "INIT", "CLARIFY", "ROUTE_SELECT",
+        "PLAN", "CHECKPOINT_SAVE",
+        "IMPL", "MID_CHECKPOINT", "MID_RETRO",
+        "UI_SCREENSHOT", "RESEARCH", "DECISION_LOG",
+        "VERIFY", "SANTA_LOOP",
+        "COMMIT",
+        "RETRO_CLOSE",
+        "CLOSED", "PAUSED_ESCALATED", "ABORTED",
+        "RESUMING"
+      ]
+    },
+    "stage": {"type": "string", "pattern": "^@[a-z_]+$"},
+    "project": {"type": "string"},
+    "initial_user_input": {"type": "string"},
+    "goal_anchor": {
+      "type": "object",
+      "required": ["text", "hash"],
+      "properties": {
+        "text":            {"type": "string"},
+        "hash":            {"type": "string"},
+        "claude_md_path":  {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "route_id":       {"type": ["string", "null"], "enum": ["A", "B", "C", "D", "E", "F", "C-lite", "D-mini", "E-lite", null]},
+    "size":           {"type": ["string", "null"], "enum": ["XS", "S", "M", "L", "XL", "XXL+", null]},
+    "task_type":      {"type": ["string", "null"], "enum": ["纯代码", "后端feature", "UI", "agent graph", "文档", "重构", "研究", "视频出片", "元技能验证", "meta-task", null]},
+    "risk":           {"type": ["string", "null"], "enum": ["低", "中", "高", "不可逆", "可逆", "半可逆", null]},
+    "dod_expression": {"type": ["string", "null"]},
+    "verifier_report": {"type": ["object", "null"]},
+    "verifier_report_link": {"type": ["string", "null"]},
+    "artifacts":      {"type": "array"},
+    "state_history":  {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["state", "timestamp"],
+        "properties": {
+          "state":      {"type": "string"},
+          "timestamp":  {"type": "string"},
+          "trigger":    {"type": ["string", "null"]},
+          "from_state": {"type": ["string", "null"]},
+          "reason":     {"type": "string"}
+        }
+      }
+    },
+    "routing_events":          {"type": "array"},
+    "supervisor_interventions":{"type": "array"},
+    "retries":                 {"type": "array"},
+    "red_lines":               {"type": "array"},
+    "route_changes":           {"type": "array"},
+    "skills_invoked":          {"type": "array"},
+    "stage_artifacts":         {"type": "array", "description": "v1.1 Stage Contract per-stage artifact records"},
+    "warn_counter":            {"type": "integer", "minimum": 0},
+    "cost_budget":             {"type": "object"},
+    "time_budget":             {"type": "object"},
+    "context_budget":          {"type": "object"},
+    "cross_session_ids":       {"type": "array"},
+    "session_current":         {"type": ["string", "null"]},
+    "checkpoint_refs":         {"type": "array"},
+    "commit_sha":              {"type": ["string", "null"]},
+    "pr_url":                  {"type": ["string", "null"]},
+    "retro_link":              {"type": ["string", "null"]},
+    "failure_archive_refs":    {"type": "array"},
+    "archive_entry_link":      {"type": ["string", "null"], "pattern": "^failure-archive\\.jsonl#L[0-9]+$|^$"},
+    "audit_link":              {"type": ["string", "null"]},
+    "evolution_suggestions":   {"type": "array"},
+    "closed_at":               {"type": ["string", "null"]},
+    "final_outcome":           {"type": ["string", "null"], "enum": ["success", "failed", "aborted", "false_complete_reported", null]},
+    "abort_reason":            {"type": ["string", "null"]},
+    "insufficient_evidence_count": {"type": "integer", "minimum": 0},
+    "pause_reason":            {"type": "string"},
+    "resume_when":              {"type": "string"},
+    "user_authorization":       {"type": "object"},
+    "artifacts_expected":       {"type": "array"},
+    "clarify_round2_answers":   {"type": "object"},
+    "evidence_findings":        {"type": "object"},
+    "blockers":                 {"type": "array"},
+    "risk_reason":              {"type": "string"}
+  }
+}

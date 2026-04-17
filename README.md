@@ -2,8 +2,8 @@
 
 > Claude Code 的 **总编排 / 总监督 / 总路由** 元技能——让 agent 在说 "done" 之前，真的 done。
 
-[![pytest](https://img.shields.io/badge/pytest-89_passed-brightgreen)]()
-[![phases](https://img.shields.io/badge/Phase_1--8-complete-brightgreen)]()
+[![pytest](https://img.shields.io/badge/pytest-100_passed-brightgreen)]()
+[![phases](https://img.shields.io/badge/Phase_1--8%20%2B%20v1.1-complete-brightgreen)]()
 [![license](https://img.shields.io/badge/license-MIT-blue)]()
 
 ---
@@ -237,8 +237,9 @@ harnessFlow/
 | 6 | Supervisor + Verifier subagent + 20+ verifier_primitives | ✅ complete |
 | 7 | failure-archive.jsonl schema + auto-retro 11 项 + 路由审计 | ✅ complete |
 | 8 | 端到端验证（self-test + archive CLI + P20 handoff）| ✅ complete |
+| **v1.1** | **Stage Contract 层**（stage-contracts.md + schema + 4 文档挂接 + 10 pytest） | ✅ complete |
 
-**测试**：89 pytest 稳定 + 1 flaky（`test_concurrent_writes_no_loss` 全量偶发，单跑 5/5 PASS）
+**测试**：100 pytest 全绿（90 Phase 1-8 + 10 v1.1 Stage Contract 自检，0 regression；concurrency test 已加 flaky rerun 标注）
 **自举**：8.1 self-test + 8.2 archive CLI 两任务 end-to-end Verifier=PASS、retro 11 段自动生成、archive.jsonl L1+L2 schema-valid
 **P20 真出片**：handoff 脚手架就绪（`scripts/run-p20-validation.sh`），按键触发。
 
