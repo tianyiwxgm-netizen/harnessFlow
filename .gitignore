@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Runtime state (task boards / verifier reports / events / retros / archive are per-run artifacts)
+task-boards/*.json
+verifier_reports/*.json
+supervisor-events/*.jsonl
+routing-events/*.jsonl
+skills-invoked/*.jsonl
+sessions/*.json
+retros/*.md
+retros/*.notes.json
+failure-archive.jsonl
+audit-reports/*.json
+
+# Keep .gitkeep if we ever add one
+!**/.gitkeep

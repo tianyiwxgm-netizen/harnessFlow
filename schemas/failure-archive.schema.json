@@ -1,0 +1,204 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://harnessflow.local/schemas/failure-archive.schema.json",
+  "title": "harnessFlow failure-archive entry",
+  "description": "Structured append-only entry in harnessFlow /failure-archive.jsonl. Written on FAIL / ABORTED / false_complete_reported terminal events. Source: method3 § 7.3 archive schema.",
+  "type": "object",
+  "required": [
+    "task_id",
+    "date",
+    "ts",
+    "project",
+    "task_type",
+    "size",
+    "risk",
+    "route",
+    "node",
+    "error_type",
+    "missing_subcontract",
+    "retry_count",
+    "retry_levels_used",
+    "final_outcome",
+    "frequency",
+    "root_cause",
+    "fix",
+    "prevention"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "UUID / ULID / task-board.task_id."
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "ISO 8601 date (YYYY-MM-DD), local to runner."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 datetime in UTC (…Z)."
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Project identifier, e.g. aigcv2 / harnessFlow / aipdd."
+    },
+    "task_type": {
+      "type": "string",
+      "enum": [
+        "视频出片",
+        "后端feature",
+        "UI_feature",
+        "文档",
+        "重构",
+        "研究",
+        "其他"
+      ]
+    },
+    "size": {
+      "type": "string",
+      "enum": ["XS", "S", "M", "L", "XL"]
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["低", "中", "高", "不可逆"]
+    },
+    "route": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D", "E", "F"]
+    },
+    "node": {
+      "type": "string",
+      "enum": [
+        "clarify",
+        "route_select",
+        "plan",
+        "impl",
+        "verifier",
+        "supervisor",
+        "retro",
+        "other"
+      ],
+      "description": "State-machine node where failure was detected."
+    },
+    "error_type": {
+      "type": "string",
+      "enum": [
+        "DOD_GAP",
+        "DRIFT",
+        "IRREVERSIBLE_HALT",
+        "STUCK",
+        "TOKEN_BUDGET",
+        "DEPENDENCY_MISSING",
+        "USER_ABORT",
+        "OTHER"
+      ]
+    },
+    "missing_subcontract": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "maxItems": 64,
+      "description": "DoD sub-condition IDs that failed, e.g. [mp4.duration, oss_key]. Empty array allowed when error_type != DOD_GAP."
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "retry_levels_used": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["L0", "L1", "L2", "L3"]
+      },
+      "maxItems": 16,
+      "description": "Escalation levels triggered at least once."
+    },
+    "final_outcome": {
+      "type": "string",
+      "enum": ["success", "failed", "aborted", "false_complete_reported"],
+      "description": "Terminal state. 'success' appears only when this entry captures a retro-worthy success (rare; normal success path does not write archive)."
+    },
+    "frequency": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Cumulative count of entries matching (project, task_type, size, error_type, non-empty intersect missing_subcontract). Derived by writer.py."
+    },
+    "root_cause": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "fix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "prevention": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "verifier_report_link": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "Relative path to verifier_reports/<task_id>.json."
+    },
+    "retro_link": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "Relative path to retros/<task_id>.md."
+    },
+    "supervisor_events_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "INFO": { "type": "integer", "minimum": 0 },
+        "WARN": { "type": "integer", "minimum": 0 },
+        "BLOCK": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "user_interrupts_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "DRIFT": { "type": "integer", "minimum": 0 },
+        "DOD_GAP": { "type": "integer", "minimum": 0 },
+        "IRREVERSIBLE": { "type": "integer", "minimum": 0 },
+        "废问题": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "elapsed_min": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Wall-clock minutes from task start to terminal state."
+    },
+    "token_used": {
+      "type": "number",
+      "minimum": 0
+    },
+    "token_budget": {
+      "type": "number",
+      "minimum": 0
+    },
+    "trap_matched": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "maxItems": 32,
+      "description": "trap-catalog IDs matched during execution."
+    }
+  }
+}
