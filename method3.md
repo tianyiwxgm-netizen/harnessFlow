@@ -652,6 +652,29 @@ archive 的第一条 entry 将是方案 C P20 假完成事件（见反模式 § 
 - **问题**：schema 破坏后，下次 `auditor.audit()` 或 `Stop-final-gate.sh` 校验会 raise，污染整个归档 —— 更糟是"看起来能写 / 跑起来才报错"的延迟失败。
 - **规避**：**唯一入口** `archive.writer.write_archive_entry()`；subagent md 显式禁止绕路；CI / pre-commit 可选加 "禁止直接 echo 进 failure-archive.jsonl" 的 grep 检查（Phase 8 候选）。
 
+### 8.12 schema 演化 legacy 豁免缺失（v1.1 P9-P2 新增，2026-04-18）
+
+- **特征**：给 harnessFlow 某种 artifact（task-board / failure-archive / stage-contract 等）引入新 schema（更严 required 字段 / enum 扩展 / pattern 收紧），却**没给历史数据留豁免路径**。结果：新 schema 跑 test 时，旧数据全判 FAIL（老 board 用旧字段名 / 老 enum 值 / 老 pattern），触发 scope creep：
+  - 方案 A（**错**）：批量改老数据迁移到新 schema → 改过往 task-board / 归档文档 → 破坏历史可审计性
+  - 方案 B（**错**）：放宽 schema 到新老兼容 → 新数据约束力被削弱 → schema 失去价值
+- **真实案例（2026-04-17 P9-P1）**：新增 `schemas/task-board.schema.json` strict draft-07，首跑 pytest FAIL 4 个：历史 Phase 8 的 `p8-0-smoke.json` / `p8-1-self-test.json` / `p8-2-archive-cli.json` 的 `task_id` 不匹配 `^p-[a-z0-9-]+-\d{8}T\d{6}Z$` pattern（用了 `p8-*` 前缀），`state_history[]` 缺 `timestamp` 必填字段。若不豁免而改老 board → 破坏 Phase 8 交付证据；若改松 pattern → 新 task-board 也不严。
+- **问题**：
+  - "改老数据"等于修改 closed 任务的审计轨迹，违反 append-only 原则
+  - "改松 schema"等于让新契约失去 enforcement，P9-P1 加 schema 就白加
+  - 都背离"真完成"原则（历史数据真完成过了，新 schema 是对**未来数据**的契约）
+- **规避硬线**（**Legacy Carve-Out 模式**）：
+  1. **schema 本身保持严格**（additionalProperties: false、required 完整、pattern 收紧）
+  2. **豁免在 test/validator 层做**，不在 schema 层做：用 regex 分类新旧（e.g. `^p-[a-z0-9-]+-\d{8}T\d{6}Z\.json$` 为 post-v1.1，`^p[0-9]` 或 free-form 为 legacy grandfathered）
+  3. test 显式列出豁免清单 + 日志打印（让谁豁免了一目了然），不悄悄放过
+  4. schema 元数据里加 `description` 注明"v{N} 起契约；legacy 见 test_*_schema.py grandfather set"
+  5. 评估阶段写 retro 时，把"哪条被 grandfather" 列进产物清单（而不是装作不存在）
+- **不是**：
+  - 不是"新 schema 只校验新数据"的宽松主义 —— legacy 必须**显式**列入豁免清单，不是默认跳过
+  - 不是"为 legacy 加兼容字段"—— schema 永远只反映当前最新契约，不反映历史版本
+- **Pattern 来源**：P9-P1 `test_task_board_schema.py::test_all_post_v1_1_task_boards_valid`（archive/tests/）是此模式的首个落地示例，后续 schema 演化可直接 fork。
+
+---
+
 ### 8.11 跨项目 scope 串误（v1.1 新增，2026-04-17 纠偏）
 
 - **特征**：harness 在 summary / assessment / README 里**把另一个项目的任务列为本项目 TODO**。典型：harnessFlow（meta-skill 项目）把 aigcv2 项目的 "P20 真出片" 列进自己的 P0 待办；一路延续到 assessment.md § 3 P0、§ 5 路径 B、§ 7 推荐。

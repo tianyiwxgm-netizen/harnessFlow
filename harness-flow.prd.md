@@ -254,6 +254,10 @@ PASS → post-mortem 强制 → 写回 retro / failure-archive / matrix
 | 6 | Supervisor + Verifier subagent | DoD 模板库 + 6 类干预 + 3 红线 | complete | with 5 | 4 | plans/phase6-supervisor-verifier.plan.md |
 | 7 | failure-archive schema + auto-retro | 结构化 jsonl + retro 模板 + 路由权重审计 | complete | - | 5, 6 | plans/phase7-failure-archive-auto-retro.plan.md |
 | 8 | 端到端验证 | self-test + archive CLI + P20 handoff（不污染 aigc）| complete | - | 7 | plans/phase8-e2e-validation.plan.md + phase8-validation-report.md |
+| **v1.1** | **Stage Contract 层** | stage-contracts.md + schema + 4 文档挂接 + 10 pytest 自检 | complete | - | 8 | commit e6cb8d9 |
+| **v1.1-P1** | **Phase 9 P1 bundle** | README/PRD 对齐 + concurrency flaky fix + self-test tail-5 bug + task-board schema 程序化 + task_type enum 扩展 | complete | - | v1.1 | commit 0e8ca99 |
+| **v1.1-P2** | **scope drift fix** | 去除 P20 作为 harnessFlow TODO 的误表述 + method3 § 8.11 跨项目串误硬线 | complete | - | v1.1-P1 | commit a8d26a5 |
+| **v1.1-P3** | **P9 P2 + meta consistency bundle** | jsonschema deprecation / auditor dry-run 默认 / Stop gate 跨 session 过滤 / legacy aiv2 board 归档 / method3 § 8.12 legacy carve-out + PRD 行 | complete | - | v1.1-P2 | 本 commit |
 
 ### Phase Details
 

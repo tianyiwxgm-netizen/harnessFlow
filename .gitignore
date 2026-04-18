@@ -6,6 +6,8 @@ __pycache__/
 
 # Runtime state (task boards / verifier reports / events / retros / archive are per-run artifacts)
 task-boards/*.json
+task-boards/cross-project/*.json
+task-boards/legacy/*.json
 verifier_reports/*.json
 supervisor-events/*.jsonl
 routing-events/*.jsonl

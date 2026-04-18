@@ -45,6 +45,7 @@ for tb in "$BOARDS_DIR"/*.json; do
 
   python3 - "$tb" "$RETROS_DIR" "$msg_file" "$ARCHIVE_PATH" "$SCHEMA_PATH" <<'PY'
 import json, os, re, sys
+from datetime import datetime, timezone, timedelta
 tb_path, retros_dir, msg_path, archive_path, schema_path = sys.argv[1:6]
 task_id = os.path.splitext(os.path.basename(tb_path))[0]
 
@@ -62,6 +63,23 @@ state = tb.get("current_state", "UNKNOWN")
 route = tb.get("route", "-")
 if route == "-":
     route = tb.get("route_id", "-")
+
+# v1.1 P9-P2 修 #3: 跨 session 过滤
+# 历史 CLOSED/ABORTED task-board（closed_at 早于本 session 或 1 小时前）不重复校验
+# 避免老 Phase 8 p8-* 或跨项目遗留 board 每次 Stop 都误阻
+closed_at_str = tb.get("closed_at")
+if state in ("CLOSED", "ABORTED") and closed_at_str:
+    try:
+        ca = datetime.fromisoformat(closed_at_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+        env_start = os.environ.get("HARNESSFLOW_SESSION_START")
+        if env_start:
+            cutoff = datetime.fromisoformat(env_start.rstrip("Z")).replace(tzinfo=timezone.utc)
+        else:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        if ca < cutoff:
+            sys.exit(0)  # 历史终态，不重扫
+    except (ValueError, TypeError):
+        pass  # 解析失败走默认 full check（保守）
 
 if state == "PAUSED_ESCALATED":
     # 人工 review 中，不强制 archive（恢复后会重新进 RETRO_CLOSE 补写）

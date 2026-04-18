@@ -133,7 +133,9 @@ if command -v python3 >/dev/null 2>&1; then
   fi
 
   if python3 -c 'import jsonschema' 2>/dev/null; then
-    js_ver="$(python3 -c 'import jsonschema; print(jsonschema.__version__)')"
+    # v1.1 P9-P2 修：用 importlib.metadata 代替 deprecated jsonschema.__version__
+    js_ver="$(python3 -c 'from importlib.metadata import version; print(version("jsonschema"))' 2>/dev/null \
+              || python3 -c 'import jsonschema; print(getattr(jsonschema, "__version__", "unknown"))')"
     _pass "jsonschema $js_ver importable"
   else
     _fail "jsonschema not importable (pip install jsonschema?)"

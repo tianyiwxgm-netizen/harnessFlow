@@ -80,8 +80,12 @@ def cmd_audit(args: argparse.Namespace) -> int:
         print(f"archive missing: {path}", file=sys.stderr)
         return 1
 
-    # dry-run: call audit with output_dir=None so no file is written
-    output_dir = None if args.dry_run else HARNESS_ROOT / "audit-reports"
+    # v1.1 P9-P2 修：默认 dry-run（新手防误污染 audit-reports/）
+    # 显式 --commit 才会真写盘；--dry-run 保留作兼容 no-op
+    commit = getattr(args, "commit", False)
+    output_dir = HARNESS_ROOT / "audit-reports" if commit else None
+    if not commit:
+        print("[audit] DRY-RUN mode (default v1.1); pass --commit to write audit-reports/*.json", file=sys.stderr)
     report = audit(
         archive_path=path,
         routing_matrix_path=DEFAULT_MATRIX,
@@ -156,8 +160,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_list.add_argument("--archive", type=str, help="path to failure-archive.jsonl (default: harnessFlow root)")
     p_list.set_defaults(func=cmd_list)
 
-    p_audit = sub.add_parser("audit", help="run auditor (default dry-run=False writes audit-reports/)")
-    p_audit.add_argument("--dry-run", action="store_true", help="do not write audit-reports/*.json")
+    p_audit = sub.add_parser("audit", help="run auditor (v1.1 default: DRY-RUN; pass --commit to write)")
+    p_audit.add_argument("--commit", action="store_true", help="actually write audit-reports/*.json (default: dry-run)")
+    p_audit.add_argument("--dry-run", action="store_true", help="[compat] explicit dry-run (same as default)")
     p_audit.add_argument("--interval", type=int, default=20, help="audit interval (default 20)")
     p_audit.add_argument("--min-samples", type=int, default=3, help="min samples per cell (default 3)")
     p_audit.add_argument("--archive", type=str, help="path to failure-archive.jsonl")
