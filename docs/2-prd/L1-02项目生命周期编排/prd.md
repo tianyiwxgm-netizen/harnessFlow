@@ -3,8 +3,8 @@ doc_id: prd-l1-02-project-lifecycle-v0.1
 doc_type: l1-prd
 parent_doc:
   - HarnessFlowGoal.md
-  - docs/2-prd/businessFlow.md
-  - docs/2-prd/scope.md#5.2
+  - docs/2-prd/L0/businessFlow.md
+  - docs/2-prd/L0/scope.md#5.2
 version: v1.0
 status: ready_for_review
 author: mixed
@@ -15,7 +15,7 @@ traceability:
   business_flow: [BF-S1-全部, BF-S2-全部, BF-S3-全部, BF-S7-全部, BF-L3-10, BF-X-06]
   scope: [L1-02]
 consumer:
-  - docs/2-prd/flowOutInput.md#4.3
+  - docs/2-prd/L0/flowOutInput.md#4.3
   - docs/2-prd/L1集成/prd.md
   - TDD 阶段
 ---
@@ -24,7 +24,8 @@ consumer:
 
 > **版本**：v1.0（全 7 个 L2 详细定义完备，待 review）
 > **定位**：L1-02 的独立 PRD · 7 阶段 × 4 Stage Gate × PMP+TOGAF 产出物编排 · 整个 HarnessFlow 最复杂、产出物最多的 L1
-> **严格遵循**：本 PRD **不得与** `docs/2-prd/scope.md §5.2` 冲突。如冲突以 scope 为准。
+> **严格遵循**：本 PRD **不得与** `docs/2-prd/L0/scope.md §5.2` 冲突。如冲突以 scope 为准。
+> **PM-14 所有权声明**：**本 L1 是 `harnessFlowProjectId` 的全生命周期所有权方** —— L2-02 启动阶段产出器负责**创建 + 锁定** project_id（S1），L2-01 Stage Gate 控制器负责管理 project 主状态机（INITIALIZED → PLANNING → TDD_PLANNING → EXECUTING → CLOSING → CLOSED），L2-06 收尾阶段执行器负责**归档** project_id（S7）。详见 `docs/2-prd/L0/projectModel.md`。
 
 ---
 

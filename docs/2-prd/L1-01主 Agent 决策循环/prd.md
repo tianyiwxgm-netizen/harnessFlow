@@ -24,7 +24,8 @@ consumer:
 
 > **版本**：v0.1 (骨架 · 待 L2 详细填充)
 > **定位**：L1-01 的独立 PRD，细化到 L2（6 个子能力）→ L3（算法/数据结构/接口/流程图），为技术方案做输入。
-> **严格遵循**：本 PRD **不得与** `docs/prd/scope.md §5.1` 定义冲突。如冲突，以 scope.md 为准。
+> **严格遵循**：本 PRD **不得与** `docs/2-prd/L0/scope.md §5.1` 定义冲突。如冲突，以 scope.md 为准。
+> **PM-14 项目上下文声明**：每个 tick / 决策 / state 转换 / 审计事件**必须携带** `harnessFlowProjectId`（由 L1-02 在 S1 启动时创建 · 本 L1 只消费不创建）。L2-01 Tick 调度器在每次 tick 入队时强制验证 project_id 非空；L2-02 决策引擎把 project_id 作为决策上下文根字段；L2-05 决策审计记录器把 project_id 作为 audit_entry 必填字段。详见 `docs/2-prd/L0/projectModel.md` §9（与 10 L1 关系矩阵）。
 
 ---
 

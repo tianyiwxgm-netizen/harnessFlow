@@ -3,8 +3,8 @@ doc_id: prd-l1-03-wbs-wp-topology-scheduling-v1.0
 doc_type: l1-prd
 parent_doc:
   - HarnessFlowGoal.md
-  - docs/2-prd/businessFlow.md
-  - docs/2-prd/scope.md#5.3
+  - docs/2-prd/L0/businessFlow.md
+  - docs/2-prd/L0/scope.md#5.3
 version: v1.0
 status: ready_for_review
 author: mixed
@@ -15,7 +15,7 @@ traceability:
   business_flow: [BF-S2-07, BF-S4-01, BF-S4-02, BF-S4-05, BF-E-08]
   scope: [L1-03]
 consumer:
-  - docs/2-prd/flowOutInput.md#4.3
+  - docs/2-prd/L0/flowOutInput.md#4.3
   - docs/2-prd/L1集成/prd.md
   - TDD 阶段
   - docs/3-1-Solution-Technical/L1-03/tech-design.md
@@ -25,8 +25,9 @@ consumer:
 
 > **版本**：v1.0（5 个 L2 全详细定义完备，待 review）
 > **定位**：L1-03 的独立 PRD · 承担 "WBS 层级拆解 + WP 拓扑 DAG 维护 + WP 调度取任务 + 完成度跟踪 + 失败回退协调" 全量职责
-> **严格遵循**：本 PRD **不得与** `docs/2-prd/scope.md §5.3` 冲突。如冲突以 scope 为准。
+> **严格遵循**：本 PRD **不得与** `docs/2-prd/L0/scope.md §5.3` 冲突。如冲突以 scope 为准。
 > **严格产品级**：本文不含算法 / 伪码 / 代码块 / YAML schema 字段级 / 状态机代码 / 配置参数表 / 数据结构字段定义。所有实现细节一律留给 `docs/3-1-Solution-Technical/L1-03/tech-design.md`。
+> **PM-14 项目上下文声明**：**WBS 拓扑 + 所有 WP 必须归属到 `harnessFlowProjectId`**（由 L1-02 在 S1 创建）。本 L1 的调度边界**严格不跨 project**（禁止同时调度 project-foo 的 WP-03 和 project-bar 的 WP-05）；失败计数按 project 限定（project-foo 的 WP 失败 ≥ 3 次升级不影响 project-bar）。详见 `docs/2-prd/L0/projectModel.md` §9.1（L1-03 使用 project_id 方式）。
 
 ---
 

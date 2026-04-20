@@ -3,8 +3,8 @@ doc_id: prd-l1-08-multimodal-v0.1
 doc_type: l1-prd
 parent_doc:
   - HarnessFlowGoal.md
-  - docs/2-prd/businessFlow.md
-  - docs/2-prd/scope.md#5.8
+  - docs/2-prd/L0/businessFlow.md
+  - docs/2-prd/L0/scope.md#5.8
 version: v0.1
 status: draft
 author: mixed
@@ -15,7 +15,7 @@ traceability:
   business_flow: [BF-L3-06, BF-L3-07, BF-L3-08, BF-X-03, BF-X-05]
   scope: [L1-08]
 consumer:
-  - docs/2-prd/flowOutInput.md（待回填）
+  - docs/2-prd/L0/flowOutInput.md（待回填）
   - docs/2-prd/L1集成/prd.md（待撰写）
   - docs/3-1-Solution-Technical/L1-08/tech-design.md（待 M9 启动）
 ---
@@ -25,7 +25,8 @@ consumer:
 > **版本**：v0.1（骨架 + 4 个 L2 产品级详细定义一轮合一）
 > **定位**：L1-08 的独立 PRD · 为 L1-01 决策与 L1-02 规划提供"多模态内容理解"能力 · 读写 md / 读懂代码结构 / 读懂图片
 > **产品级 PRD 硬边界**：本 PRD **不含** 算法 / 伪码 / 代码块 / YAML schema 字段级 / 状态机代码 / 配置参数表 / 数据结构字段定义。实现细节统一迁到 `docs/3-1-Solution-Technical/L1-08/tech-design.md`。
-> **严格遵循**：本 PRD **不得与** `docs/2-prd/scope.md §5.8` 冲突。如冲突以 scope 为准。
+> **严格遵循**：本 PRD **不得与** `docs/2-prd/L0/scope.md §5.8` 冲突。如冲突以 scope 为准。
+> **PM-14 项目上下文声明**：**所有多模态素材（图片 / 代码结构摘要 / md 文档）按 `harnessFlowProjectId` 隔离缓存**。避免跨项目素材污染：project-foo 的图片识别结果不进入 project-bar 的 KB；代码结构摘要按 project_id + git_head 作 cache key；md 读写路径受 project 根目录限定。详见 `docs/2-prd/L0/projectModel.md` §9.1（L1-08 使用方式）。
 
 ---
 

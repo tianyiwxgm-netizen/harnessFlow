@@ -509,11 +509,49 @@ is_atomic_op(需要) →
 | **BF-X-06** | 产出物模板驱动流（PM-07） | 产出物生成 | 按模板填充的 md/yaml/json |
 | **BF-X-07** | 能力抽象层调度流（PM-09） | Skill 调度决策 | 可用 skill 列表（按优先级） |
 | **BF-X-08** | 持久化与跨 session 恢复流（PM-10） | 每事件 / 重启 | 落盘 / 回放恢复 |
+| **BF-X-10** | **项目生命周期横切流（PM-14 · 新增）** | S1 启动 / 激活 / 归档 / 删除 | harnessFlowProjectId 创建 · 激活 · 归档 · 删除 全链路 |
+
+### BF-X-10 · 项目生命周期横切流（PM-14）
+
+**触发场景**：
+- **创建**：用户首次输入项目目标，S1 澄清通过，L1-02 L2-02 启动阶段产出器生成 project_id
+- **激活**：跨 session 启动 Claude Code，L1-09 bootstrap 读 projects/_index.yaml 激活最近 project
+- **切换**（V2+）：用户在 L1-10 UI 显式切换"当前 project"，主 loop 上下文随之切换
+- **归档**：S7 最终 Gate 通过，project 主状态转 CLOSED；或极端失败（FAILED_TERMINAL）走失败闭环
+- **删除**：用户在 UI 显式"删除项目"+ 二次确认
+
+**关键路径**：
+```
+[用户首次输入项目目标]
+     ↓
+L1-02 L2-02 澄清对话 (≤ 3 轮)
+     ↓ 澄清通过
+生成 harnessFlowProjectId (slug + uuid-short)
+     ↓
+写 projects/<pid>/manifest.yaml
+     ↓
+发 project_created 事件 (IC-09 to L1-09)
+     ↓
+L1-09 创建 project 根目录 (events.jsonl / audit.jsonl / checkpoints/ / kb/)
+     ↓
+project 主状态 = INITIALIZED
+     ↓
+... 后续所有 tick / IC / 事件 / 产出物都带 project_id 归属 ...
+     ↓
+S7 Gate 通过 → project 主状态 = CLOSING → CLOSED
+     ↓
+L1-09 冻结 project 根目录 (只读 · 归档)
+```
+
+**横切覆盖**：本流贯穿 L1-02（所有权方）+ L1-09（持久化落实方）+ L1-01（tick 上下文绑定方）+ L1-10（UI 切换方）。
+
+**详见** `docs/2-prd/L0/projectModel.md` §4（生命周期）+ §5（主状态机）+ §9（与 10 L1 关系矩阵）。
 
 **关键约束**：
 - BF-X-02 监督 8 维度：目标保真度 / 计划对齐 / 真完成质量 / 红线安全 / 进度节奏 / 成本预算 / 重试 Loop / 用户协作
-- BF-X-03 事件 schema：`{ts, type, actor, state, content, links, hash}`
+- BF-X-03 事件 schema：`{ts, type, actor, state, content, links, hash, project_id}` · **PM-14 必含 project_id 根字段**
 - BF-X-05 注入策略：S1→trap+pattern；S2→recipe+tool_combo；S3→anti_pattern；S4→pattern；S5→trap；S7→反向收集
+- **BF-X-10（本流）关键约束**：所有数据归属 project_id · 事件总线按 project 物理分片 · 跨 project 引用必拷贝不软链
 
 ---
 

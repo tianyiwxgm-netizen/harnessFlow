@@ -3,8 +3,8 @@ doc_id: prd-l1-09-resilience-audit-v1.0
 doc_type: l1-prd
 parent_doc:
   - HarnessFlowGoal.md
-  - docs/2-prd/businessFlow.md
-  - docs/2-prd/scope.md#5.9
+  - docs/2-prd/L0/businessFlow.md
+  - docs/2-prd/L0/scope.md#5.9
 version: v1.0
 status: ready_for_review
 author: mixed
@@ -15,7 +15,7 @@ traceability:
   business_flow: [BF-X-03, BF-X-04, BF-X-08, BF-E-01, BF-E-02, BF-E-03, BF-E-04, BF-E-06, BF-E-08]
   scope: [L1-09]
 consumer:
-  - docs/2-prd/flowOutInput.md#4.3
+  - docs/2-prd/L0/flowOutInput.md#4.3
   - docs/2-prd/L1集成/prd.md
   - docs/2-prd/L1-01主 Agent 决策循环/prd.md（IC-09 消费侧）
   - docs/2-prd/L1-07 Harness监督/prd.md（事件扫描消费）
@@ -27,8 +27,9 @@ consumer:
 
 > **版本**：v1.0（5 个 L2 产品级完备；L3 实现设计留给 `docs/3-1-Solution-Technical/L1-09/tech-design.md`）
 > **定位**：HarnessFlow 的**脊柱 + 记忆** —— 所有 L1 状态变更的唯一落盘口 + 跨 session 无损恢复的根 + 审计追溯 100% 的证据基
-> **严格遵循**：本 PRD **不得与** `docs/2-prd/scope.md §5.9` 冲突。如冲突以 scope 为准。
+> **严格遵循**：本 PRD **不得与** `docs/2-prd/L0/scope.md §5.9` 冲突。如冲突以 scope 为准。
 > **严格边界**：本 PRD 只描述"要做什么"（职责 / 边界 / 约束 / 禁止 / 必须 / 交互 / 验收）；"怎么做"（算法 / schema / 配置 / 状态机实现）迁到 `docs/3-1-Solution-Technical/L1-09/tech-design.md`。
+> **PM-14 物理隔离声明**：**本 L1 是 `harnessFlowProjectId` 的物理持久化落实方** —— 所有事件总线 / 审计记录 / 检查点 / 锁**必须按 project 物理分片存储**（`projects/<project_id>/events.jsonl / audit.jsonl / checkpoints/` 独立子目录）。L2-01 事件总线按 project 分片；L2-02 锁粒度含 project 键；L2-03 审计按 project 检索；L2-04 跨 session 恢复读 `projects/_index.yaml` 决定激活哪个 project；L2-05 崩溃安全的原子写粒度是 project 根目录。详见 `docs/2-prd/L0/projectModel.md` §8（项目级持久化根）。
 
 ---
 

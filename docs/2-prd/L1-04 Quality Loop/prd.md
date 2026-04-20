@@ -3,8 +3,8 @@ doc_id: prd-l1-04-quality-loop-v1.0
 doc_type: l1-prd
 parent_doc:
   - HarnessFlowGoal.md
-  - docs/2-prd/businessFlow.md
-  - docs/2-prd/scope.md#5.4
+  - docs/2-prd/L0/businessFlow.md
+  - docs/2-prd/L0/scope.md#5.4
 version: v1.0
 status: ready_for_review
 author: mixed
@@ -15,7 +15,7 @@ traceability:
   business_flow: [BF-S3-01, BF-S3-02, BF-S3-03, BF-S3-04, BF-S3-05, BF-S4-03, BF-S4-04, BF-S5-01, BF-S5-02, BF-S5-03, BF-S5-04, BF-E-10]
   scope: [L1-04]
 consumer:
-  - docs/2-prd/flowOutInput.md#4.3
+  - docs/2-prd/L0/flowOutInput.md#4.3
   - docs/2-prd/L1集成/prd.md
   - docs/2-prd/L1-01主 Agent 决策循环/prd.md（IC-03 消费侧）
   - docs/2-prd/L1-02项目生命周期/prd.md（S3/S4/S5 阶段消费侧）
@@ -30,8 +30,9 @@ consumer:
 
 > **版本**：v1.0（7 个 L2 产品级完备；L3 实现设计留给 `docs/3-1-Solution-Technical/L1-04/tech-design.md`）
 > **定位**：HarnessFlow 的**质量闭环脊柱** —— S3 蓝图定义 → S4 执行驱动 → S5 TDDExe 独立验证 → 4 级回退路由的**单一控制点**；是 Goal §2.2 五大纪律中"质量"与"检验"两项的落地唯一路径；保证**真完成质量达标率 ≥ 95%**（Goal §4.1）的红线守门员。
-> **严格遵循**：本 PRD **不得与** `docs/2-prd/scope.md §5.4` 冲突。如冲突以 scope 为准。
+> **严格遵循**：本 PRD **不得与** `docs/2-prd/L0/scope.md §5.4` 冲突。如冲突以 scope 为准。
 > **严格边界**：本 PRD 只描述"要做什么"（职责 / 边界 / 约束 / 禁止 / 必须 / 交互 / 验收）；"怎么做"（DoD 表达式具体语法 / 状态机实现 / verifier 通信协议 / 回退判定阈值参数）迁到 `docs/3-1-Solution-Technical/L1-04/tech-design.md`。
+> **PM-14 项目上下文声明**：**所有 TDD 蓝图（Master Test Plan / DoD / test_cases）+ verifier 三段证据链报告必须归属到 `harnessFlowProjectId`**。同级 FAIL 计数按 project 限定（project-foo 的 S4 失败 3 次升级不影响 project-bar）；verifier 子 Agent 委托 context 必带 project_id。详见 `docs/2-prd/L0/projectModel.md` §9.1（L1-04 使用 project_id 方式）。
 
 ---
 
@@ -2034,25 +2035,155 @@ L1-10 "Verifier 证据链" tab 渲染：
 
 ## 15. L1-04 对外 scope §8 IC 契约映射（本 L1 实际承担）
 
-⏸ 分段写入中
+本表列出 L1-04 对 scope §8 中 20 条 IC 契约的实际承担（发起方 or 接收方）+ 内部 L2 承担者。
+
+### 15.1 L1-04 作为接收方的 IC
+
+| scope §8 IC | 内部 L2 承担者 | 触发时机 | 来源 L1 |
+|---|---|---|---|
+| **IC-03** `enter_quality_loop` | 入口路由：按 phase 分派：<br>· phase=S3 → L2-01 启动蓝图生成<br>· phase=S4 → L2-05 启动 WP 驱动<br>· phase=S5 → L2-06 启动验证编排 | L1-01 决策进入 S3/S4/S5 阶段 | L1-01 |
+| **IC-14** `push_rollback_route` | L2-07 偏差判定 + 4 级回退路由器 | S5 验证完成后 L1-07 基于 verifier_report 判 4 级 verdict | L1-07 |
+
+### 15.2 L1-04 作为发起方的 IC
+
+| scope §8 IC | 内部 L2 发起者 | 触发时机 | 目标 L1 |
+|---|---|---|---|
+| **IC-01** `request_state_transition` | L2-07 路由器（PASS 进 S7 / 4 级 FAIL 分别回 S4~S1） | 接 IC-14 verdict 后的精确映射 | L1-01 |
+| **IC-02** `get_next_wp` | L2-05 S4 执行驱动器 | S4 循环每次取下一可执行 WP | L1-03 |
+| **IC-04** `invoke_skill` | L2-05（调 `tdd` / `prp-implement`） | S4 驱动 WP 写代码 | L1-05 |
+| **IC-05** `delegate_subagent`（形式上借 IC-20 路径） | L2-06 验证编排器 | S5 委托 verifier 独立 session | L1-05 |
+| **IC-06** `kb_read` | L2-01/02/03/04/05/06/07 任意 L2 可选增强 | 读 recipe / trap / 最佳实践 | L1-06 |
+| **IC-09** `append_event` | 全 L2（事件落盘的唯一通道） | 任何状态变更 | L1-09 |
+| **IC-13** `push_suggestion` | L2-05（WP 自修超限）/ L2-06（委托失败）/ L2-07（死循环 BF-E-10） | 异常 / 超限 / 升级 | L1-07 |
+| **IC-16** `push_stage_gate_card`（通过 L1-02） | L2-01/02/03/04 各产出作为 S3 Gate 待审 | S3 Gate 启动时 | L1-10（经 L1-02） |
+| **IC-20** `delegate_verifier` | L2-06 验证编排器 | S5 委托 verifier | L1-05 |
+
+### 15.3 L1-04 IC 承担总览图
+
+```
+                      ┌────────────────────────────────────┐
+  L1-01 ── IC-03 ──→  │ L1-04 Quality Loop（7 个 L2）       │
+                      │                                    │
+                      │  phase=S3 → L2-01→L2-02/03/04      │
+                      │  phase=S4 → L2-05 ──调 IC-04→ L1-05│
+                      │  phase=S5 → L2-06 ──调 IC-20→ L1-05│
+                      │                                    │
+                      │  L2-07 ──IC-01→ L1-01              │
+                      │        ──IC-13→ L1-07（BF-E-10）    │
+                      │                                    │
+  L1-07 ── IC-14 ──→  │  L2-07 ← 接 4 级 verdict 路由       │
+                      │                                    │
+  全 L2 ── IC-09 ──→  │  ──→ L1-09 审计                    │
+                      │                                    │
+                      │  可选：── IC-06 → L1-06 KB          │
+                      └────────────────────────────────────┘
+```
+
+### 15.4 未承担的 IC
+
+scope §8 中 L1-04 明确**不承担**的契约（避免越界）：
+
+| scope §8 IC | 所属 L1 | 说明 |
+|---|---|---|
+| IC-07 acquire_lock | L1-09 | 本 L1 不做锁（经 IC-09 时由 L1-09 内部锁） |
+| IC-08 kb_promote | L1-06 | 本 L1 不晋升 KB，只读 |
+| IC-10 replay_from_event | L1-09 | 本 L1 不做回放 |
+| IC-11 process_content | L1-08 | 本 L1 不做多模态处理 |
+| IC-12 resilience | L1-09 | 本 L1 不做韧性降级（被韧性层保护） |
+| IC-15 request_hard_halt | L1-07 | 本 L1 不拉硬红线 halt（只通过 IC-13 升级） |
+| IC-17 user_intervene | L1-01 | 本 L1 只记 / 接收，不处理用户介入业务 |
+| IC-18 query_audit_trail | L1-09 | 本 L1 不做审计查询 |
+| IC-19 request_wbs_decomposition | L1-02 | 本 L1 不做 WBS 拆分 |
 
 ---
 
 ## 16. 本 L1 retro 位点
 
-⏸ 分段写入中
+**占位说明**：
+L1-04 实现完成 + 集成测试通过后，按 11 项 retro 模板撰写本 L1 的 retro（存入 `retros/L1-04.md`）。
+
+**11 项模板锚定**（同 L1-02 §16 / L1-09 §14）：
+
+1. **本 L1 目标达成度**：Quality Loop 是否严格成立 —— S5 未 PASS 不得进 S7 是否从未违反 + 真完成质量达标率是否达 Goal §4.1 的 ≥ 95% + 4 级回退路由是否精确落盘 + 死循环保护是否按 BF-E-10 硬触发
+2. **与 scope §5.4 的契合度**：4 条硬约束 / 6 条禁止 / 5 条必须是否全部落地 + 是否出现过"verifier 主 session 自跑" / "DoD 含 arbitrary exec" / "自做 verdict 判定" 的违规
+3. **关键决策复盘**：7 个 L2 切分边界（蓝图 vs DoD vs 用例 vs Gate vs 执行 vs 验证 vs 路由）/ 白名单谓词策略（宽窄权衡，未来演进机制）/ 三段证据链定义（existence/behavior/quality 是否足够）/ 4 级回退映射表稳定性 / 同级计数阈值 3 的合理性 / WP 内自修次数上限
+4. **困难与突破**：S3 阶段 4 件套 → 白名单 AST 的自然语言映射覆盖率瓶颈 / verifier 独立 session 首次启动延迟 / 大项目 verifier 超时 / 死循环检测与"正常偶发失败"的边界判定 / 用例骨架"先红灯"强制在特定语言/框架下的实现成本
+5. **成本回顾**：L1-04 开发总耗时 / verifier 调用总成本（token / API 钱）/ S3 蓝图迭代次数
+6. **进度回顾**：7 个 L2 实际工作量 vs 估算（预计 L2-02 / L2-06 / L2-07 最重，L2-03 中等，L2-01 / L2-04 / L2-05 偏轻到中）
+7. **质量指标汇总**：S3 蓝图 3 分钟达标 / DoD eval P95 100ms 达标 / WP 自检 30 秒达标 / verifier 30 分钟内完成 / 回退路由 3 秒达标 / 真完成质量达标率 ≥ 95%（Goal §4.1 硬指标）/ 同级 FAIL ≥ 3 触发率统计
+8. **沟通 & 干系人**：L1-04 对 L1-01 / L1-02 / L1-03 / L1-05 / L1-07 / L1-09 / L1-10 都是强依赖；是否出现过"某 L1 绕过 Quality Loop 直接报完成"的越界事件
+9. **风险事件**：S5 未 PASS 进 S7 的尝试次数（必须 0）/ verifier 主 session 自跑的尝试次数（必须 0）/ DoD 含 arbitrary exec 被拦截次数 / 死循环升级次数 / 4 级回退各级分布
+10. **知识沉淀**：ADR-L1-04-*（白名单谓词设计 / 三段证据链结构 / 4 级 verdict 语义边界 / 受限 evaluator 实现 / WP 自修次数阈值）/ 可晋升 KB 的 "TDD 蓝图模板" / "Verifier trap" / "DoD 白名单谓词词典" / "4 级回退路由矩阵"
+11. **后续行动项**：L1-04 后续 v1.1 / v2.0 增强方向（如 verifier 并行分片 / DoD 白名单谓词智能扩展 / 回退路径可视化 / 历史同类项目 baseline 对比 / 证据链 diff 视图）
 
 ---
 
 ## 附录 A · 术语（L1-04 本地）
 
-⏸ 分段写入中
+| 术语 | 含义 |
+|---|---|
+| **Quality Loop** | L1-04 全景职责 —— S3 蓝图 → S4 执行 → S5 TDDExe → 回退路由的质量闭环 |
+| **4 件套** | 需求 / 目标 / AC / 质量标准四份文档（S2 Gate 硬性产出，L1-02 产），是 L1-04 的核心输入 |
+| **Master Test Plan** | L2-01 产出的 `docs/testing/master-test-plan.md`，测试金字塔 + AC 矩阵 + 覆盖率目标 |
+| **DoD 表达式** | L2-02 产出的机器可校验"完成定义"矩阵，固化到 `dod-expressions.yaml` |
+| **白名单谓词** | L2-02 维护的固化可用谓词集合；任何 DoD 表达式必须只用白名单内的谓词（scope §5.4.4 硬约束 3）|
+| **受限 evaluator** | L2-02 提供给 L2-05 / L2-06 / verifier 的 eval 沙盒，仅访问白名单数据源，禁止 arbitrary exec |
+| **用例骨架** | L2-03 产出的"先红灯"测试文件（tests/generated/），运行 → 全 FAIL，驱动 S4 走 TDD |
+| **先红灯** | 用例函数体为"未实现 → FAIL" 语义，禁止 pass / skip / assert True 等假绿 |
+| **quality-gates.yaml** | L2-04 产出的阈值矩阵（覆盖率 / 性能 / 安全 / lint / 依赖） |
+| **acceptance-checklist.md** | L2-04 产出的用户视角验收清单（S7 阶段用户逐条勾选）|
+| **S3 Stage Gate（BF-S3-05）** | S3 末 Gate，硬性要求 5 件产出齐全：蓝图 + DoD + 用例 + gates + checklist |
+| **WP-DoD 自检** | L2-05 在 S4 每个 WP 完成前，调 L2-02 evaluator 跑 DoD 表达式的自检（非独立验证）|
+| **未绿用例数单调递减** | S4 阶段每次 commit 前硬性校验：本次未绿数必须 ≤ 上次（响应面 6）|
+| **独立 session 委托** | L2-06 经 IC-20 → L1-05 起全新 context 的子 Agent（禁止复用主 agent 记忆），scope §5.4.4 硬约束 2 |
+| **TDDExe** | S5 阶段的"TDD 执行"独立验证，与 S4 主 agent 自检正交 |
+| **三段证据链** | L2-06 从 verifier_report 组装的 `{existence, behavior, quality}` 三段 JSON |
+| **existence 段** | 证据链第 1 段：每个声称产出物的存在性证据（file / commit / deploy_url） |
+| **behavior 段** | 证据链第 2 段：verifier 独立复跑测试的结果（不信任主 agent 声称的绿）|
+| **quality 段** | 证据链第 3 段：verifier 独立 eval DoD + quality-gates 结果 |
+| **verifier_report** | `verifier_reports/<session_id>.json` 文件，含三段证据链 + 元信息 |
+| **verdict** | L1-07 基于 verifier_report 产出的 5 级结构化判定：PASS / FAIL-L1 轻 / FAIL-L2 中 / FAIL-L3 重 / FAIL-L4 极重 |
+| **4 级回退映射** | PASS→S7 / FAIL-L1→S4 / FAIL-L2→S3 / FAIL-L3→S2 / FAIL-L4→S1（L2-07 硬性路由表）|
+| **同级 FAIL 计数器** | L2-07 维护的 (wp_id, verdict_level) → count 计数；≥ 3 触发 BF-E-10 |
+| **BF-E-10 死循环保护** | 同级 FAIL ≥ 3 → 升级 L1-07 BLOCK → 硬暂停 → 等用户介入（继续 / 换方案 / 放弃）|
+| **target_state 交叉校验** | L2-07 对 L1-07 传入 target_state 与本地映射表一致性校验，不一致以本 L2 为准 |
+| **WP 内自修** | S4 阶段 L2-05 对同一 WP 允许最多 3 次 skill 重跑修复；仍 FAIL → 升级给 L1-07 |
 
 ---
 
 ## 附录 B · businessFlow BF 映射
 
-⏸ 分段写入中
+| L2 | 聚合的 BF |
+|---|---|
+| L2-01 TDD 蓝图生成器 | BF-S3-01（Master Test Plan 生成流）|
+| L2-02 DoD 表达式编译器 | BF-S3-02（DoD 表达式编译流）|
+| L2-03 测试用例生成器 | BF-S3-03（全量测试用例生成流）|
+| L2-04 质量 Gate + Checklist 生成器 | BF-S3-04（质量 gate + 验收 checklist 生成流）+ BF-S3-05（S3 Stage Gate 硬凭证）|
+| L2-05 S4 执行驱动器 | BF-S4-03（TDD 驱动实现流）+ BF-S4-04（WP-DoD 自检流）+ BF-S4-05（WP commit 流）|
+| L2-06 S5 TDDExe Verifier 编排器 | BF-S5-01（Verifier 独立调用流）+ BF-S5-02（三段证据链组装流）|
+| L2-07 偏差判定 + 4 级回退路由器 | BF-S5-03（偏差等级判定流：接收端）+ BF-S5-04（回退路由流）+ BF-E-10（死循环保护流）|
+
+**全 L1-04 联动的横切 BF**：
+- **BF-S4-01 WP 取任务流**（L2-05 作为消费方走 IC-02）
+- **BF-E-04 Claude API 限流处理流**（L2-06 委托失败 backoff 走 L1-01 统一降级）
+- **BF-E-08 WP 失败回退流**（L2-07 FAIL-L1 路由 WP 内重试 / WP 内自修超限升级）
+- **BF-X-03 事件总线落盘流**（全 L2 写事件经 IC-09）
+- **BF-X-05 知识库读流**（L2-01/03/04/05/06 可选增强经 IC-06 读 recipe / trap）
+
+**本 L1 在 scope §6.3 主干 7 阶段中的位置**：
+- **S3 阶段**（L2-01/02/03/04）：TDD 规划
+- **S4 阶段**（L2-05）：执行
+- **S5 阶段**（L2-06）：TDDExe 独立验证
+- **跨 S4/S5/S3/S2/S1**（L2-07）：偏差回退路由（响应 S5 verdict 决定回到哪）
+
+**Quality Loop 与其他 L1 的关键耦合点**：
+- **L1-02**：S3 Gate 的 5 件硬凭证 / S7 收尾用户勾选 checklist / FAIL-L2/L3/L4 回退时由 L1-02 接管 stage 内动作
+- **L1-03**：S4 WP 取任务与 done 回传
+- **L1-05**：IC-04 skill 调用 + IC-20 verifier 委托
+- **L1-06**：可选读 recipe / trap（非强依赖）
+- **L1-07**：IC-14 verdict 路由 + 死循环升级
+- **L1-09**：全事件落盘 + verifier_report 审计
+- **L1-10**：Quality Loop 动态视图 / Verifier 证据链 tab / Loop 历史 / TDD 质量 tab
 
 ---
 

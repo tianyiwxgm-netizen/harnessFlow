@@ -3,8 +3,8 @@ doc_id: prd-l1-06-knowledge-base-v1.0
 doc_type: l1-prd
 parent_doc:
   - HarnessFlowGoal.md
-  - docs/2-prd/businessFlow.md
-  - docs/2-prd/scope.md#5.6
+  - docs/2-prd/L0/businessFlow.md
+  - docs/2-prd/L0/scope.md#5.6
 version: v1.0
 status: ready_for_review
 author: mixed
@@ -15,7 +15,7 @@ traceability:
   business_flow: [BF-L3-05, BF-X-05, BF-S7-04, BF-E-02]
   scope: [L1-06]
 consumer:
-  - docs/2-prd/flowOutInput.md#4.3
+  - docs/2-prd/L0/flowOutInput.md#4.3
   - docs/2-prd/L1集成/prd.md
   - TDD 阶段
 ---
@@ -24,8 +24,9 @@ consumer:
 
 > **版本**：v1.0（5 个 L2 全详细定义完备，待 review）
 > **定位**：L1-06 的独立 PRD · 承担 "3 层分层管理 + 读 + 观察累积 + 晋升 + 检索+rerank" 全量职责
-> **严格遵循**：本 PRD **不得与** `docs/2-prd/scope.md §5.6` 冲突。如冲突以 scope 为准。
+> **严格遵循**：本 PRD **不得与** `docs/2-prd/L0/scope.md §5.6` 冲突。如冲突以 scope 为准。
 > **严格产品级**：本文不含算法 / 伪码 / 代码块 / YAML schema 字段级 / 状态机代码 / 配置参数表 / 数据结构字段定义。所有实现细节一律留给 `docs/3-1-Solution-Technical/L1-06/tech-design.md`。
+> **PM-14 项目上下文声明**：**3 层 KB 的作用域键是 `harnessFlowProjectId`**：session 层挂当前 Claude session（隐含）；project 层**严格按 project_id 物理隔离**（`projects/<project_id>/kb/`）；global 层**脱离 project 归属**（晋升后成为"无主知识"，可跨 project 复用）。默认 KB 读作用域 = 当前 project 层 + global 层（不读其他 project）。详见 `docs/2-prd/L0/projectModel.md` §9.1（L1-06 使用方式）+ §6.2（global 层例外规则）。
 
 ---
 

@@ -62,6 +62,17 @@ PMP 5 过程组 × TOGAF 9 ADM 阶段 = 双主干编织矩阵：
 - WP 级失败不污染整个项目，只回本 WP 重跑或 replan
 - 全部 WP 完成 = 整个项目交付
 
+### 2.4 全局灵魂：harnessFlowProjectId
+
+HarnessFlow 每承接一个超大软件项目时，在 S1 启动阶段生成一个**全局唯一、不可变**的 `harnessFlowProjectId` 作为项目"灵魂"：
+
+- **归属根键**：所有运行数据 / 决策 / 产出物 / 任务 / 测试 / 监督事件 / KB 条目都归属到这个 ID
+- **隔离边界**：多会话恢复、多项目并发（V2+）按此 ID 做强隔离——不同 project 的数据物理 + 逻辑都不互通
+- **生命周期锚**：ID 与项目主状态机（INITIALIZED → PLANNING → TDD_PLANNING → EXECUTING → CLOSING → CLOSED）1:1 对齐
+- **可审计根**：retro / archive / failure-archive / 跨 session 恢复全部以此 ID 为主键
+
+若缺失此概念，系统的"可追溯 / 可恢复 / 可审计 / 可分享"四大能力全部坍塌。**详见 `docs/2-prd/L0/projectModel.md`**。
+
 ---
 
 ## 三、输入 / 输出 / 过程
@@ -195,6 +206,7 @@ PMP 5 过程组 × TOGAF 9 ADM 阶段 = 双主干编织矩阵：
 | **KB 三层** | Global / Project / Session 知识库 |
 | **ADR** | Architecture Decision Record |
 | **五大纪律** | 规划 / 质量 / 拆解 / 检验 / 交付 |
+| **harnessFlowProjectId** | 项目全局灵魂 ID。所有数据归属根键 + 多会话 / 多项目隔离键。详见 `docs/2-prd/L0/projectModel.md` |
 
 ---
 

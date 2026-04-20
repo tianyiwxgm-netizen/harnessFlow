@@ -2,9 +2,9 @@
 doc_id: prd-plan-v0.2
 doc_type: plan
 parent_doc:
-  - docs/2-prd/scope.md
-  - docs/2-prd/flowOutInput.md
-  - docs/2-prd/businessFlow.md
+  - docs/2-prd/L0/scope.md
+  - docs/2-prd/L0/flowOutInput.md
+  - docs/2-prd/L0/businessFlow.md
 version: v0.2
 status: draft
 author: mixed
@@ -18,6 +18,27 @@ consumer:
 ---
 
 # HarnessFlow PRD 撰写完整计划（PRD Writing Plan）
+
+## 🎯 v0.3 PM-14 修补完成（2026-04-20 晚）
+
+**新增架构骨干概念**：`harnessFlowProjectId` 作为全局灵魂 + 多项目 / 多会话隔离键。
+
+**完成修补**：
+- ✅ 新建 `docs/2-prd/L0/projectModel.md`（~1200 行 · 产品级项目域模型 · 14 小节 + 2 附录）
+- ✅ HarnessFlowGoal.md 加 §2.4 全局灵魂章节 + 附录术语
+- ✅ scope.md 加 PM-14 业务模式 + §4.5 全局 PM 清单 + §4.6 衍生硬约束 + L1-02 / L1-09 In-scope 补充
+- ✅ businessFlow.md 加 BF-X-10 项目生命周期横切流（§6 横切流表扩 + 详细路径）
+- ✅ flowOutInput.md 加 §2.6 项目上下文规则
+- ✅ 10 个 L1 PRD 全部加 PM-14 项目上下文声明 banner（按各 L1 角色定制）
+- ✅ 5 份主文档（scope / businessFlow / flowOutInput / prdPlan / projectModel）移入 `docs/2-prd/L0/`
+- ✅ 所有交叉引用 sed 批量更新到新 L0/ 路径
+
+**影响面**：架构骨干 / 所有 L1 / 所有 IC 契约 / 所有持久化层。
+
+**下一步**：写 **L1 集成 PRD**（M6 · `docs/2-prd/L1集成/prd.md`）
+
+---
+
 
 > **用途**：规划 HarnessFlow 所有 PRD 文档的撰写任务 + 拆分环节 + 轮次估算 + 里程碑。
 > **严格遵守**：后续每一轮 PRD 撰写都按本计划推进，完成后回来勾掉对应条目。
@@ -93,10 +114,10 @@ consumer:
 | 文档 | 状态 | 规模 |
 |---|---|---|
 | `HarnessFlowGoal.md` | ✅ 冻结 v1.0 | 201 行 |
-| `docs/2-prd/businessFlow.md` | ✅ 冻结 v1.0 | 736 行 |
-| `docs/2-prd/scope.md` | ✅ 冻结 v1.0 | ~1900 行 |
-| `docs/2-prd/flowOutInput.md` | ✅ v0.2（PMP ITTO 风格，方法论级）| ~750 行 |
-| `docs/2-prd/prdPlan.md` | 🟡 本文件 v0.2 | - |
+| `docs/2-prd/L0/businessFlow.md` | ✅ 冻结 v1.0 | 736 行 |
+| `docs/2-prd/L0/scope.md` | ✅ 冻结 v1.0 | ~1900 行 |
+| `docs/2-prd/L0/flowOutInput.md` | ✅ v0.2（PMP ITTO 风格，方法论级）| ~750 行 |
+| `docs/2-prd/L0/prdPlan.md` | 🟡 本文件 v0.2 | - |
 | `docs/2-prd/L1-01主 Agent 决策循环/prd.md` | 🟡 v1.0 含 L3（需清洗）| 3398 行 → ~2000 |
 | `docs/2-prd/L1-02项目生命周期编排/prd.md` | 🟡 v1.0 含 L3（需清洗）| 3561 行 → ~2200 |
 | `docs/3-1-Solution-Technical/L1-01/tech-design.md` | ⏸ 待从 PRD 迁入 | ~1500 |
@@ -140,9 +161,9 @@ consumer:
 | 文档 | 路径 | 规模 | 状态 |
 |---|---|---|---|
 | Goal | `HarnessFlowGoal.md` | 201 行 | ✅ 冻结 v1.0 |
-| businessFlow | `docs/2-prd/businessFlow.md` | 736 行 | ✅ 冻结 v1.0 |
-| scope | `docs/2-prd/scope.md` | ~1900 行 | ✅ 冻结 v1.0（10 L1 全定义 + 集成） |
-| flowOutInput | `docs/2-prd/flowOutInput.md` | ~750 行 | ✅ v0.2 · PMP ITTO 方法论级 |
+| businessFlow | `docs/2-prd/L0/businessFlow.md` | 736 行 | ✅ 冻结 v1.0 |
+| scope | `docs/2-prd/L0/scope.md` | ~1900 行 | ✅ 冻结 v1.0（10 L1 全定义 + 集成） |
+| flowOutInput | `docs/2-prd/L0/flowOutInput.md` | ~750 行 | ✅ v0.2 · PMP ITTO 方法论级 |
 | L1-01 PRD | `docs/2-prd/L1-01主 Agent 决策循环/prd.md` | 3398 行 | 🟡 v1.0 含 L3（需清洗）|
 | L1-02 PRD | `docs/2-prd/L1-02项目生命周期编排/prd.md` | 3561 行 | 🟡 v1.0 含 L3（需清洗）|
 

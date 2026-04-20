@@ -3,8 +3,8 @@ doc_id: flow-out-input-spec-v0.2
 doc_type: io-spec
 parent_doc:
   - HarnessFlowGoal.md
-  - docs/2-prd/scope.md
-  - docs/2-prd/businessFlow.md
+  - docs/2-prd/L0/scope.md
+  - docs/2-prd/L0/businessFlow.md
 version: v0.2-methodology
 status: draft
 author: mixed
@@ -99,6 +99,23 @@ consumer:
 ### 2.5 输入完整性规则
 
 每个过程在启动时必须**输入完整**。缺输入 → 不能启动该过程（通过 Stage Gate 或前置检查拦截）。
+
+### 2.6 项目上下文规则（PM-14 · 新增）
+
+**所有产出物 / IC 通信 / 事件 / 审计都必须携带 `harnessFlowProjectId`**（除系统级 IC 显式标 `project_scope: "system"`）：
+
+- **frontmatter 必含**：`project_id` 或等价的归属字段（如 `traceability.project`）
+- **事件总线**：每条事件的根字段必含 `project_id`
+- **IC 调用**：首位参数或 context 对象中必含 `project_id`
+- **产出物落盘路径**：按 `projects/<project_id>/` 分支存储（L1-09 物理隔离）
+- **跨 project 引用**：必须**拷贝数据**（不做软链接），global 层 KB 除外
+
+**例外**（系统级 IC / 尚无 project 的时刻）：
+- 系统启动、尚未创建任何 project 时的 bootstrap 事件
+- 用户在 UI 点"创建新 project"这一刻的请求（project_id 本次请求生成）
+- 系统级健康检查 / 资源使用上报
+
+**详见** `docs/2-prd/L0/projectModel.md` §6（23 类归属清单）+ §10（20 条 IC 的 project_id 位置要求）。
 
 ---
 

@@ -3,8 +3,8 @@ doc_id: prd-l1-05-skill-subagent-v1.0
 doc_type: l1-prd
 parent_doc:
   - HarnessFlowGoal.md
-  - docs/2-prd/businessFlow.md
-  - docs/2-prd/scope.md#5.5
+  - docs/2-prd/L0/businessFlow.md
+  - docs/2-prd/L0/scope.md#5.5
 version: v1.0
 status: ready_for_review
 author: mixed
@@ -15,7 +15,7 @@ traceability:
   business_flow: [BF-L3-02, BF-L3-03, BF-L3-04, BF-X-07, BF-E-05, BF-E-09, BF-S4-02, BF-S5-01, BF-X-04]
   scope: [L1-05]
 consumer:
-  - docs/2-prd/flowOutInput.md#4.3
+  - docs/2-prd/L0/flowOutInput.md#4.3
   - docs/2-prd/L1集成/prd.md
   - docs/2-prd/L1-01主 Agent 决策循环/prd.md（IC-04/05 消费侧）
   - docs/2-prd/L1-04 Quality Loop/prd.md（verifier 子 Agent 委托）
@@ -28,8 +28,9 @@ consumer:
 
 > **版本**：v1.0（5 个 L2 产品级完备；L3 实现设计留给 `docs/3-1-Solution-Technical/L1-05/tech-design.md`）
 > **定位**：HarnessFlow 的**调度层 + 适配层** —— 把"主 Agent 要某个能力"的抽象请求翻译成对真实 skill / 子 Agent / 原子工具的调用，并在失败时走降级链；它是 Goal §2 所说"调度整个 Skill 生态的高阶调度器"的落地载体。
-> **严格遵循**：本 PRD **不得与** `docs/2-prd/scope.md §5.5` 冲突。如冲突以 scope 为准。
+> **严格遵循**：本 PRD **不得与** `docs/2-prd/L0/scope.md §5.5` 冲突。如冲突以 scope 为准。
 > **严格边界**：本 PRD 只描述"要做什么"（职责 / 边界 / 约束 / 禁止 / 必须 / 交互 / 验收）；"怎么做"（算法 / schema / 配置 / 状态机实现 / 子 Agent 进程模型）迁到 `docs/3-1-Solution-Technical/L1-05/tech-design.md`。
+> **PM-14 项目上下文声明**：**所有 Skill 调用 / 子 Agent 委托的 context 必须携带 `harnessFlowProjectId`**（PM-03 独立 session 不意味着可以丢 project_id —— 相反，委托时必须把 project_id 作为受限 context 的必填字段传给子 Agent）；异步结果回传时事件必带 project_id 以便路由回正确 project 的主 loop。详见 `docs/2-prd/L0/projectModel.md` §9.1（L1-05 使用 project_id 方式）。
 
 ---
 
