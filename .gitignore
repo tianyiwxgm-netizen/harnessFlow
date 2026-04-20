@@ -20,3 +20,7 @@ audit-reports/*.json
 
 # Keep .gitkeep if we ever add one
 !**/.gitkeep
+
+# UI runtime artifacts
+ui/.ui.pid
+ui/ui.log

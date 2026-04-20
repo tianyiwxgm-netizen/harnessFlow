@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>harnessFlow-ui — 任务管理</title>
+
+<!-- Vue 3 + Element Plus + marked.js from CDN (no npm install) -->
+<!-- Using vue.global.js (含 compiler) NOT .prod.js (后者没 compiler，in-DOM template 不工作) -->
+<link rel="stylesheet" href="https://unpkg.com/element-plus@2.7.8/dist/index.css" />
+<script src="https://unpkg.com/vue@3.4.38/dist/vue.global.js"></script>
+<script src="https://unpkg.com/element-plus@2.7.8/dist/index.full.min.js"></script>
+<script src="https://unpkg.com/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
+<script src="https://unpkg.com/marked@13.0.3/marked.min.js"></script>
+<!-- 移除 highlight.js（unpkg MIME 触发 chrome ORB → hljs undefined → Vue mount 阻断） -->
+<!-- marked 默认渲染 code block 不高亮即可（mock UI 无需语法高亮） -->
+
+<style>
+  body { margin: 0; font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif; }
+  #app { height: 100vh; }
+  .harness-header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+    color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px;
+  }
+  .harness-header h1 { margin: 0; font-size: 20px; font-weight: 500; }
+  .harness-header .subtitle { font-size: 13px; opacity: 0.85; }
+  .stats-strip { display: flex; gap: 32px; margin-left: auto; }
+  .stat { display: flex; flex-direction: column; align-items: center; }
+  .stat-value { font-size: 22px; font-weight: 600; }
+  .stat-label { font-size: 11px; opacity: 0.85; text-transform: uppercase; }
+  .main-layout { display: flex; height: calc(100vh - 72px); }
+  .sidebar { width: 320px; border-right: 1px solid #ebeef5; overflow-y: auto; background: #fafbfc; }
+  .content { flex: 1; overflow-y: auto; padding: 20px 32px; }
+  .task-card {
+    padding: 14px 16px; border-bottom: 1px solid #ebeef5; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .task-card:hover { background: #f0f4f8; }
+  .task-card.active { background: #e6f0fd; border-left: 3px solid #409eff; }
+  .task-title { font-size: 14px; font-weight: 500; color: #303133; margin-bottom: 4px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-meta { display: flex; gap: 8px; font-size: 11px; align-items: center; }
+  .task-id-small { color: #909399; font-family: Menlo, monospace; font-size: 10px;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .progress-mini { margin-top: 6px; height: 4px; background: #ebeef5; border-radius: 2px;
+                    overflow: hidden; }
+  .progress-mini-fill { height: 100%; background: #67c23a; transition: width 0.3s; }
+  .progress-mini-fill.paused { background: #e6a23c; }
+  .progress-mini-fill.failed { background: #f56c6c; }
+  .section-header { background: #f2f6fc; padding: 6px 16px; font-size: 11px; font-weight: 600;
+                     color: #606266; text-transform: uppercase; letter-spacing: 0.5px; }
+  .detail-header { margin-bottom: 20px; }
+  .detail-goal { background: #fefce8; border-left: 4px solid #f0c808; padding: 12px 16px;
+                  font-size: 13px; line-height: 1.6; margin-bottom: 16px; }
+  .detail-dod { background: #f0f9ff; border-left: 4px solid #409eff; padding: 10px 14px;
+                  font-size: 12px; font-family: Menlo, monospace; margin-bottom: 16px;
+                  overflow-x: auto; }
+  /* ========= 后台管理 styles ========= */
+  .admin-menu { padding: 4px 0; }
+  .admin-menu-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 18px; cursor: pointer; font-size: 13px;
+    border-left: 3px solid transparent; transition: all 0.15s;
+  }
+  .admin-menu-item:hover { background: #f0f4f8; }
+  .admin-menu-item.active {
+    background: #e6f0fd; border-left-color: #409eff; color: #409eff; font-weight: 600;
+  }
+  .admin-menu-badge { margin-left: auto; font-size: 11px; color: #909399; }
+  .admin-menu-sep {
+    height: 1px; background: #ebeef5; margin: 6px 14px;
+  }
+  .admin-menu-group {
+    padding: 10px 16px 4px; font-size: 11px; color: #909399;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .admin-section h2 { margin-top: 0; margin-bottom: 6px; font-size: 20px; color: #303133; }
+  .admin-section .admin-desc { color: #606266; font-size: 13px; margin-bottom: 16px; }
+  .admin-card {
+    background: #fff; border: 1px solid #e4e7ed; border-radius: 6px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .admin-card-head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    font-size: 14px; font-weight: 600; color: #303133;
+  }
+  .admin-card-body { font-size: 13px; line-height: 1.7; color: #606266; }
+  .admin-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .admin-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .admin-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .admin-matrix-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .admin-matrix-table th, .admin-matrix-table td {
+    border: 1px solid #e4e7ed; padding: 6px 8px; vertical-align: top;
+  }
+  .admin-matrix-table th { background: #f2f6fc; text-align: left; font-weight: 600; color: #606266; }
+  .admin-matrix-table td code { font-size: 11px; color: #409eff; }
+  .admin-chip {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; background: #ecf5ff; color: #409eff; margin: 2px 4px 2px 0;
+  }
+  .admin-red { background: #fef0f0; color: #f56c6c; }
+  .admin-yellow { background: #fdf6ec; color: #e6a23c; }
+  .admin-green { background: #f0f9eb; color: #67c23a; }
+  .admin-status-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    vertical-align: middle; margin-right: 4px;
+  }
+  .admin-status-dot.ok { background: #67c23a; }
+  .admin-status-dot.warn { background: #e6a23c; }
+  .admin-status-dot.fail { background: #f56c6c; }
+  .admin-kv-row {
+    display: flex; padding: 6px 0; border-bottom: 1px dashed #ebeef5; font-size: 12px;
+  }
+  .admin-kv-row:last-child { border-bottom: none; }
+  .admin-kv-key { width: 160px; color: #909399; flex-shrink: 0; }
+  .admin-kv-val { flex: 1; color: #303133; }
+  .admin-bar {
+    height: 8px; background: #ebeef5; border-radius: 4px; overflow: hidden; margin-top: 4px;
+  }
+  .admin-bar-fill { height: 100%; background: #409eff; transition: width 0.3s; }
+  .admin-bar-fill.success { background: #67c23a; }
+  .admin-bar-fill.warn { background: #e6a23c; }
+  .admin-bar-fill.fail { background: #f56c6c; }
+  .admin-btn-header {
+    margin-left: 12px; background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.3); color: #fff;
+  }
+  .admin-btn-header:hover { background: rgba(255,255,255,0.25); }
+
+  .tabs-area { margin-top: 16px; }
+  /* 11 tabs fit one row — 收紧 padding + 允许换行兜底 */
+  .tabs-area :deep(.el-tabs__nav-wrap),
+  .tabs-area .el-tabs__nav-wrap { overflow: visible !important; }
+  .tabs-area .el-tabs__nav { flex-wrap: wrap !important; white-space: normal !important; }
+  .tabs-area .el-tabs__item { padding: 0 10px !important; font-size: 13px; height: 36px; line-height: 36px; }
+  .tabs-area .el-tabs__nav-next, .tabs-area .el-tabs__nav-prev { display: none !important; }
+  .timeline-state { font-family: Menlo, monospace; font-size: 11px; }
+  .timeline-trigger { color: #909399; font-size: 11px; margin-left: 12px; }
+  .artifact-row { padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+                  cursor: pointer; font-size: 12px; display: flex; gap: 10px; align-items: center; }
+  .artifact-row:hover { background: #f5f7fa; }
+  .artifact-kind {
+    font-size: 10px; padding: 2px 8px; border-radius: 3px;
+    background: #e4e7ed; color: #606266; font-weight: 500;
+    text-transform: uppercase;
+  }
+  .artifact-kind.retro { background: #fef0f0; color: #f56c6c; }
+  .artifact-kind.spec { background: #ecf5ff; color: #409eff; }
+  .artifact-kind.plan { background: #f0f9eb; color: #67c23a; }
+  .artifact-kind.research { background: #fdf6ec; color: #e6a23c; }
+  .artifact-kind.verifier_report { background: #f2e6ff; color: #8a2be2; }
+  .md-renderer { padding: 16px 24px; background: #fff; border-radius: 4px;
+                  border: 1px solid #ebeef5; max-height: 70vh; overflow-y: auto; }
+  .md-renderer h1 { border-bottom: 2px solid #ebeef5; padding-bottom: 6px; font-size: 20px; }
+  .md-renderer h2 { border-bottom: 1px solid #ebeef5; padding-bottom: 4px; font-size: 16px; }
+  .md-renderer code { background: #f5f7fa; padding: 2px 6px; border-radius: 3px;
+                       font-family: Menlo, monospace; font-size: 12px; }
+  .md-renderer pre { background: #f5f7fa; padding: 12px 16px; border-radius: 4px;
+                      overflow-x: auto; }
+  .md-renderer pre code { background: transparent; padding: 0; }
+  .md-renderer table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  .md-renderer th, .md-renderer td { border: 1px solid #ebeef5; padding: 6px 12px; font-size: 13px; }
+  .md-renderer th { background: #f5f7fa; }
+  .kb-card { border: 1px solid #ebeef5; border-radius: 6px; padding: 14px 18px;
+              margin-bottom: 12px; }
+  .kb-card .title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .kb-card .desc { color: #606266; font-size: 13px; line-height: 1.6; margin-bottom: 8px; }
+  .kb-card .meta { display: flex; gap: 12px; font-size: 11px; color: #909399; align-items: center; }
+  .scope-global { background: #409eff; color: #fff; }
+  .scope-project { background: #67c23a; color: #fff; }
+  .scope-session { background: #e6a23c; color: #fff; }
+  .status-active { background: #67c23a; }
+  .status-deprecated { background: #909399; }
+  .status-expired { background: #f56c6c; }
+  .empty-hint { color: #909399; font-size: 14px; text-align: center; padding: 40px 0; }
+  .loop-item { padding: 10px 14px; border-left: 3px solid #409eff; background: #f0f9ff;
+                margin-bottom: 8px; font-size: 12px; }
+  .loop-item .trigger { font-weight: 600; }
+  .tdd-case { padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+              display: flex; gap: 12px; font-size: 12px; align-items: center; }
+  .tdd-pass { color: #67c23a; }
+  .tdd-fail { color: #f56c6c; }
+  .tdd-pending { color: #909399; }
+  .delivery-grid { display: grid; grid-template-columns: 1fr 1fr;
+                    gap: 12px 24px; font-size: 13px; }
+  .delivery-grid dt { color: #909399; margin-bottom: 4px; font-size: 11px;
+                       text-transform: uppercase; letter-spacing: 0.5px; }
+  .delivery-grid dd { margin: 0 0 12px 0; font-family: Menlo, monospace; font-size: 12px;
+                       color: #303133; }
+  .plan-step { display: flex; gap: 12px; padding: 12px 14px; border-left: 3px solid #ebeef5;
+                margin-bottom: 6px; background: #fafbfc; border-radius: 0 4px 4px 0; }
+  .plan-step:hover { background: #f0f4f8; }
+  .plan-step-icon { flex-shrink: 0; padding-top: 2px; }
+  .plan-step-body { flex: 1; }
+  .plan-step-head { display: flex; align-items: center; margin-bottom: 4px; }
+  .plan-step-stage { font-family: Menlo, monospace; font-weight: 600; color: #303133; font-size: 13px; }
+  .plan-step-label { font-size: 13px; color: #606266; margin-top: 2px; }
+  .plan-step-trigger { font-size: 11px; color: #909399; margin-top: 3px; font-family: Menlo, monospace; }
+  .supv-event { display: flex; gap: 10px; align-items: center; padding: 8px 14px;
+                 font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .supv-badge { padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600;
+                  min-width: 46px; text-align: center; }
+  .supv-kind { font-family: Menlo, monospace; color: #303133; font-size: 11px; }
+  .supv-code { font-family: Menlo, monospace; color: #409eff; font-size: 11px; }
+  .supv-info .supv-badge { background: #ecf5ff; color: #409eff; }
+  .supv-warn .supv-badge { background: #fdf6ec; color: #e6a23c; }
+  .supv-block .supv-badge { background: #fef0f0; color: #f56c6c; }
+
+  /* DoD standards */
+  .dod-standard { display: flex; gap: 10px; align-items: center; padding: 8px 12px;
+                    border-bottom: 1px dashed #ebeef5; }
+  .dod-standard code { background: #f5f7fa; padding: 3px 10px; border-radius: 4px;
+                        font-size: 12px; color: #303133; flex: 1; }
+
+  /* WBS */
+  .wbs-pg { border-left: 5px solid #ebeef5; padding: 12px 16px; margin-bottom: 12px;
+              background: #fafbfc; border-radius: 0 6px 6px 0; }
+  .wbs-pg:hover { background: #f0f4f8; }
+  .wbs-pg-head { display: flex; align-items: center; margin-bottom: 8px; }
+  .wbs-pg-name { font-weight: 600; font-size: 14px; color: #303133; }
+  .wbs-children { padding-left: 14px; }
+  .wbs-step { display: flex; gap: 8px; align-items: center; padding: 5px 0; font-size: 13px; }
+  .wbs-step-name { font-family: Menlo, monospace; color: #303133; }
+
+  /* PMP 10 领域 grid */
+  .pmp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 8px 0; }
+  .pmp-card { border: 1px solid #ebeef5; border-radius: 6px; padding: 12px 14px;
+                background: #fafbfc; }
+  .pmp-card.pmp-green { border-left: 4px solid #67c23a; }
+  .pmp-card.pmp-yellow { border-left: 4px solid #e6a23c; background: #fefaf0; }
+  .pmp-card.pmp-red { border-left: 4px solid #f56c6c; background: #fef5f5; }
+  .pmp-card-head { display: flex; align-items: center; margin-bottom: 4px; }
+  .pmp-card-title { font-size: 13px; font-weight: 600; color: #303133; }
+  .pmp-health-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+                     margin-left: auto; }
+  .pmp-health-dot.dot-green { background: #67c23a; }
+  .pmp-health-dot.dot-yellow { background: #e6a23c; }
+  .pmp-health-dot.dot-red { background: #f56c6c; }
+  .pmp-card-desc { font-size: 11px; color: #909399; margin-bottom: 6px; }
+  .pmp-card-body { font-size: 12px; }
+  .pmp-metric { display: flex; justify-content: space-between; padding: 2px 0; }
+  .pmp-metric-key { color: #606266; font-family: Menlo, monospace; font-size: 11px; }
+  .pmp-metric-val { color: #303133; font-weight: 500; }
+
+  /* 项目资料库 */
+  .lib-row { display: flex; gap: 12px; align-items: center; padding: 10px 14px;
+              border-bottom: 1px solid #f0f0f0; font-size: 13px; cursor: pointer; }
+  .lib-row:hover { background: #f5f7fa; }
+  .artifact-kind.repo { background: #303133; color: #fff; }
+  .artifact-kind.ui { background: #409eff; color: #fff; }
+  .artifact-kind.process { background: #8a2be2; color: #fff; }
+  .artifact-kind.research { background: #fdf6ec; color: #e6a23c; }
+  .artifact-kind.spec { background: #ecf5ff; color: #409eff; }
+  .artifact-kind.retro { background: #fef0f0; color: #f56c6c; }
+  .artifact-kind.plan { background: #f0f9eb; color: #67c23a; }
+  .artifact-kind.verifier_report { background: #f2e6ff; color: #8a2be2; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="harness-header">
+    <el-icon :size="28" color="#4cd4ff"><Grid /></el-icon>
+    <div>
+      <h1>HarnessFlow</h1>
+      <div class="subtitle">{{ projectFilterLabel }} · 任务管理 + 知识库</div>
+    </div>
+    <div class="stats-strip">
+      <div class="stat"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">Total</div></div>
+      <div class="stat"><div class="stat-value">{{ stats.active }}</div><div class="stat-label">Active</div></div>
+      <div class="stat"><div class="stat-value">{{ stats.paused }}</div><div class="stat-label">Paused</div></div>
+      <div class="stat"><div class="stat-value">{{ stats.closed }}</div><div class="stat-label">Closed</div></div>
+      <div class="stat"><div class="stat-value">{{ stats.success_rate_pct }}%</div><div class="stat-label">Success</div></div>
+    </div>
+    <el-button @click="toggleAdmin" size="small" class="admin-btn-header">
+      {{ currentView === 'admin' ? '← 返回任务视图' : '⚙️ 后台管理' }}
+    </el-button>
+  </div>
+
+  <div class="main-layout">
+    <div class="sidebar">
+      <div style="padding: 12px 16px;" v-if="currentView !== 'admin'">
+        <el-input v-model="searchQuery" placeholder="搜索 task_id / goal / state" clearable
+                   size="small" prefix-icon="Search"></el-input>
+        <el-select v-model="currentView" size="small" style="width:100%; margin-top:8px;">
+          <el-option label="📋 任务列表" value="tasks"></el-option>
+          <el-option label="🧠 知识库" value="kb"></el-option>
+          <el-option label="📁 项目" value="projects"></el-option>
+        </el-select>
+      </div>
+
+      <template v-if="currentView === 'admin'">
+        <div class="admin-menu-group">执行引擎</div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'engine_config' }" @click="adminSection = 'engine_config'">
+          <span>⚙️</span><span>执行引擎配置</span>
+          <span class="admin-menu-badge">{{ (adminData.engine_config || {}).routes ? adminData.engine_config.routes.length + '路线' : '' }}</span>
+        </div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'engine_instances' }" @click="adminSection = 'engine_instances'">
+          <span>🚀</span><span>执行实例</span>
+          <span class="admin-menu-badge">{{ (adminData.engine_instances || {}).total || 0 }}</span>
+        </div>
+
+        <div class="admin-menu-sep"></div>
+        <div class="admin-menu-group">知识与监督</div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'knowledge_base' }" @click="adminSection = 'knowledge_base'">
+          <span>📚</span><span>知识库</span>
+          <span class="admin-menu-badge">{{ (adminData.knowledge_base || {}).total_entries || 0 }}</span>
+        </div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'supervisor_agent' }" @click="adminSection = 'supervisor_agent'">
+          <span>🛡️</span><span>Harness 监督智能体</span>
+          <span class="admin-menu-badge" style="color:#67c23a;">● online</span>
+        </div>
+
+        <div class="admin-menu-sep"></div>
+        <div class="admin-menu-group">注册表</div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'primitives_registry' }" @click="adminSection = 'primitives_registry'">
+          <span>🔬</span><span>Verifier 原语库</span>
+          <span class="admin-menu-badge">{{ (adminData.primitives_registry || {}).count || 0 }}</span>
+        </div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'subagents_registry' }" @click="adminSection = 'subagents_registry'">
+          <span>🤖</span><span>Subagents 注册表</span>
+          <span class="admin-menu-badge">{{ (adminData.subagents_registry || {}).count || 0 }}</span>
+        </div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'skills_registry' }" @click="adminSection = 'skills_registry'">
+          <span>🧩</span><span>Skills 调用图</span>
+          <span class="admin-menu-badge">{{ (adminData.skills_registry || {}).count || 0 }}</span>
+        </div>
+
+        <div class="admin-menu-sep"></div>
+        <div class="admin-menu-group">观测与诊断</div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'analytics' }" @click="adminSection = 'analytics'">
+          <span>📊</span><span>统计分析</span>
+        </div>
+        <div class="admin-menu-item" :class="{ active: adminSection === 'diagnostics' }" @click="adminSection = 'diagnostics'">
+          <span>🔍</span><span>系统诊断</span>
+        </div>
+      </template>
+
+      <template v-if="currentView === 'tasks'">
+        <template v-for="group in groupedTasks" :key="group.label">
+          <div class="section-header" v-if="group.items.length > 0">
+            {{ group.label }} ({{ group.items.length }})
+          </div>
+          <div class="task-card" v-for="t in group.items" :key="t.task_id"
+                :class="{ active: selectedTaskId === t.task_id }"
+                @click="selectTask(t.task_id)">
+            <div class="task-title">{{ (t.goal_text || t.initial_user_input || t.task_id) }}</div>
+            <div class="task-meta">
+              <el-tag size="small" :type="stateTagType(t.current_state)">{{ t.current_state }}</el-tag>
+              <el-tag size="small" effect="plain">{{ t.route_id || '?' }}</el-tag>
+              <span style="color:#909399">{{ t.task_type || '' }}</span>
+              <span v-if="t._scope !== 'main'" style="color:#e6a23c; font-weight:600">{{ t._scope }}</span>
+            </div>
+            <div class="task-id-small">{{ t.task_id }}</div>
+            <div class="progress-mini">
+              <div class="progress-mini-fill"
+                    :class="progressFillClass(t)"
+                    :style="{ width: (t.progress_percentage || 0) + '%' }"></div>
+            </div>
+          </div>
+        </template>
+      </template>
+
+      <template v-else-if="currentView === 'kb'">
+        <div style="padding: 12px 16px;">
+          <el-select v-model="kbKindFilter" size="small" placeholder="kind" clearable
+                      style="width: 100%; margin-bottom: 6px;">
+            <el-option label="反模式" value="anti_pattern"></el-option>
+            <el-option label="有效组合" value="effective_combo"></el-option>
+            <el-option label="外部引用" value="external_ref"></el-option>
+            <el-option label="假完成陷阱" value="trap"></el-option>
+          </el-select>
+          <el-select v-model="kbScopeFilter" size="small" placeholder="scope" clearable
+                      style="width: 100%;">
+            <el-option label="全局" value="global"></el-option>
+            <el-option label="项目" value="project"></el-option>
+            <el-option label="会话" value="session"></el-option>
+          </el-select>
+        </div>
+      </template>
+
+      <template v-else-if="currentView === 'projects'">
+        <div class="task-card" v-for="p in projects" :key="p.project_id">
+          <div class="task-title">{{ p.name }}</div>
+          <div style="font-size: 12px; color: #909399; margin-top: 4px;">{{ p.domain }}</div>
+          <div style="font-size: 11px; margin-top: 6px;">
+            <el-tag size="small" effect="plain">{{ p.anchor_mode }}</el-tag>
+            <span style="margin-left: 8px;">🔗 {{ p.linked_repos.length }} repo</span>
+            <span style="margin-left: 8px;">📋 {{ p.task_count }} task</span>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <div class="content">
+
+      <template v-if="currentView === 'tasks' && detail">
+        <div class="detail-header">
+          <h2 style="margin:0 0 6px 0; font-size: 18px; line-height: 1.5; color: #303133;">
+            {{ (detail._derived || {}).summary || detail.initial_user_input || detail.task_id }}
+          </h2>
+          <div style="color:#909399; font-size:11px; font-family:Menlo,monospace;">{{ detail.task_id }}</div>
+          <div style="margin-top:10px;">
+            <el-tag :type="stateTagType(detail.current_state)">{{ detail.current_state }}</el-tag>
+            <el-tag type="info" effect="plain" style="margin-left:6px;">route {{ detail.route_id || '?' }}</el-tag>
+            <el-tag type="info" effect="plain" style="margin-left:6px;">{{ detail.size }}</el-tag>
+            <el-tag :type="riskType(detail.risk)" effect="plain" style="margin-left:6px;">{{ detail.risk }}</el-tag>
+            <el-tag v-if="detail._scope !== 'main'" type="warning" style="margin-left:6px;">{{ detail._scope }}</el-tag>
+            <el-tag :type="healthTagType(((detail._derived || {}).supervision || {}).health)" style="margin-left:6px;">
+              health: {{ ((detail._derived || {}).supervision || {}).health || 'unknown' }}
+            </el-tag>
+            <span style="margin-left:16px; font-size:12px; color:#606266;">进度 {{ detail.progress_percentage || 0 }}%</span>
+          </div>
+        </div>
+
+        <el-tabs v-model="activeTab" class="tabs-area">
+          <el-tab-pane name="delivery_goals">
+            <template #label>
+              <span>📘 项目交付目标</span>
+              <el-popover placement="bottom-start" :width="460" trigger="click" @click.stop>
+                <template #reference>
+                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
+                </template>
+                <div style="font-size:13px; line-height:1.7;">
+                  <strong>📘 项目交付目标</strong><br/>
+                  用 100-2000 字说明整个项目的<strong>整体目标</strong>。从初始提示词或相关文档提取，是实现的最终结果。<br/><br/>
+                  <strong>例</strong>：产出交付 1 个从 0 到 1 可生产视频的流水线页面；<strong>交付标准</strong>是可以自动生成 AI 视频。<br/><br/>
+                  <em style="color:#606266;">对应项目启动阶段的「项目章程」；是后续范围 / WBS / 监督的锚。</em>
+                </div>
+              </el-popover>
+            </template>
+
+            <div class="section-header">项目交付目标（完整描述 {{ ((detail._derived || {}).delivery_goal || {}).description_length || 0 }} 字）</div>
+            <div class="detail-goal" style="max-height: 280px; overflow-y: auto;">
+              {{ ((detail._derived || {}).delivery_goal || {}).description || detail.initial_user_input || '—' }}
+            </div>
+
+            <div class="section-header" style="margin-top:16px;">📐 交付标准（Definition of Done, 机器可 eval）</div>
+            <div v-if="(((detail._derived || {}).delivery_goal || {}).standards || []).length">
+              <div class="dod-standard" v-for="(s, i) in detail._derived.delivery_goal.standards" :key="'dod-' + i">
+                <el-icon color="#67c23a"><CircleCheck /></el-icon>
+                <code>{{ s }}</code>
+              </div>
+            </div>
+            <div v-else class="empty-hint">未拆解交付标准</div>
+
+            <div class="section-header" style="margin-top:16px;">📊 衡量参数</div>
+            <dl class="delivery-grid">
+              <dt>size</dt><dd>{{ detail.size }}</dd>
+              <dt>task_type</dt><dd>{{ detail.task_type }}</dd>
+              <dt>risk</dt><dd>{{ detail.risk }}</dd>
+              <dt>route</dt><dd>{{ detail.route_id || detail.route }}</dd>
+              <dt>expected artifacts</dt><dd>{{ (((detail._derived || {}).delivery_goal || {}).measurements || {}).expected_artifacts_count }}</dd>
+              <dt>final outcome</dt><dd>{{ (((detail._derived || {}).delivery_goal || {}).measurements || {}).final_outcome }}</dd>
+            </dl>
+
+            <div class="section-header" style="margin-top:16px;">💬 初始提示词</div>
+            <div style="padding:10px 14px; font-size:12px; color:#606266; font-style:italic; background:#f5f7fa; border-radius:4px;">
+              {{ ((detail._derived || {}).delivery_goal || {}).user_initial_prompt || '—' }}
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane name="scope">
+            <template #label>
+              <span>📏 项目范围</span>
+              <el-popover placement="bottom-start" :width="460" trigger="click" @click.stop>
+                <template #reference>
+                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
+                </template>
+                <div style="font-size:13px; line-height:1.7;">
+                  <strong>📏 项目范围</strong><br/>
+                  围绕交付目标要做的<strong>所有内容/功能</strong>。<br/><br/>
+                  <strong>例</strong>：视频知识库、视频生产流水线、脚本管理 等。<br/><br/>
+                  必须明确<strong>包含什么 + 不包含什么（Non-goal）</strong>，防 scope creep。
+                  <br/><em style="color:#606266;">对应项目规划阶段的「范围管理计划」。</em>
+                </div>
+              </el-popover>
+            </template>
+
+            <div class="section-header">三维 + 路线</div>
+            <div style="padding:10px 14px;">
+              <el-tag size="large" type="info">size: {{ (((detail._derived || {}).scope || {}).dimensions || {}).size }}</el-tag>
+              <el-tag size="large" type="info" style="margin-left:8px;">type: {{ (((detail._derived || {}).scope || {}).dimensions || {}).task_type }}</el-tag>
+              <el-tag size="large" :type="riskType(detail.risk)" style="margin-left:8px;">risk: {{ (((detail._derived || {}).scope || {}).dimensions || {}).risk }}</el-tag>
+              <el-tag size="large" type="primary" style="margin-left:8px;">route: {{ (((detail._derived || {}).scope || {}).dimensions || {}).route }}</el-tag>
+            </div>
+
+            <div class="section-header" style="margin-top:12px;">✅ 包含（In-Scope）</div>
+            <div style="padding:10px 14px; font-size:13px; line-height:1.7;">
+              {{ (((detail._derived || {}).scope || {}).included || []).join(' · ') || '—' }}
+            </div>
+
+            <div class="section-header" style="margin-top:12px;">❌ 不包含（Non-goal / Out-of-Scope）</div>
+            <ul v-if="(((detail._derived || {}).scope || {}).excluded || []).length"
+                 style="padding:10px 24px; font-size:13px; line-height:1.8; color:#606266;">
+              <li v-for="(x, i) in detail._derived.scope.excluded" :key="'ex-' + i">{{ x }}</li>
+            </ul>
+            <div v-else class="empty-hint">未显式声明 Non-goal（建议补，防 scope creep）</div>
+
+            <div class="section-header" style="margin-top:12px;">🎯 完整 Goal Anchor（可验证 sha256 锁）</div>
+            <div class="detail-goal" v-if="detail.goal_anchor && detail.goal_anchor.text">
+              <strong>sha256:</strong> <code>{{ (detail.goal_anchor.hash || '').slice(0, 16) }}…</code><br/>
+              <div style="margin-top:6px; max-height:240px; overflow-y:auto;">{{ detail.goal_anchor.text }}</div>
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane name="project_library">
+            <template #label>
+              <span>📖 项目资料库</span>
+              <el-popover placement="bottom-start" :width="440" trigger="click" @click.stop>
+                <template #reference>
+                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
+                </template>
+                <div style="font-size:13px; line-height:1.7;">
+                  <strong>📖 项目资料库（Project Knowledge Repository）</strong><br/>
+                  围绕整个项目的<strong>资料集合</strong>：仓库、文档、UI、过程文档、进度 等。
+                  跨 session 长期保留，作为新任务启动时的 context 注入。
+                </div>
+              </el-popover>
+            </template>
+
+            <div class="section-header">🗂 关联仓库（{{ (((detail._derived || {}).project_library || {}).repos || []).length }}）</div>
+            <div v-for="(r, i) in ((detail._derived || {}).project_library || {}).repos || []" :key="'repo-' + i"
+                  class="lib-row">
+              <span class="artifact-kind repo">repo</span>
+              <strong>{{ r.name }}</strong>
+              <a :href="r.url" target="_blank" style="color:#409eff;">{{ r.url }}</a>
+              <span style="color:#909399; font-family:Menlo,monospace; font-size:11px;">branch: {{ r.branch }}</span>
+              <span v-if="r.commit && r.commit !== '—'" style="color:#606266; font-family:Menlo,monospace; font-size:11px;">@ {{ r.commit.slice(0,8) }}</span>
+              <span style="margin-left:auto; font-size:11px; color:#606266;">{{ r.role }}</span>
+            </div>
+
+            <div class="section-header" style="margin-top:16px;">📄 文档（{{ (((detail._derived || {}).project_library || {}).docs || []).length }}）</div>
+            <div class="lib-row" v-for="(d, i) in ((detail._derived || {}).project_library || {}).docs || []" :key="'doc-' + i"
+                  @click="previewMd(d.local_path)">
+              <span class="artifact-kind" :class="d.type">{{ d.type }}</span>
+              <strong>{{ d.name }}</strong>
+              <span style="color:#909399; font-size:11px; font-family:Menlo,monospace;">{{ d.local_path }}</span>
+              <span style="margin-left:auto; font-size:11px; color:#606266;">{{ d.size_bytes }} bytes</span>
+              <el-icon><View /></el-icon>
+            </div>
+            <div v-if="!(((detail._derived || {}).project_library || {}).docs || []).length" class="empty-hint">无关联文档</div>
+
+            <div class="section-header" style="margin-top:16px;">🖥️ UI / Web 资源</div>
+            <div class="lib-row" v-for="(u, i) in ((detail._derived || {}).project_library || {}).ui || []" :key="'ui-' + i">
+              <span class="artifact-kind ui">ui</span>
+              <strong>{{ u.name }}</strong>
+              <a :href="u.url" target="_blank" style="color:#409eff;">{{ u.url }}</a>
+              <span style="margin-left:auto; font-size:11px; color:#606266;">{{ u.type }}</span>
+            </div>
+
+            <div class="section-header" style="margin-top:16px;">📋 过程文档</div>
+            <div class="lib-row" v-for="(p, i) in ((detail._derived || {}).project_library || {}).process_docs || []" :key="'pd-' + i"
+                  @click="previewMd(p.path)">
+              <span class="artifact-kind process">{{ p.kind }}</span>
+              <strong>{{ p.path }}</strong>
+              <span style="margin-left:auto; font-size:11px; color:#606266;">{{ p.description }}</span>
+              <el-icon><View /></el-icon>
+            </div>
+
+            <div class="section-header" style="margin-top:16px;">🔗 本任务引用的 KB 条目（{{ (detail.knowledge_refs || []).length }}）</div>
+            <div class="artifact-row" v-for="(r, i) in (detail.knowledge_refs || [])" :key="'kr-' + i"
+                  @click="jumpToKb(r.ref)">
+              <span class="artifact-kind" :class="'kb-' + r.kind">{{ r.kind }}</span>
+              <strong>{{ r.ref }}</strong>
+              <span style="color:#909399;">@{{ r.used_at_stage }}</span>
+              <span style="margin-left:auto; font-size:12px; color:#606266;">{{ r.why }}</span>
+            </div>
+            <div v-if="!(detail.knowledge_refs || []).length" class="empty-hint">无 KB 引用</div>
+          </el-tab-pane>
+
+          <el-tab-pane name="tdd">
+            <template #label>
+              <span>✅ TDD 质量</span>
+              <el-popover placement="bottom-start" :width="420" trigger="click" @click.stop>
+                <template #reference>
+                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
+                </template>
+                <div style="font-size:13px; line-height:1.7;">
+                  <strong>✅ TDD 质量</strong><br/>
+                  测试用例 + 运行结果 + 覆盖率 + flaky。<br/>
+                  所有 case PASS = 质量门放行。<br/>
+                  <em style="color:#606266;">对应项目规划与执行阶段的质量计划与控制。</em>
+                </div>
+              </el-popover>
+            </template>
+            <div style="display:none;">_placeholder_tdd_label_</div>
+            <div class="section-header">TDD cases（{{ (detail.tdd_cases || []).length }}）</div>
+            <div class="tdd-case" v-for="(c, i) in (detail.tdd_cases || [])" :key="'tc-' + i">
+              <el-icon v-if="c.status === 'pass'" color="#67c23a"><CircleCheck /></el-icon>
+              <el-icon v-else-if="c.status === 'fail'" color="#f56c6c"><CircleClose /></el-icon>
+              <el-icon v-else color="#909399"><Clock /></el-icon>
+              <strong :class="'tdd-' + c.status">{{ c.name }}</strong>
+              <span style="color:#909399; font-family:Menlo, monospace; font-size:11px;">{{ c.target }}</span>
+              <span style="margin-left:auto; color:#909399; font-size:11px;">{{ c.primitive }}</span>
+            </div>
+            <div v-if="!(detail.tdd_cases || []).length" class="empty-hint">无 TDD case（来自 verifier_report.evidence_checks）</div>
+
+            <div class="section-header" style="margin-top:16px;">pytest 结果</div>
+            <div v-if="detail.test_results && detail.test_results.total > 0" style="padding: 16px 0;">
+              <el-statistic :value="detail.test_results.total" title="Total" style="display:inline-block; width:20%;" />
+              <el-statistic :value="detail.test_results.passed" title="Passed" style="display:inline-block; width:20%;" value-style="color: #67c23a" />
+              <el-statistic :value="detail.test_results.failed" title="Failed" style="display:inline-block; width:20%;" value-style="color: #f56c6c" />
+              <el-statistic :value="detail.test_results.skipped" title="Skipped" style="display:inline-block; width:20%;" value-style="color: #909399" />
+              <el-statistic :value="(detail.test_results.flaky_rerun || []).length" title="Flaky" style="display:inline-block; width:20%;" />
+            </div>
+            <div v-else class="empty-hint">无 pytest 数据</div>
+          </el-tab-pane>
+
+          <el-tab-pane name="monitoring">
+            <template #label>
+              <span style="color:#909399;">🛡️ Harness 监督</span>
+              <el-popover placement="bottom-start" :width="500" trigger="click" @click.stop>
+                <template #reference>
+                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
+                </template>
+                <div style="font-size:13px; line-height:1.7;">
+                  <strong>🛡️ Harness 监督（8 大 agent-harness 维度）</strong><br/>
+                  参考 LangSmith / Langfuse / AgentOps / Arize / Datadog AI Agents Console 行业主流 agent observability 平台：
+                  <ul style="padding-left:20px; margin:6px 0;">
+                    <li><strong>目标保真度</strong>：goal_anchor sha256 漂移 / CLAUDE.md 篡改</li>
+                    <li><strong>计划对齐</strong>：实际 state 序列 vs 路线骨架偏差</li>
+                    <li><strong>真完成质量</strong>：Verifier 通过率 / 三段证据链 / DoD 布尔 eval</li>
+                    <li><strong>红线与安全</strong>：3 红线 + 跨项目 scope drift</li>
+                    <li><strong>进度与节奏</strong>：耗时 / 工具密度 / 空闲比</li>
+                    <li><strong>成本与预算</strong>：token / $ / context 占用</li>
+                    <li><strong>重试与 Loop</strong>：retry / santa-loop / replan 循环</li>
+                    <li><strong>用户协作</strong>：打断 / 澄清 / 废问题</li>
+                  </ul>
+                </div>
+              </el-popover>
+            </template>
+
+            <div class="section-header">8 大监督维度 · 实时快照（行业对齐：LangSmith / Langfuse / AgentOps / Arize）</div>
+            <div class="pmp-grid">
+              <div v-for="(area, key) in (detail._derived || {}).monitoring || {}" :key="'pmp-' + key"
+                    class="pmp-card" :class="'pmp-' + (area.health || 'green')">
+                <div class="pmp-card-head">
+                  <span class="pmp-card-title">{{ area.label || key }}</span>
+                  <span class="pmp-health-dot" :class="'dot-' + (area.health || 'green')"></span>
+                </div>
+                <div class="pmp-card-desc">{{ area.desc || '' }}</div>
+                <div class="pmp-card-body">
+                  <template v-for="(v, mk) in area" :key="'m-' + mk">
+                    <div class="pmp-metric" v-if="!['label','desc','health'].includes(mk)">
+                      <span class="pmp-metric-key">{{ metricKeyCn[mk] || mk }}</span>
+                      <span class="pmp-metric-val">{{ Array.isArray(v) ? v.join(', ') : (v === null ? '—' : v) }}</span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane name="wbs">
+            <template #label>
+              <span>🔧 项目 WBS 工作包</span>
+              <el-popover placement="bottom-start" :width="460" trigger="click" @click.stop>
+                <template #reference>
+                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
+                </template>
+                <div style="font-size:13px; line-height:1.7;">
+                  <strong>🔧 WBS 工作包（Work Breakdown Structure）</strong><br/>
+                  围绕目标并交付范围拆解成分层工作包。<br/>
+                  从上到下最低分 <strong>5 级</strong>工作包，每个工作包建议 ≤ 8 小时 / 2 周。<br/><br/>
+                  <strong>常见类别</strong>：规划 / 方案 / 实现 / 实施 / 测试 / 运维。<br/>
+                  所有工作包完成 = 项目交付完成。<br/>
+                  <em style="color:#606266;">按 5 过程组（启动 / 规划 / 执行 / 监控 / 收尾）分组展示。</em>
+                </div>
+              </el-popover>
+            </template>
+
+            <div class="section-header">WBS 工作包树（{{ ((detail._derived || {}).wbs || []).length }} 个过程组 · 进度 {{ detail.progress_percentage || 0 }}%）</div>
+            <div v-if="((detail._derived || {}).wbs || []).length">
+              <div class="wbs-pg" v-for="(pg, i) in detail._derived.wbs" :key="'pg-' + i"
+                    :style="{ borderLeftColor: pg.color }">
+                <div class="wbs-pg-head">
+                  <span class="wbs-pg-name">{{ pg.name }}</span>
+                  <el-tag :type="pg.status === 'done' ? 'success' : (pg.status === 'in_progress' ? 'primary' : 'info')"
+                           size="small" style="margin-left:10px;">{{ pg.status }}</el-tag>
+                  <span style="margin-left:12px; font-size:11px; color:#909399;">
+                    {{ (pg.pkg_types || []).join(' · ') }}
+                  </span>
+                </div>
+                <div class="wbs-children">
+                  <div class="wbs-step" v-for="(c, j) in pg.children" :key="'wc-' + j">
+                    <el-icon v-if="c.status === 'done'" color="#67c23a" :size="14"><CircleCheck /></el-icon>
+                    <el-icon v-else-if="c.status === 'in_progress'" color="#409eff" :size="14"><Loading /></el-icon>
+                    <el-icon v-else color="#c0c4cc" :size="14"><Clock /></el-icon>
+                    <span class="wbs-step-name">{{ c.name }}</span>
+                    <el-tag size="small" :type="c.status === 'done' ? 'success' : (c.status === 'in_progress' ? 'primary' : 'info')"
+                             effect="plain" style="margin-left:6px;">{{ c.status }}</el-tag>
+                    <span v-if="c.timestamp" style="margin-left:auto; font-size:11px; color:#909399; font-family:Menlo,monospace;">
+                      {{ c.timestamp.slice(5, 16).replace('T', ' ') }}
+                    </span>
+                    <span v-if="(c.deliverables || []).length" style="margin-left:10px; font-size:11px; color:#8a2be2;">
+                      🧾 {{ c.deliverables.length }} 产出
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-hint">无 WBS（task_board 缺 state_history）</div>
+
+            <div class="section-header" style="margin-top:12px;">📌 WBS 分级 ambition</div>
+            <div style="padding:10px 14px; font-size:12px; color:#606266;">
+              v2 现实装 2 级（PMP 5 过程组 L1 + state L2）。v3 目标：自动从 skills_invoked / stage_artifacts 展开到 L3-L5 细节工作包。
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane label="⏱️ 执行时间轴" name="timeline">
+            <el-timeline>
+              <el-timeline-item v-for="(s, i) in (detail.state_history || [])" :key="i"
+                                 :type="stateTimelineType(s.state)" :timestamp="s.timestamp" placement="top">
+                <div class="timeline-state"><strong>{{ s.state }}</strong>
+                  <span class="timeline-trigger" v-if="s.trigger">← {{ s.trigger }}</span></div>
+                <div v-if="s.reason" style="color:#606266; font-size:12px; margin-top:3px;">{{ s.reason }}</div>
+              </el-timeline-item>
+            </el-timeline>
+          </el-tab-pane>
+
+          <el-tab-pane name="artifacts">
+            <template #label>
+              <span>📂 产出物链接</span>
+              <el-popover placement="bottom-start" :width="440" trigger="click" @click.stop>
+                <template #reference>
+                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
+                </template>
+                <div style="font-size:13px; line-height:1.7;">
+                  <strong>📂 产出物链接（Deliverables）</strong><br/>
+                  每个工作包的<strong>层级过程交付</strong>。<br/>
+                  <strong>不含代码细节</strong>；仅展示链接：仓库地址 + 分支 + 文档 URL / 下载地址。
+                </div>
+              </el-popover>
+            </template>
+
+            <div class="section-header">task-board.artifacts（{{ (detail.artifacts || []).length }} 项，仅链接 / 无代码）</div>
+            <div class="artifact-row" v-for="(a, i) in (detail.artifacts || [])" :key="'ta-' + i">
+              <span class="artifact-kind">{{ a.type || a.kind }}</span>
+              <span style="font-family:Menlo,monospace; font-size:12px;">{{ a.path }}</span>
+              <span style="color:#909399; margin-left:auto;">{{ a.note }}</span>
+            </div>
+            <div v-if="!(detail.artifacts || []).length" class="empty-hint">无 task-board.artifacts</div>
+
+            <div class="section-header" style="margin-top:16px;">文档文件（点击预览 md · 只读，不含源码）</div>
+            <div class="artifact-row" v-for="(f, i) in (detail._artifact_files || [])" :key="'af-' + i"
+                  @click="previewMd(f.path)">
+              <span class="artifact-kind" :class="f.kind">{{ f.kind }}</span>
+              <span>{{ f.name }}</span>
+              <span style="color:#909399; margin-left:auto;">{{ f.size_bytes }} bytes</span>
+              <el-icon><View /></el-icon>
+            </div>
+            <div v-if="!(detail._artifact_files || []).length" class="empty-hint">无关联文件</div>
+          </el-tab-pane>
+
+          <el-tab-pane label="🔄 Loop 历史" name="loop">
+            <div class="section-header">replan / santa-loop / retry-ladder 轨迹</div>
+            <div v-if="(detail.loop_history || []).length">
+              <div class="loop-item" v-for="(l, i) in detail.loop_history" :key="'lh-' + i">
+                <div><strong>iteration {{ l.iteration }}</strong> ·
+                     <el-tag size="small">{{ l.kind }}</el-tag>
+                     · outcome: <span :class="'tdd-' + l.outcome">{{ l.outcome }}</span></div>
+                <div class="trigger">trigger: {{ l.trigger }}</div>
+                <div v-if="l.rev_from" style="font-size:11px; color:#909399;">rev {{ l.rev_from }} → rev {{ l.rev_to }}</div>
+              </div>
+            </div>
+            <div v-else class="empty-hint">无 loop / retry — 这次是一气呵成 🎉</div>
+          </el-tab-pane>
+
+          <el-tab-pane label="📦 交付 Bundle" name="delivery">
+            <dl class="delivery-grid">
+              <dt>Primary artifact</dt><dd>{{ (detail.delivery_bundle || {}).primary_artifact || '—' }}</dd>
+              <dt>Commit SHA</dt><dd>{{ (detail.delivery_bundle || {}).commit_sha || '—' }}</dd>
+              <dt>PR URL</dt><dd>{{ (detail.delivery_bundle || {}).pr_url || '—' }}</dd>
+              <dt>Retro link</dt><dd>{{ (detail.delivery_bundle || {}).retro_link || '—' }}</dd>
+              <dt>Archive entry</dt><dd>{{ (detail.delivery_bundle || {}).archive_entry_link || '—' }}</dd>
+              <dt>User consumable</dt>
+              <dd><el-tag :type="(detail.delivery_bundle || {}).user_consumable ? 'success' : 'warning'">
+                {{ (detail.delivery_bundle || {}).user_consumable ? 'Yes' : 'Pending' }}</el-tag></dd>
+              <dt>Delivered at</dt><dd>{{ (detail.delivery_bundle || {}).delivered_at || '—' }}</dd>
+              <dt>Final outcome</dt>
+              <dd><el-tag :type="detail.final_outcome === 'success' ? 'success' : 'info'">
+                {{ detail.final_outcome || 'in progress' }}</el-tag></dd>
+            </dl>
+          </el-tab-pane>
+
+          <el-tab-pane label="🔍 Verifier 证据链" name="verifier">
+            <div v-if="detail.verifier_report">
+              <el-tag :type="detail.verifier_report.overall === 'PASS' ? 'success' : 'danger'" size="large">
+                {{ detail.verifier_report.overall }}
+              </el-tag>
+              <span style="margin-left:12px; color:#606266;">
+                evaluator: {{ detail.verifier_report.evaluator }}
+              </span>
+
+              <div class="section-header" style="margin-top:14px;">三段证据</div>
+              <div style="padding: 12px 16px; font-size: 13px; line-height: 1.7;">
+                <div><strong>存在证据:</strong> {{ ((detail.verifier_report.three_segments || {}).existence_evidence) || '—' }}</div>
+                <div style="margin-top:8px;"><strong>行为证据:</strong> {{ ((detail.verifier_report.three_segments || {}).behavior_evidence) || '—' }}</div>
+                <div style="margin-top:8px;"><strong>质量证据:</strong> {{ ((detail.verifier_report.three_segments || {}).quality_evidence) || '—' }}</div>
+              </div>
+            </div>
+            <div v-else class="empty-hint">暂无 verifier_report</div>
+          </el-tab-pane>
+        </el-tabs>
+      </template>
+
+      <template v-else-if="currentView === 'tasks' && !detail">
+        <div class="empty-hint">← 从左侧选择一个任务查看详情</div>
+      </template>
+
+      <template v-else-if="currentView === 'kb'">
+        <h2 style="margin-top:0;">🧠 知识库</h2>
+        <div style="color:#606266; margin-bottom:16px; font-size:13px;">
+          跨任务聚合产出 · 三层：Global / Project / Session ·
+          entry count: {{ filteredKb.length }}
+        </div>
+        <div v-for="e in filteredKb" :key="e.id" class="kb-card">
+          <div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">
+            <el-tag :class="'scope-' + e.scope" :type="kbScopeType(e.scope)" size="small">{{ e.scope }}</el-tag>
+            <el-tag :type="kbKindType(e.kind)" size="small">{{ e.kind }}</el-tag>
+            <span style="font-family:Menlo, monospace; font-size:11px; color:#909399;">{{ e.id }}</span>
+            <span style="margin-left:auto; font-size:11px; color:#909399;">v{{ e.version }} · {{ e.status }}</span>
+          </div>
+          <div class="title">{{ e.title }}</div>
+          <div class="desc">{{ e.description }}</div>
+          <div class="meta">
+            <span>📊 observed {{ (e.evidence || {}).observed_count || 0 }} 次</span>
+            <span v-if="(e.evidence || {}).first_observed_in_task">
+              · first: <code>{{ (e.evidence || {}).first_observed_in_task.slice(0, 40) }}...</code>
+            </span>
+            <span v-if="e.applicable_context && e.applicable_context.route">
+              · routes: {{ e.applicable_context.route.join(', ') }}
+            </span>
+            <span v-if="(e.references || []).length">
+              · refs: {{ e.references.length }}
+            </span>
+          </div>
+          <div v-if="(e.references || []).length" style="margin-top: 8px; font-size: 12px;">
+            <el-link v-for="(r, i) in e.references" :key="i" :href="r.startsWith('http') ? r : '#'"
+                      :target="r.startsWith('http') ? '_blank' : undefined" type="primary"
+                      style="margin-right: 12px;">
+              {{ r }}
+            </el-link>
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="currentView === 'projects'">
+        <h2 style="margin-top:0;">📁 项目登记</h2>
+        <el-alert type="info" :closable="false" style="margin-bottom:16px;">
+          项目按"领域"定义，可以跨多个 git 仓库共享同一知识库。v2 后端实装后才能真新建。
+        </el-alert>
+        <div v-for="p in projects" :key="p.project_id" class="kb-card">
+          <div class="title">📁 {{ p.name }}</div>
+          <div class="desc">{{ p.domain }}</div>
+          <div class="meta">
+            <el-tag size="small">{{ p.anchor_mode }}</el-tag>
+            <span>ID: <code>{{ p.project_id }}</code></span>
+            <span>📋 {{ p.task_count }} tasks</span>
+          </div>
+          <div style="margin-top: 8px; font-size: 12px;">
+            <strong>Linked repos:</strong>
+            <el-tag v-for="(r, i) in p.linked_repos" :key="i" size="small" type="info"
+                     style="margin-left: 6px;">{{ r }}</el-tag>
+          </div>
+        </div>
+      </template>
+
+      <!-- ============ 后台管理 content ============ -->
+      <template v-else-if="currentView === 'admin'">
+
+        <!-- 1. 执行引擎配置 -->
+        <div class="admin-section" v-if="adminSection === 'engine_config' && adminData.engine_config">
+          <h2>⚙️ 执行引擎配置</h2>
+          <div class="admin-desc">6 路线骨架 / 20 个状态 / 42 cell routing matrix / 3 红线 / Stage Contract 模板 / Retry 阶梯。全部为 harnessFlow v1+v2 规格冻结配置。</div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🛤️ 6 条路线骨架（Route Skeleton）</div>
+            <div class="admin-grid-3">
+              <div v-for="r in adminData.engine_config.routes" :key="r.id"
+                    style="border:1px solid #e4e7ed; border-radius:6px; padding:10px 12px; background:#fafbfc;">
+                <div style="font-size:14px; font-weight:600; color:#303133;">{{ r.name }}</div>
+                <div style="margin:6px 0; font-size:11px;">
+                  <el-tag size="small" effect="plain">size: {{ r.size }}</el-tag>
+                  <el-tag size="small" effect="plain" style="margin-left:4px;">risk: {{ r.risk }}</el-tag>
+                </div>
+                <div style="font-size:12px; color:#606266; line-height:1.5; min-height:36px;">{{ r.description }}</div>
+                <div style="margin-top:6px; font-size:11px;">
+                  <strong>状态链：</strong>
+                  <span v-for="(s, i) in r.skeleton" :key="'rs-'+i">
+                    <code style="color:#409eff;">{{ s }}</code><span v-if="i < r.skeleton.length - 1"> → </span>
+                  </span>
+                </div>
+                <div style="margin-top:6px; font-size:11px;">
+                  <strong>Skill 链：</strong>
+                  <span v-for="(sk, j) in r.skill_chain" :key="'sk-'+j" class="admin-chip">{{ sk }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🗂 20 个状态定义</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:160px;">状态名</th><th style="width:80px;">阶段</th><th>描述</th><th style="width:200px;">允许的后继</th></tr>
+              <tr v-for="s in adminData.engine_config.states" :key="s.name">
+                <td><code style="color:#409eff;">{{ s.name }}</code></td>
+                <td><el-tag size="small" :type="s.phase === '终态' ? 'info' : (s.phase === '监督' ? 'warning' : '')">{{ s.phase }}</el-tag></td>
+                <td>{{ s.description }}</td>
+                <td><code v-for="(n, i) in s.allowed_next" :key="'an-'+i" style="font-size:10px; color:#606266;">{{ n }}<span v-if="i < s.allowed_next.length - 1">, </span></code></td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🔢 42 Cell Routing Matrix（6 路线 × 7 主阶段）</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:80px;">路线</th><th v-for="c in adminData.engine_config.routing_matrix.columns" :key="c">{{ c }}</th></tr>
+              <tr v-for="row in adminData.engine_config.routing_matrix.rows" :key="row.route">
+                <td><strong style="color:#409eff;">{{ row.route }}</strong></td>
+                <td v-for="(cell, idx) in row.cells" :key="'cell-'+row.route+'-'+idx">
+                  <code style="font-size:10px;">{{ cell }}</code>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🚨 3 条红线（Red Lines）</div>
+            <div class="admin-grid-3">
+              <div v-for="rl in adminData.engine_config.red_lines" :key="rl.id"
+                    style="border:1px solid #f56c6c; border-radius:6px; padding:10px 12px; background:#fef0f0;">
+                <div style="font-size:14px; font-weight:600; color:#f56c6c;">{{ rl.name }}</div>
+                <div style="font-size:11px; margin:4px 0;"><code>{{ rl.id }}</code> · <el-tag size="small" type="danger" effect="dark">{{ rl.severity }}</el-tag></div>
+                <div style="font-size:12px; color:#606266; line-height:1.5;">{{ rl.description }}</div>
+                <div class="admin-kv-row"><span class="admin-kv-key">阈值</span><span class="admin-kv-val">{{ rl.threshold }}</span></div>
+                <div class="admin-kv-row"><span class="admin-kv-key">默认动作</span><span class="admin-kv-val">{{ rl.default_action }}</span></div>
+                <div class="admin-kv-row"><span class="admin-kv-key">近期触发</span><span class="admin-kv-val">{{ rl.trigger_count_recent }} 次</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🔁 Retry 阶梯（L0-L3）</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:60px;">级别</th><th style="width:140px;">名称</th><th>触发条件</th><th>默认动作</th><th style="width:100px;">最大尝试</th></tr>
+              <tr v-for="l in adminData.engine_config.retry_ladder" :key="l.level">
+                <td><strong>{{ l.level }}</strong></td>
+                <td>{{ l.name }}</td>
+                <td>{{ l.trigger }}</td>
+                <td>{{ l.action }}</td>
+                <td>{{ l.max_attempts }}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">📜 Stage Contract DoD 模板</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:140px;">State</th><th>DoD 模板（predicate_eval 可直接跑）</th><th style="width:180px;">必要产出物</th></tr>
+              <tr v-for="sc in adminData.engine_config.stage_contracts_templates" :key="sc.state">
+                <td><code style="color:#409eff;">{{ sc.state }}</code></td>
+                <td style="font-family:Menlo,monospace; font-size:11px;">{{ sc.dod_template }}</td>
+                <td><span v-for="(a, i) in sc.required_artifacts" :key="'ra-'+i" class="admin-chip">{{ a }}</span></td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">⏱ Supervisor 触发策略</div>
+            <div v-for="m in adminData.engine_config.supervisor_trigger_policy.modes" :key="m.mode" class="admin-kv-row">
+              <span class="admin-kv-key">
+                <span class="admin-status-dot" :class="m.enabled ? 'ok' : 'warn'"></span>{{ m.mode }}
+              </span>
+              <span class="admin-kv-val">{{ m.description }}<span v-if="m.interval_sec"> · 间隔 {{ m.interval_sec }}s</span></span>
+            </div>
+            <div style="margin-top:8px; font-size:11px; color:#909399;">debounce: {{ adminData.engine_config.supervisor_trigger_policy.debounce_sec }}s（避免风暴）</div>
+          </div>
+        </div>
+
+        <!-- 2. 执行实例 -->
+        <div class="admin-section" v-else-if="adminSection === 'engine_instances' && adminData.engine_instances">
+          <h2>🚀 执行实例</h2>
+          <div class="admin-desc">当前 harness 实例下所有 task-board 运行视图，按状态分组。</div>
+
+          <div class="admin-grid-4" style="margin-bottom:16px;">
+            <div class="admin-card" style="text-align:center; margin:0;">
+              <div style="font-size:28px; font-weight:600; color:#409eff;">{{ adminData.engine_instances.counts.active }}</div>
+              <div style="font-size:12px; color:#606266;">🔥 进行中 (active)</div>
+            </div>
+            <div class="admin-card" style="text-align:center; margin:0;">
+              <div style="font-size:28px; font-weight:600; color:#e6a23c;">{{ adminData.engine_instances.counts.paused }}</div>
+              <div style="font-size:12px; color:#606266;">⏸ 暂停中 (paused)</div>
+            </div>
+            <div class="admin-card" style="text-align:center; margin:0;">
+              <div style="font-size:28px; font-weight:600; color:#67c23a;">{{ adminData.engine_instances.counts.closed_success }}</div>
+              <div style="font-size:12px; color:#606266;">✅ 已完成 (success)</div>
+            </div>
+            <div class="admin-card" style="text-align:center; margin:0;">
+              <div style="font-size:28px; font-weight:600; color:#f56c6c;">{{ adminData.engine_instances.counts.aborted + adminData.engine_instances.counts.closed_fail }}</div>
+              <div style="font-size:12px; color:#606266;">❌ 终止 (aborted/fail)</div>
+            </div>
+          </div>
+
+          <div class="admin-card" v-for="group in [
+              { key: 'active', label: '🔥 进行中实例', color: '#409eff' },
+              { key: 'paused', label: '⏸ 暂停中实例', color: '#e6a23c' },
+              { key: 'closed_success', label: '✅ 成功完结实例', color: '#67c23a' },
+              { key: 'aborted', label: '❌ 终止实例', color: '#f56c6c' }
+            ]" :key="group.key" v-show="adminData.engine_instances.buckets[group.key].length > 0">
+            <div class="admin-card-head" :style="{ color: group.color }">
+              {{ group.label }}（{{ adminData.engine_instances.buckets[group.key].length }}）
+            </div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:280px;">task_id</th><th>目标</th><th style="width:80px;">state</th><th style="width:60px;">路线</th><th style="width:60px;">size</th><th style="width:80px;">进度</th></tr>
+              <tr v-for="t in adminData.engine_instances.buckets[group.key]" :key="t.task_id">
+                <td><code style="font-size:10px;">{{ t.task_id }}</code></td>
+                <td>{{ t.goal_text }}</td>
+                <td><el-tag size="small" :type="stateTagType(t.state)">{{ t.state }}</el-tag></td>
+                <td><code>{{ t.route }}</code></td>
+                <td>{{ t.size }}</td>
+                <td>
+                  <div class="admin-bar"><div class="admin-bar-fill" :class="group.key === 'closed_success' ? 'success' : (group.key === 'paused' ? 'warn' : (group.key === 'aborted' ? 'fail' : ''))" :style="{ width: (t.progress || 0) + '%' }"></div></div>
+                  <span style="font-size:10px; color:#909399;">{{ t.progress || 0 }}%</span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🕘 最近状态转换（最多 15 条）</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:160px;">时间</th><th style="width:220px;">task_id</th><th style="width:200px;">状态转换</th><th>触发原因</th></tr>
+              <tr v-for="(rt, i) in adminData.engine_instances.recent_transitions" :key="'rt-'+i">
+                <td><code style="font-size:10px;">{{ rt.timestamp }}</code></td>
+                <td><code style="font-size:10px;">{{ (rt.task_id || '').slice(0, 30) }}</code></td>
+                <td><code style="font-size:10px;">{{ rt.from_state || '∅' }} → {{ rt.to_state }}</code></td>
+                <td style="font-size:11px;">{{ rt.trigger }}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- 3. 知识库 -->
+        <div class="admin-section" v-else-if="adminSection === 'knowledge_base' && adminData.knowledge_base">
+          <h2>📚 知识库（3 层架构）</h2>
+          <div class="admin-desc">Global / Project / Session 三层持久化 + 按 state 的注入策略；新 task 启动时自动注入高优先级条目。</div>
+
+          <div class="admin-grid-3">
+            <div v-for="l in adminData.knowledge_base.layers" :key="l.level"
+                  class="admin-card" style="margin:0;">
+              <div class="admin-card-head">{{ l.label }}</div>
+              <div class="admin-kv-row"><span class="admin-kv-key">路径</span><span class="admin-kv-val"><code style="font-size:11px;">{{ l.path }}</code></span></div>
+              <div class="admin-kv-row"><span class="admin-kv-key">条目数</span><span class="admin-kv-val"><strong style="color:#409eff;">{{ l.entry_count }}</strong></span></div>
+              <div class="admin-kv-row"><span class="admin-kv-key">持久范围</span><span class="admin-kv-val">{{ l.persist_scope }}</span></div>
+              <div style="font-size:12px; color:#606266; margin-top:6px; line-height:1.6;">{{ l.description }}</div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">📦 kind 分布</div>
+            <div v-for="(v, k) in adminData.knowledge_base.kind_distribution" :key="'kd-'+k"
+                  style="display:inline-block; margin:4px 8px 4px 0;">
+              <el-tag size="small" type="info">{{ k }}</el-tag>
+              <span style="margin-left:4px; font-weight:600; color:#409eff;">{{ v }}</span>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">💉 注入策略（按状态触发）</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:120px;">state</th><th style="width:240px;">注入 kind</th><th>策略</th></tr>
+              <tr v-for="p in adminData.knowledge_base.injection_policy" :key="p.stage">
+                <td><code style="color:#409eff;">{{ p.stage }}</code></td>
+                <td><span v-for="(k, i) in p.inject_kinds" :key="'ik-'+i" class="admin-chip">{{ k }}</span>
+                  <span v-if="!p.inject_kinds.length" style="color:#909399;">—</span></td>
+                <td style="font-size:12px;">{{ p.strategy }}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">📖 条目全览（{{ adminData.knowledge_base.entries.length }}）</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:80px;">scope</th><th style="width:100px;">kind</th><th>title</th><th style="width:100px;">观测次数</th></tr>
+              <tr v-for="e in adminData.knowledge_base.entries" :key="e.id">
+                <td><el-tag :type="kbScopeType(e.scope)" size="small">{{ e.scope }}</el-tag></td>
+                <td><el-tag :type="kbKindType(e.kind)" size="small">{{ e.kind }}</el-tag></td>
+                <td>{{ e.title }}</td>
+                <td>{{ (e.evidence || {}).observed_count || 0 }}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- 4. Harness 监督智能体 -->
+        <div class="admin-section" v-else-if="adminSection === 'supervisor_agent' && adminData.supervisor_agent">
+          <h2>🛡️ Harness 监督智能体</h2>
+          <div class="admin-desc">全程只读监督，基于 8 维度实时采集，击中 3 红线即发 INFO/WARN/BLOCK。</div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">
+              <span class="admin-status-dot ok"></span>运行状态
+            </div>
+            <div class="admin-grid-2">
+              <div>
+                <div class="admin-kv-row"><span class="admin-kv-key">Agent ID</span><span class="admin-kv-val"><code>{{ adminData.supervisor_agent.status.agent_id }}</code></span></div>
+                <div class="admin-kv-row"><span class="admin-kv-key">在线</span><span class="admin-kv-val"><el-tag type="success" size="small">ONLINE</el-tag></span></div>
+                <div class="admin-kv-row"><span class="admin-kv-key">pid / 生命周期</span><span class="admin-kv-val">{{ adminData.supervisor_agent.status.pid_hint }}</span></div>
+              </div>
+              <div>
+                <div class="admin-kv-row"><span class="admin-kv-key">最近心跳</span><span class="admin-kv-val"><code style="font-size:11px;">{{ adminData.supervisor_agent.status.last_heartbeat }}</code></span></div>
+                <div class="admin-kv-row"><span class="admin-kv-key">轮询间隔</span><span class="admin-kv-val">{{ adminData.supervisor_agent.status.tick_interval_sec }}s</span></div>
+                <div class="admin-kv-row"><span class="admin-kv-key">今日触发次数</span><span class="admin-kv-val"><strong>{{ adminData.supervisor_agent.status.trigger_count_today }}</strong> 次</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">📐 8 维度监控配置</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:140px;">维度</th><th style="width:220px;">指标</th><th>触发阈值</th><th style="width:100px;">窗口</th><th style="width:120px;">动作</th></tr>
+              <tr v-for="d in adminData.supervisor_agent.dimensions_config" :key="d.key">
+                <td><strong>{{ d.label }}</strong><br/><code style="font-size:10px; color:#909399;">{{ d.key }}</code></td>
+                <td><span v-for="(m, i) in d.metrics" :key="'m-'+i" class="admin-chip">{{ m }}</span></td>
+                <td style="font-size:12px;">{{ d.threshold }}</td>
+                <td style="font-size:12px;">{{ d.window }}</td>
+                <td><el-tag size="small" :type="d.action.startsWith('BLOCK') ? 'danger' : (d.action.startsWith('WARN') ? 'warning' : 'info')">{{ d.action }}</el-tag></td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">⚡ 最近红线/告警事件流</div>
+            <div v-for="(e, i) in adminData.supervisor_agent.red_line_events_recent" :key="'rle-'+i"
+                  style="padding:10px 0; border-bottom:1px dashed #ebeef5; font-size:12px;">
+              <div><el-tag size="small" :type="e.severity === 'BLOCK' ? 'danger' : (e.severity === 'WARN' ? 'warning' : 'info')">{{ e.severity }}</el-tag>
+                <code style="font-size:10px; margin:0 8px; color:#909399;">{{ e.ts }}</code>
+                <code style="font-size:10px;">{{ (e.task_id || '').slice(0, 32) }}</code>
+                · <span style="color:#606266;">{{ e.dimension }}</span>
+              </div>
+              <div style="margin-top:4px; color:#303133;">{{ e.message }}</div>
+              <div style="margin-top:3px; color:#909399; font-size:11px;">➜ 动作：{{ e.action_taken }}</div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">📢 通知渠道</div>
+            <div v-for="ch in adminData.supervisor_agent.notification_channels" :key="ch.id" class="admin-kv-row">
+              <span class="admin-kv-key">
+                <span class="admin-status-dot" :class="ch.status === 'enabled' ? 'ok' : 'fail'"></span>{{ ch.label }}
+              </span>
+              <span class="admin-kv-val">{{ ch.description }}<span v-if="ch.note" style="color:#909399;"> · {{ ch.note }}</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Verifier 原语库 -->
+        <div class="admin-section" v-else-if="adminSection === 'primitives_registry' && adminData.primitives_registry">
+          <h2>🔬 Verifier 原语库</h2>
+          <div class="admin-desc">DoD 表达式可引用的全部 primitive；全部走白名单 AST eval，禁 arbitrary exec。共 {{ adminData.primitives_registry.count }} 个原语 / {{ adminData.primitives_registry.total_tests }} 个单元测试。</div>
+
+          <el-alert type="info" :closable="false" style="margin-bottom:12px;">{{ adminData.primitives_registry.coverage_note }}</el-alert>
+
+          <div class="admin-card">
+            <table class="admin-matrix-table">
+              <tr><th style="width:220px;">原语名</th><th style="width:80px;">分类</th><th style="width:200px;">签名</th><th>描述</th><th style="width:90px;">DoD 引用</th><th style="width:80px;">测试</th></tr>
+              <tr v-for="p in adminData.primitives_registry.primitives" :key="p.name">
+                <td><code style="color:#409eff;">{{ p.name }}</code></td>
+                <td><el-tag size="small" effect="plain">{{ p.category }}</el-tag></td>
+                <td><code style="font-size:11px;">{{ p.signature }}</code></td>
+                <td style="font-size:12px;">{{ p.description }}</td>
+                <td><strong style="color:#409eff;">{{ p.used_in_dod }}</strong> 次</td>
+                <td><el-tag size="small" type="success">{{ p.tests_pass }}</el-tag></td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- 6. Subagents 注册表 -->
+        <div class="admin-section" v-else-if="adminSection === 'subagents_registry' && adminData.subagents_registry">
+          <h2>🤖 Subagents 注册表</h2>
+          <div class="admin-desc">harnessFlow: 命名空间下 {{ adminData.subagents_registry.count }} 个独立子 Agent；触发条件、工具权限与调用统计。</div>
+
+          <div class="admin-grid-2">
+            <div v-for="sa in adminData.subagents_registry.subagents" :key="sa.name"
+                  class="admin-card" style="margin:0;">
+              <div class="admin-card-head">🤖 {{ sa.name }}</div>
+              <div class="admin-kv-row"><span class="admin-kv-key">角色</span><span class="admin-kv-val">{{ sa.role }}</span></div>
+              <div class="admin-kv-row"><span class="admin-kv-key">触发</span><span class="admin-kv-val"><code style="font-size:11px;">{{ sa.trigger }}</code></span></div>
+              <div class="admin-kv-row"><span class="admin-kv-key">工具权限</span><span class="admin-kv-val">
+                <span v-for="(t, i) in sa.tools" :key="'t-'+i" class="admin-chip">{{ t }}</span>
+              </span></div>
+              <div class="admin-kv-row"><span class="admin-kv-key">只读</span><span class="admin-kv-val"><el-tag size="small" :type="sa.read_only ? 'success' : 'warning'">{{ sa.read_only ? '是' : '否（可写）' }}</el-tag></span></div>
+              <div class="admin-kv-row"><span class="admin-kv-key">今日调用</span><span class="admin-kv-val"><strong>{{ sa.invoke_count_today }}</strong> 次 · 平均 {{ sa.avg_latency_ms }}ms</span></div>
+              <div style="margin-top:6px; font-size:12px; color:#606266; line-height:1.6;">{{ sa.description }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7. Skills 调用图 -->
+        <div class="admin-section" v-else-if="adminSection === 'skills_registry' && adminData.skills_registry">
+          <h2>🧩 Skills 调用图</h2>
+          <div class="admin-desc">{{ adminData.skills_registry.count }} 个可被 harnessFlow 引擎调度的 skill；按路线绑定 + 调用统计。</div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🔗 路线 × Skill 绑定</div>
+            <div v-for="(chain, route) in adminData.skills_registry.route_bindings" :key="'rb-'+route" class="admin-kv-row">
+              <span class="admin-kv-key"><strong style="color:#409eff;">路线 {{ route }}</strong></span>
+              <span class="admin-kv-val">
+                <span v-for="(sk, i) in chain" :key="'rbsk-'+i" class="admin-chip">{{ sk }}</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">📋 Skill 全表</div>
+            <table class="admin-matrix-table">
+              <tr><th>Skill</th><th style="width:100px;">分类</th><th style="width:200px;">调用时机</th><th style="width:80px;">必需</th><th style="width:100px;">使用次数</th></tr>
+              <tr v-for="s in adminData.skills_registry.skills" :key="s.name">
+                <td><code style="color:#409eff;">{{ s.name }}</code></td>
+                <td><el-tag size="small" effect="plain">{{ s.category }}</el-tag></td>
+                <td><span v-for="(at, i) in s.invoke_at" :key="'ia-'+i" class="admin-chip">{{ at }}</span></td>
+                <td><el-tag size="small" :type="s.required ? 'danger' : 'info'">{{ s.required ? '必需' : '可选' }}</el-tag></td>
+                <td><strong>{{ s.used_count }}</strong></td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- 8. 统计分析 -->
+        <div class="admin-section" v-else-if="adminSection === 'analytics' && adminData.analytics">
+          <h2>📊 统计分析</h2>
+          <div class="admin-desc">跨任务聚合指标：成功率、耗时、红线触发率、纠偏分布、KB 命中率。</div>
+
+          <div class="admin-grid-4" style="margin-bottom:16px;">
+            <div class="admin-card" style="text-align:center; margin:0;">
+              <div style="font-size:26px; font-weight:600; color:#409eff;">{{ adminData.analytics.total_tasks }}</div>
+              <div style="font-size:12px; color:#606266;">任务总数</div>
+            </div>
+            <div class="admin-card" style="text-align:center; margin:0;">
+              <div style="font-size:26px; font-weight:600; color:#67c23a;">{{ adminData.analytics.success_rate_overall_pct }}%</div>
+              <div style="font-size:12px; color:#606266;">整体成功率</div>
+            </div>
+            <div class="admin-card" style="text-align:center; margin:0;">
+              <div style="font-size:26px; font-weight:600; color:#e6a23c;">{{ adminData.analytics.red_line_trigger_rate_pct }}%</div>
+              <div style="font-size:12px; color:#606266;">红线触发率</div>
+            </div>
+            <div class="admin-card" style="text-align:center; margin:0;">
+              <div style="font-size:26px; font-weight:600; color:#909399;">{{ adminData.analytics.kb_hit_rate_pct }}%</div>
+              <div style="font-size:12px; color:#606266;">KB 注入命中率</div>
+            </div>
+          </div>
+
+          <div class="admin-grid-2">
+            <div class="admin-card" style="margin:0;">
+              <div class="admin-card-head">按路线成功率</div>
+              <div v-for="r in adminData.analytics.by_route_success_rate" :key="'sr-'+r.route"
+                    style="margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px;">
+                  <span><strong>路线 {{ r.route }}</strong></span>
+                  <span><code>{{ r.success }}/{{ r.total }}</code> · {{ r.pct === null ? '—' : r.pct + '%' }}</span>
+                </div>
+                <div class="admin-bar"><div class="admin-bar-fill success" :style="{ width: (r.pct || 0) + '%' }"></div></div>
+              </div>
+            </div>
+            <div class="admin-card" style="margin:0;">
+              <div class="admin-card-head">平均耗时（分钟）· 按 size</div>
+              <div v-for="s in adminData.analytics.avg_duration_by_size_min" :key="'ad-'+s.size"
+                    style="margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px;">
+                  <span><strong>size {{ s.size }}</strong> <span style="color:#909399;">(n={{ s.sample }})</span></span>
+                  <span><code>{{ s.avg_min }} min</code></span>
+                </div>
+                <div class="admin-bar"><div class="admin-bar-fill" :style="{ width: Math.min(100, s.avg_min / 10) + '%' }"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-grid-2">
+            <div class="admin-card" style="margin:0;">
+              <div class="admin-card-head">红线触发分布</div>
+              <table class="admin-matrix-table">
+                <tr><th>红线</th><th style="width:100px;">触发次数</th><th style="width:100px;">受影响任务</th></tr>
+                <tr v-for="r in adminData.analytics.red_line_breakdown" :key="'rlb-'+r.red_line">
+                  <td><code>{{ r.red_line }}</code></td>
+                  <td><strong>{{ r.trigger_count }}</strong></td>
+                  <td>{{ r.task_count }}</td>
+                </tr>
+              </table>
+            </div>
+            <div class="admin-card" style="margin:0;">
+              <div class="admin-card-head">纠偏级别分布</div>
+              <div v-for="(v, k) in adminData.analytics.correction_distribution" :key="'cd-'+k"
+                    style="margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px;">
+                  <span><strong>{{ k }}</strong></span>
+                  <span><code>{{ v }}</code> 次</span>
+                </div>
+                <div class="admin-bar"><div class="admin-bar-fill" :class="k === 'L3' ? 'fail' : (k === 'L2' ? 'warn' : '')" :style="{ width: Math.min(100, v * 8) + '%' }"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🏆 Top-5 最常用 Skill</div>
+            <table class="admin-matrix-table">
+              <tr><th>Skill</th><th style="width:100px;">使用次数</th></tr>
+              <tr v-for="(s, i) in adminData.analytics.most_used_skills_top5" :key="'us-'+i">
+                <td><code style="color:#409eff;">{{ s.skill }}</code></td>
+                <td><strong>{{ s.count }}</strong></td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- 9. 系统诊断 -->
+        <div class="admin-section" v-else-if="adminSection === 'diagnostics' && adminData.diagnostics">
+          <h2>🔍 系统诊断</h2>
+          <div class="admin-desc">task-board ↔ retro ↔ archive 一致性校验 + 外部依赖与 MCP 服务可用性。最近检查 <code>{{ adminData.diagnostics.last_check_at }}</code>。</div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">✅ 一致性校验（{{ adminData.diagnostics.consistency_checks.length }} 项）</div>
+            <table class="admin-matrix-table">
+              <tr><th>校验项</th><th style="width:80px;">结果</th><th style="width:180px;">观测值</th><th style="width:220px;">原语</th></tr>
+              <tr v-for="c in adminData.diagnostics.consistency_checks" :key="c.name">
+                <td>{{ c.name }}</td>
+                <td><el-tag size="small" :type="c.status === 'pass' ? 'success' : (c.status === 'warn' ? 'warning' : 'danger')">{{ c.status }}</el-tag></td>
+                <td style="font-family:Menlo,monospace; font-size:11px;">{{ c.observed }}</td>
+                <td><code style="font-size:10px;">{{ c.primitive }}</code></td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">📦 外部依赖</div>
+            <table class="admin-matrix-table">
+              <tr><th style="width:200px;">依赖</th><th style="width:80px;">必需</th><th style="width:80px;">状态</th><th style="width:140px;">版本</th><th>备注</th></tr>
+              <tr v-for="d in adminData.diagnostics.dependencies" :key="d.name">
+                <td><strong>{{ d.name }}</strong></td>
+                <td><el-tag size="small" :type="d.required ? 'danger' : 'info'">{{ d.required ? '必需' : '可选' }}</el-tag></td>
+                <td>
+                  <span class="admin-status-dot" :class="d.status === 'ok' ? 'ok' : (d.status === 'warn' ? 'warn' : 'fail')"></span>{{ d.status }}
+                </td>
+                <td>{{ d.version || '—' }}</td>
+                <td style="font-size:12px;">{{ d.note || '—' }}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🔌 MCP 服务器状态</div>
+            <div class="admin-grid-3">
+              <div v-for="m in adminData.diagnostics.mcp_servers" :key="m.name"
+                    style="border:1px solid #e4e7ed; border-radius:6px; padding:8px 12px; background:#fafbfc;">
+                <div style="font-size:13px; font-weight:600;">
+                  <span class="admin-status-dot" :class="m.status === 'online' ? 'ok' : 'fail'"></span>{{ m.name }}
+                </div>
+                <div style="font-size:11px; color:#909399; margin-top:4px;">{{ m.note || '' }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-head">🧩 可用 Skill 命名空间</div>
+            <div v-for="s in adminData.diagnostics.skills_available" :key="'sa-'+s.name" class="admin-kv-row">
+              <span class="admin-kv-key">
+                <span class="admin-status-dot" :class="s.status === 'ok' ? 'ok' : 'warn'"></span><code>{{ s.name }}</code>
+              </span>
+              <span class="admin-kv-val">{{ s.count }} 个 skill</span>
+            </div>
+          </div>
+        </div>
+
+      </template>
+    </div>
+  </div>
+
+  <el-dialog v-model="mdDialogVisible" :title="mdDialogPath" width="70%" top="5vh">
+    <div class="md-renderer" v-html="mdRendered"></div>
+  </el-dialog>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted, watch } = Vue;
+const ELIcons = ElementPlusIconsVue;
+
+const API = {
+  async tasks() { return (await fetch('/api/tasks')).json(); },
+  async task(id) { return (await fetch('/api/tasks/' + encodeURIComponent(id))).json(); },
+  async md(id, path) {
+    const r = await fetch('/api/tasks/' + encodeURIComponent(id) + '/md?path=' + encodeURIComponent(path));
+    if (!r.ok) return null;
+    return r.text();
+  },
+  async kb() { return (await fetch('/api/kb')).json(); },
+  async projects() { return (await fetch('/api/projects')).json(); },
+  async stats() { return (await fetch('/api/stats')).json(); },
+  async admin() { return (await fetch('/api/admin')).json(); },
+};
+
+// marked config (no highlight — sidestep CDN MIME issue)
+marked.setOptions({ gfm: true, breaks: false });
+
+createApp({
+  setup() {
+    const tasks = ref([]);
+    const detail = ref(null);
+    const selectedTaskId = ref(null);
+    const searchQuery = ref('');
+    const currentView = ref('tasks');
+    const activeTab = ref('delivery_goals');
+    const kbEntries = ref([]);
+    const kbKindFilter = ref('');
+    const kbScopeFilter = ref('');
+    const projects = ref([]);
+    const stats = ref({ total: 0, active: 0, paused: 0, closed: 0, success_rate_pct: 0 });
+    const mdDialogVisible = ref(false);
+    const mdDialogPath = ref('');
+    const mdRendered = ref('');
+    const adminData = ref({});
+    const adminSection = ref('engine_config');
+    const previousView = ref('tasks');
+
+    const filteredTasks = computed(() => {
+      const q = searchQuery.value.toLowerCase();
+      if (!q) return tasks.value;
+      return tasks.value.filter(t =>
+        (t.task_id || '').toLowerCase().includes(q) ||
+        (t.goal_text || '').toLowerCase().includes(q) ||
+        (t.current_state || '').toLowerCase().includes(q) ||
+        (t.initial_user_input || '').toLowerCase().includes(q) ||
+        (t.task_type || '').toLowerCase().includes(q)
+      );
+    });
+
+    const groupedTasks = computed(() => {
+      const active = [], paused = [], closed = [];
+      for (const t of filteredTasks.value) {
+        const s = t.current_state;
+        if (s === 'CLOSED' || s === 'ABORTED') closed.push(t);
+        else if (s === 'PAUSED_ESCALATED') paused.push(t);
+        else active.push(t);
+      }
+      return [
+        { label: '🔥 进行中', items: active },
+        { label: '⏸ 暂停中', items: paused },
+        { label: '✅ 已完成', items: closed },
+      ];
+    });
+
+    const filteredKb = computed(() => {
+      return kbEntries.value.filter(e =>
+        (!kbKindFilter.value || e.kind === kbKindFilter.value) &&
+        (!kbScopeFilter.value || e.scope === kbScopeFilter.value)
+      );
+    });
+
+    const projectFilterLabel = computed(() => {
+      return 'Project: ' + (projects.value[0]?.name || 'harnessFlow-meta');
+    });
+
+    function stateTagType(s) {
+      if (s === 'CLOSED') return 'success';
+      if (s === 'PAUSED_ESCALATED') return 'warning';
+      if (s === 'ABORTED') return 'danger';
+      return 'primary';
+    }
+    function riskType(r) {
+      if (r === '低') return 'success';
+      if (r === '中') return 'warning';
+      if (r === '高' || r === '不可逆') return 'danger';
+      return 'info';
+    }
+    function stateTimelineType(s) {
+      if (s === 'CLOSED') return 'success';
+      if (s === 'PAUSED_ESCALATED') return 'warning';
+      if (s === 'ABORTED') return 'danger';
+      if (s === 'VERIFY' || s === 'COMMIT') return 'primary';
+      return '';
+    }
+    function progressFillClass(t) {
+      if (t.current_state === 'PAUSED_ESCALATED') return 'paused';
+      if (t.final_outcome === 'failed' || t.final_outcome === 'aborted') return 'failed';
+      return '';
+    }
+    function kbScopeType(s) {
+      return s === 'global' ? 'primary' : (s === 'project' ? 'success' : 'warning');
+    }
+    function kbKindType(k) {
+      return { anti_pattern: 'danger', effective_combo: 'success',
+                external_ref: 'info', trap: 'warning' }[k] || '';
+    }
+    function healthTagType(h) {
+      return { green: 'success', yellow: 'warning', red: 'danger' }[h] || 'info';
+    }
+
+    // 8 维度 metric key 中文化映射
+    const metricKeyCn = {
+      // goal_fidelity
+      goal_anchor_hash_drift: '目标锚 hash 漂移',
+      claude_md_tamper_count: 'CLAUDE.md 篡改次数',
+      goal_preserved: '目标保留',
+      // plan_alignment
+      actual_states: '实际阶段数',
+      expected_states: '预期阶段数',
+      variance_pct: '偏差百分比 (%)',
+      skipped_stages: '跳过阶段数',
+      route_changes: '路线切换次数',
+      // true_completion
+      verifier_pass_rate: 'Verifier 通过率',
+      tdd_cases_total: 'TDD 用例总数',
+      tdd_pass: 'TDD 通过数',
+      evidence_segments_filled: '证据段填充',
+      flaky_count: 'flaky 数量',
+      // red_lines_safety
+      drift_critical: '目标漂移',
+      dod_gap_alert: '交付标准缺段',
+      irreversible_halt: '不可逆前置缺失',
+      cross_project_creep: '跨项目串误',
+      total_red_lines: '红线触发总数',
+      // progress_pace
+      elapsed_sec: '已耗时 (秒)',
+      cap_sec: '上限 (秒)',
+      tool_calls_total: '工具调用总数',
+      avg_tools_per_stage: '每阶段平均工具数',
+      subagents_spawned: 'subagent 拉起次数',
+      // cost_budget
+      tokens_used: 'token 已用',
+      tokens_cap: 'token 上限',
+      utilization: '利用率',
+      context_tokens: 'context 已用',
+      context_threshold: 'context 阈值',
+      // retry_loop
+      retry_count: 'retry 次数',
+      santa_loop_rounds: 'santa-loop 轮数',
+      replan_count: 'replan 次数',
+      stuck_pattern_detected: '卡死模式检测',
+      warn_counter: 'WARN 累计',
+      // user_collaboration
+      user_interrupts: '用户打断次数',
+      clarify_rounds: '澄清轮次',
+      pause_events: '暂停事件数',
+      waste_questions: '废问题数',
+    };
+
+    async function selectTask(id) {
+      selectedTaskId.value = id;
+      activeTab.value = 'delivery_goals';
+      const r = await API.task(id);
+      detail.value = r;
+    }
+
+    async function previewMd(path) {
+      mdDialogPath.value = path;
+      const content = await API.md(selectedTaskId.value, path);
+      if (content === null) {
+        mdRendered.value = '<div class="empty-hint">无法读取文件或不允许访问</div>';
+      } else {
+        mdRendered.value = marked.parse(content);
+      }
+      mdDialogVisible.value = true;
+    }
+
+    function jumpToKb(ref) {
+      currentView.value = 'kb';
+      // Could scroll to kb card; left as TODO
+    }
+
+    async function toggleAdmin() {
+      if (currentView.value === 'admin') {
+        currentView.value = previousView.value || 'tasks';
+      } else {
+        previousView.value = currentView.value;
+        currentView.value = 'admin';
+        if (!adminData.value.engine_config) {
+          const r = await API.admin();
+          adminData.value = r;
+        }
+      }
+    }
+
+    async function load() {
+      const [t, k, p, s] = await Promise.all([
+        API.tasks(), API.kb(), API.projects(), API.stats()
+      ]);
+      tasks.value = t.tasks;
+      kbEntries.value = k.entries;
+      projects.value = p.projects;
+      stats.value = s;
+    }
+
+    onMounted(load);
+
+    return {
+      tasks, detail, selectedTaskId, searchQuery, currentView, activeTab,
+      kbEntries, kbKindFilter, kbScopeFilter, projects, stats,
+      mdDialogVisible, mdDialogPath, mdRendered,
+      adminData, adminSection,
+      filteredTasks, groupedTasks, filteredKb, projectFilterLabel,
+      stateTagType, riskType, stateTimelineType, progressFillClass,
+      kbScopeType, kbKindType, healthTagType, metricKeyCn,
+      selectTask, previewMd, jumpToKb, toggleAdmin,
+    };
+  },
+}).use(ElementPlus).component('Grid', ELIcons.Grid)
+   .component('View', ELIcons.View)
+   .component('CircleCheck', ELIcons.CircleCheck)
+   .component('CircleClose', ELIcons.CircleClose)
+   .component('Clock', ELIcons.Clock)
+   .component('Search', ELIcons.Search)
+   .component('Loading', ELIcons.Loading)
+   .mount('#app');
+</script>
+</body>
+</html>
