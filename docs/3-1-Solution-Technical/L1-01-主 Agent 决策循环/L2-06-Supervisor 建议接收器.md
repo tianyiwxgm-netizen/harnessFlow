@@ -2096,3 +2096,99 @@ l2_06.evict.count (queue_type=warn|sugg)
 ---
 
 *— L1 L2-06 Supervisor 建议接收器 · subagent 填充完成（R2.6 depth-A · 目标 1000-1500 行）—*
+
+---
+
+## §9 Mock 策略
+
+### §9.1 Mock 模式激活
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `L2_06_MOCK=true` | false | 激活 Supervisor 接收器 Mock 模式 |
+| `L2_06_MOCK_SIGNAL_QUEUE` | — | 预加载信号队列 fixture 路径 |
+| `L2_06_MOCK_BLOCK_DURATION_MS` | 50 | Mock BLOCK 命令持续时长 |
+
+### §9.2 MockSupervisorReceiver 接口
+
+```python
+class MockSupervisorReceiver:
+    """
+    Supervisor 信号接收器测试替身。预加载信号队列，不连接真实 L1-07。
+    """
+    def __init__(self, signal_queue: list[dict] | None = None):
+        self._queue: list[dict] = signal_queue or []
+        self._processed: list[dict] = []
+        self._block_event = threading.Event()
+
+    def receive_next_signal(self) -> dict | None:
+        if not self._queue:
+            return None
+        signal = self._queue.pop(0)
+        self._processed.append(signal)
+        if signal.get("command") == "BLOCK":
+            self._block_event.set()
+        return signal
+
+    def inject_signal(self, signal: dict):
+        self._queue.append(signal)
+
+    def is_blocking(self) -> bool:
+        return self._block_event.is_set()
+
+    def clear_block(self):
+        self._block_event.clear()
+
+    def processed_signals(self) -> list[dict]:
+        return list(self._processed)
+```
+
+### §9.3 IC Stub 策略
+
+| IC 方法 | Stub 行为 |
+|---|---|
+| `IC-13.receive_block_command` | 从 `_queue` 消费 BLOCK 信号 |
+| `IC-14.receive_suggestion` | 从 `_queue` 消费 SUGGEST 信号 |
+| `IC-15.receive_abort_command` | 从 `_queue` 消费 ABORT 信号 |
+| `IC-L2-08.broadcast_block` | 记录到 `_processed`，不发布到 L2-01 |
+
+### §9.4 Fixture 示例
+
+```yaml
+# tests/fixtures/l2_06_signal_queue.yaml
+project_id: "proj-test-005"
+signals:
+  - command: "SUGGEST"
+    supervisor_id: "sup-001"
+    suggestion: {action: "replan", reason: "resource_shortage"}
+  - command: "BLOCK"
+    supervisor_id: "sup-001"
+    reason: "human_review_required"
+    duration_ms: 5000
+  - command: "RESUME"
+    supervisor_id: "sup-001"
+```
+
+---
+
+## §11 安全审计点
+
+| # | 风险点 | 威胁类型 | 缓解措施 |
+|---|---|---|---|
+| SA-01 | 伪造 Supervisor 信号（非法来源触发 BLOCK） | 信任边界越权 | 信号来源 `supervisor_id` 必须在白名单内（从配置加载），不在白名单 → `E_SUP_UNAUTHORIZED_SOURCE` |
+| SA-02 | 重放攻击（重复发送同一 BLOCK 命令） | DoS / 主循环永久阻塞 | 信号含 `signal_id` (UUID)，重复 signal_id → `E_SUP_SIGNAL_DUPLICATE`，丢弃并告警 |
+| SA-03 | 信号 payload 注入（含恶意字段） | 数据污染 / RCE 风险 | 信号 payload 经 JSON Schema 严格校验，未知字段 → 拒绝；禁含可执行内容 |
+| SA-04 | BLOCK 持续时间无上限（永久阻塞） | DoS（主循环饿死） | BLOCK duration_ms 上限 = 600,000ms（10分钟），超出 → 自动截断并告警 `E_SUP_BLOCK_DURATION_EXCEEDED` |
+| SA-05 | 信号队列溢出导致 backpressure 缺失 | 资源耗尽 | 队列最大深度 = 100，满队列 → 新信号 → `E_SUP_QUEUE_FULL`；BLOCK 信号有优先通道（不受深度限制）|
+
+**安全审计频率：** SA-01（白名单管理）需每季度人工审查；SA-02（重放检测）需集成到 E2E 测试套件。
+
+---
+
+## Open Questions
+
+| # | 问题 | 影响范围 | 期望决策时间 |
+|---|---|---|---|
+| OQ-01 | BLOCK 命令是否应有速率限制（如每分钟最多 N 次）？当前设计无限制，理论上 Supervisor 可高频 BLOCK 导致主循环永久无法推进。 | DoS 防护 | M3 前 |
+| OQ-02 | SUGGEST 信号当前为非阻塞（fire-and-forget）。未来是否需要 ack 机制（L2-06 向 Supervisor 回复"建议已采纳/拒绝"）？不 ack 时 Supervisor 无法知道建议效果。 | 反馈闭环 | M4 前 |
+| OQ-03 | 当 Supervisor 本身不可用（L1-07 crash）时，L2-06 的降级策略是什么？当前设计 BLOCK 通道降级为透传（不阻塞），但 SUGGEST 丢失是否可接受需要业务确认。 | 可用性 / 降级语义 | M2 验证 |

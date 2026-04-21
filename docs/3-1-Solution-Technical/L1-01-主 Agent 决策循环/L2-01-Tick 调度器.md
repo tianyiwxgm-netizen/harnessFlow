@@ -1994,3 +1994,110 @@ def bootstrap_recovery(self):
 ---
 
 *— L1 L2-01 Tick 调度器 · 深度 A 全段完整（§1-§13 · 1996 行 · 4 PlantUML · 29 E_TICK_* 错误码 · 覆盖 8 trigger_source + 6 状态机 + 3 watchdog 检测 + BLOCK/panic ≤100ms SLO）—*
+
+---
+
+## §9 Mock 策略
+
+### §9.1 Mock 模式激活
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `L2_01_MOCK=true` | false | 激活 Tick 调度器 Mock 模式 |
+| `L2_01_MOCK_TICK_INTERVAL_MS` | 100 | Mock 模式下 tick 间隔（毫秒）|
+| `L2_01_MOCK_WATCHDOG_DISABLED` | false | 禁用看门狗超时（避免测试干扰）|
+
+### §9.2 MockTickScheduler 接口
+
+```python
+class MockTickScheduler:
+    """
+    Tick 调度器测试替身。注入 tick 序列，不依赖系统时钟。
+    """
+    def __init__(self, tick_sequence: list[dict]):
+        self._queue: list[dict] = tick_sequence.copy()
+        self._fired: list[dict] = []
+
+    def next_tick(self) -> dict | None:
+        if not self._queue:
+            return None
+        tick = self._queue.pop(0)
+        self._fired.append(tick)
+        return tick
+
+    def fired_ticks(self) -> list[dict]:
+        return list(self._fired)
+
+    def inject_halt(self):
+        self._queue.insert(0, {"type": "HALT", "project_id": "mock-pid"})
+```
+
+### §9.3 IC Stub 策略
+
+| IC 方法 | Stub 行为 |
+|---|---|
+| `IC-L2-01.trigger_tick` | 立即返回预设 `tick_id`，不等待调度器 |
+| `IC-L2-01.cancel_tick` | 返回 `{status: "CANCELLED"}` |
+| `IC-L2-01.query_tick_status` | 返回预设状态（默认 `DONE`）|
+| Watchdog 超时 | 永不触发（`L2_01_MOCK_WATCHDOG_DISABLED=true`）|
+
+### §9.4 Fixture 示例
+
+```yaml
+# tests/fixtures/l2_01_tick_sequence.yaml
+ticks:
+  - project_id: "proj-test-001"
+    tick_id: "tick-001"
+    priority: 2
+    source: "manual"
+  - project_id: "proj-test-001"
+    tick_id: "tick-002"
+    priority: 1
+    source: "watchdog"
+  - project_id: "proj-test-001"
+    tick_id: "tick-halt"
+    type: "HALT"
+    reason: "test_teardown"
+```
+
+### §9.5 使用示例
+
+```python
+# tests/test_tick_scheduler.py
+from tests.mocks import MockTickScheduler
+from tests.fixtures import load_fixture
+
+def test_tick_priority_ordering():
+    seq = load_fixture("l2_01_tick_sequence.yaml")["ticks"]
+    mock = MockTickScheduler(tick_sequence=seq)
+
+    first = mock.next_tick()
+    assert first["priority"] == 2  # 优先级高先出
+
+    second = mock.next_tick()
+    assert second["priority"] == 1
+```
+
+---
+
+## §11 安全审计点
+
+| # | 风险点 | 威胁类型 | 缓解措施 |
+|---|---|---|---|
+| SA-01 | tick_interval 设为 0 或负值 | DoS（无限 tick 风暴） | 下界校验：`tick_interval_ms >= 50`，违反 → `E_TICK_INTERVAL_UNDERFLOW` |
+| SA-02 | project_id 注入（含路径遍历字符 `../`） | 路径遍历 / 数据污染 | 正则白名单：`^[a-zA-Z0-9_-]{1,64}$`，违反 → `E_TICK_PROJ_INVALID` |
+| SA-03 | hard_halt 命令来源未验证 | 权限绕过（未授权强制停止） | hard_halt 仅接受来自 L2-03 或 Supervisor IC-15 的调用，其他来源 → `E_TICK_HALT_UNAUTHORIZED` |
+| SA-04 | watchdog 超时阈值被外部修改 | 配置篡改（绕过看门狗保护） | watchdog_timeout_ms 仅在启动时从配置读取，运行时不接受动态修改 |
+| SA-05 | tick 优先级字段整数溢出 | 调度混乱 | priority 范围限制 `[0, 10]`，超出 → `E_TICK_PRIORITY_INVALID` |
+
+**安全审计频率：** 每次 major release 前必须重审 SA-03（权限边界）和 SA-04（看门狗配置固化）。
+
+---
+
+## Open Questions
+
+| # | 问题 | 影响范围 | 期望决策时间 |
+|---|---|---|---|
+| OQ-01 | Watchdog 是否应同时监控 L2-02 决策引擎的响应延迟，而不仅是 tick 发射间隔？若是，L2-02 P99 超限是否直接触发 watchdog_reset？ | L2-01/L2-02 边界 | M3 前 |
+| OQ-02 | tick_interval_ms 是否应支持按 project 动态调整（紧急项目缩短间隔）？还是全局统一？动态调整会引入调度不公平风险。 | 调度公平性 | M4 前 |
+| OQ-03 | 当系统恢复时（PAUSED → EXECUTING），积压的 tick 是否批量补发（可能导致 tick 风暴），还是仅发当前时刻的单个 tick？ | 恢复语义 | M2 验证 |
