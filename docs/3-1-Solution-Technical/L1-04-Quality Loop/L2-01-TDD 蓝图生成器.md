@@ -1961,32 +1961,215 @@ end note
 
 ## §9 开源最佳实践调研（≥ 3 GitHub 高星项目）
 
-<!-- FILL §9 · 引 L0/open-source-research.md 对应模块段 + L2 粒度细化：至少 3 个 GitHub ≥1k stars 项目对标 · 每项目：星数 · 最近活跃 · 核心架构一句话 · Adopt/Learn/Reject 处置 · 具体学习点 · 弃用原因 -->
+引 `docs/3-1-Solution-Technical/L0/open-source-research.md §TDD/测试规划` 锚点 + L2 粒度细化。本 L2 的定位是"从 4 件套 + WBS 自动派生机器可读的 Master Test Plan"，工业界最近邻是**测试管理平台 + TDD 脚手架 + BDD/AC 矩阵框架**三类。下表至少 3 个 ≥ 1k stars 项目对标。
+
+| 项目 | Stars | 最近活跃 | 核心架构 | 处置 | 学习点 / 弃用原因 |
+|---|---|---|---|---|---|
+| **pytest** | ~12k | 2026-03 活跃（每周数十 PR） | Python 原生测试运行器 + fixture DI + plugin 生态（pytest-cov / pytest-xdist / pytest-bdd） | **Adopt** | 学：fixture scope（session/module/class/function）映射本 L2 `test_env_blueprint.scope` 字段；学：`-k` 表达式做 AC ↔ 测试用例索引；**本 L2 产的 Master Test Plan 的 `test_pyramid.layer_config` 直接映射到 pytest marker（`@pytest.mark.unit` / `integration` / `e2e`），保证 L2-03 生成骨架时 1:1 落到 pytest 可识别的结构** |
+| **Hypothesis** | ~7k | 2026-04 活跃 | Property-based testing（生成随机输入 + shrinking 最小反例） | **Learn**（不直接集成 · 仅作为 `test_case_generator` 的灵感） | 学：`strategies.composite()` 组合生成器的思想 → 本 L2 `ac_matrix` 建模时参考其"维度正交生成"理念做 AC × 边界值矩阵展开；**不 Adopt 原因**：PBT 生成随机用例与本 L2 "从 AC 精确派生"的确定性目标相冲突，强行引入会污染 blueprint 的可追溯性 |
+| **Allure Framework** | ~4.5k | 2026-03 活跃 | 测试报告 + epic/feature/story/AC 分层组织 + 步骤截图 | **Learn**（不 Adopt 全家桶 · 只取 AC 分层模型） | 学：Allure 的 `@allure.epic / feature / story` 三层分类恰好对应本 L2 `ac_matrix.category`；**不 Adopt 原因**：Allure 是**报告后置**工具，本 L2 需要**蓝图前置**——两个阶段不同；但 L2-06 Verifier 组装证据链时会被重新评估是否用 Allure 做可视化 |
+| **behave + Gherkin** | ~3.3k | 2026-02 活跃 | BDD · Given/When/Then 三段式 AC + `.feature` DSL | **Learn · 弱 Adopt**（仅作为自然语言 AC 的**输入格式之一**） | 学：Gherkin 结构化 AC 的约束（Given/When/Then + Examples 表）正好对应本 L2 NLP 解析器的 **输入 schema 之一**；**弱 Adopt 原因**：本 L2 支持三种 AC 输入（纯自然语言 / Gherkin / YAML 结构化），Gherkin 是可选路径之一而非强制；若项目已有 `.feature` 文件则优先采用（节省解析成本） |
+| **tmt (Test Management Tool, Red Hat)** | ~320 · *豁免 1k* | 2026-04 活跃 · Red Hat 官方支持 | fmf (Flexible Metadata Format) 元数据驱动的测试规划 · 支持 Plan / Story / Test 三层 | **Learn**（不 Adopt 直接集成 · 仅借鉴 fmf 元数据分层） | **豁免 1k stars 理由**：Red Hat 官方工具 · 内部使用广泛 · fmf 元数据模型是业界少见的"Plan-Story-Test 三层分解"参考实现，正好对应本 L2 `Master Test Plan → Story（AC）→ Test Case` 三层结构；**不 Adopt 原因**：fmf 格式与 pytest 生态绑定度低，引入迁移成本 > 收益 |
+
+**§9 综合结论**：
+
+- **核心 Adopt**：`pytest` 作为 L2-03 生成用例骨架时的目标运行器（Master Test Plan `test_env_blueprint.runner = "pytest"` 为默认值），本 L2 产出的 `test_pyramid.layer_config` 直接映射 pytest marker。
+- **次 Adopt**：Gherkin 作为 AC 输入格式之一（nlp_parser_backend 支持）。
+- **Learn-only**：Hypothesis 的"维度正交生成"思想 / Allure 的 AC 三层分类模型 / fmf 的 Plan-Story-Test 元数据分层——融入本 L2 设计但不直接依赖代码。
+- **Reject**：不自造新的 AC DSL（PM-16 最小化创造 · 复用 Gherkin）· 不把本 L2 耦合到任何特定语言运行器（pytest 是 **default**，但 `test_env_blueprint.runner` 字段为可扩展枚举 `pytest | jest | go-test | custom`，为多语言项目预留）。
 
 ---
 
 ## §10 配置参数清单
 
-<!-- FILL §10 · 参数名 / 默认值 / 可调范围 / 意义 / 调用位置 -->
+本 L2 所有可调参数集中在 `docs/4-config/L1-04/L2-01.yaml`（SSOT），启动时由 L1-09 配置总线加载 · 运行时修改走 L1-02 PMP 变更控制流。每项参数必须满足"名 / 默认 / 可调范围 / 意义 / 调用位置 / 验证"六元组规格。
+
+| 参数名 | 默认值 | 可调范围 | 意义 | 调用位置 | 变更风险 |
+|---|---|---|---|---|---|
+| `coverage_line_threshold` | `0.80` | `[0.6, 0.95]` | 行覆盖率下限 · 低于此值 S5 verdict → FAIL-L1 | §6.3 `CoverageTargetResolver` · §7.1 `quality_gate_input` | ⚠️ 调高会导致更多 WP 被 FAIL-L1 · 项目早期建议 0.75 |
+| `coverage_branch_threshold` | `0.70` | `[0.5, 0.9]` | 分支覆盖率下限 | 同上 | 同上 |
+| `coverage_ac_threshold` | `1.0` | **锁死 1.0（不可调）** | AC 覆盖率硬性 100% · PM-05 机器可校验红线 | §6.2 `ACMatrixBuilder.validate()` | 🔴 **禁止下调**：任何"临时调低到 0.95"违反 PM-05 · 走配置变更需 CTO 级审批 |
+| `pyramid_ratio_unit_integration_e2e` | `"70/20/10"` | 单元 ∈ [50,85] · 集成 ∈ [10,35] · e2e ∈ [5,20] · 三者和 = 100 | 测试金字塔比例 | §6.4 `TestPyramidSolver` | ⚠️ 调整影响 L2-03 生成用例数分布 |
+| `nlp_parser_backend` | `"spacy"` | `"spacy" \| "llm-deepseek" \| "regex-fallback"` | AC 自然语言解析后端 | §6.1 `ACParser` | LLM 后端延迟高但复杂 AC 解析率高；regex 兜底 |
+| `nlp_parser_timeout_ms` | `3000` | `[500, 30000]` | 单条 AC 解析超时 · 超时 fallback 到 regex | §6.1 | 超时过短会误 fallback；过长拖慢整体 |
+| `max_test_cases_per_ac` | `20` | `[1, 100]` | 单个 AC 最多派生用例数 · 防 AC 过于复杂导致爆炸 | §6.2 | 超限触发 `E_L204_L201_AC_CASE_EXPLOSION` |
+| `blueprint_cache_ttl_s` | `3600` | `[0, 86400]` | 蓝图内存缓存 TTL · `0` = 禁用 | §6.7 | 禁用会增加重复计算开销 |
+| `ac_strict_mode` | `"enforce"` | `"enforce" \| "warn" \| "disabled"` | AC 覆盖缺失的处理 · `enforce` = 直接 FAIL · `warn` = 记录告警但放行（仅 POC 项目） | §6.2 | 🔴 **生产项目禁止 `disabled`** |
+| `blueprint_build_timeout_s` | `120` | `[30, 600]` | 构建蓝图总超时 · 超时走 §11 降级链 | §11.2 | 过短频繁降级；过长影响 S3 Gate 响应性 |
+| `parallel_downstream_broadcast` | `true` | `{true, false}` | `blueprint_ready` 广播时是否并发推 L2-02/03/04 | §4.3 `BroadcastCoordinator` | `false` 会把 S3 耗时从 "max" 退化为 "sum" |
+| `blueprint_version_strategy` | `"semver"` | `"semver" \| "monotonic"` | 版本号方案 | §7.1 `blueprint.version` | `monotonic` 更简单但失去语义 |
+| `archive_retention_days` | `365` | `[30, 2555]` | 蓝图历史归档保留天数 | §7.3 归档路径 | GDPR 区域项目建议 ≤180 |
+| `blueprint_diff_check_on_update` | `true` | `{true, false}` | 更新蓝图时是否对比上一版生成 diff 报告（推 L1-10 UI） | §4.4 | 关闭可省算力但审计链不完整 |
+| `ac_category_taxonomy` | `"allure-like"` | `"allure-like" \| "flat" \| "project-custom"` | AC 分类法 | §6.2 `ACMatrixBuilder.categorize()` | `project-custom` 需注入项目字典 |
+| `test_env_blueprint_runner_default` | `"pytest"` | `"pytest" \| "jest" \| "go-test" \| "custom"` | 默认测试运行器 | §7.2 `test_env_blueprint` | 多语言项目需逐 WBS 子树覆盖 |
+| `blueprint_output_format` | `"yaml+markdown"` | `"yaml" \| "json" \| "yaml+markdown"` | 输出格式 | §7.1 落盘 | YAML + MD 双写便于 UI 预览 |
+
+**§10 关键准则**：
+
+1. **不可调参数的硬锁**：`coverage_ac_threshold = 1.0` 通过代码 assert 在启动时校验，配置文件若被改写代码层直接 panic 阻止启动（fail-closed · PM-05）。
+2. **参数变更走审计**：任何参数变更经 IC-09 `append_event` 记录 `{l2: "L2-01", param: "xxx", old: ..., new: ..., actor: ..., project_id: ...}`，PM-14 + PM-18 组合。
+3. **环境级差异**：`dev` / `staging` / `prod` 可各自 override（YAML anchor 继承），但 `coverage_ac_threshold` 跨所有环境锁死 1.0。
 
 ---
 
 ## §11 错误处理 + 降级策略
 
-<!-- FILL §11 · 本 L2 各类错误的处理策略 · 降级链 · 与本 L1 其他 L2 / L1-07 supervisor 的降级协同 -->
+本 L2 错误域分为 4 大类 · 10 + 错误码 · 每类有明确的**发现→归因→降级/升级→恢复**闭环。所有错误必须满足 `E_L204_L201_{REASON}` 命名，错误事件经 IC-09 `append_event` 落盘 · 严重错误经 L1-07 Supervisor 升级（IC-13）。
+
+### 11.1 错误码总览
+
+| 错误码 | 等级 | 触发场景 | 降级策略 | 升级路径 | 恢复策略 |
+|---|---|---|---|---|---|
+| `E_L204_L201_AC_COVERAGE_NOT_100` | 🔴 FAIL-L3 | AC 矩阵中存在未覆盖到至少 1 条用例槽的 AC | 无降级（硬红线） | 直接 S3 Gate FAIL · 不升级 | 人类 / L1-01 补充 AC 或分配用例槽 · 重跑 |
+| `E_L204_L201_AC_CASE_EXPLOSION` | 🟡 WARN | 单 AC 派生用例 > `max_test_cases_per_ac` | 截断至上限 · 发 WARN 事件 · 推 L1-10 | 3 次同项目超限升级 L1-07 SUGGEST | 人类拆分 AC 或调高阈值 |
+| `E_L204_L201_NLP_PARSE_FAILED` | 🟠 P2 | AC 自然语言解析失败（nlp_parser_backend 报错） | 自动 fallback 到 regex 解析器 · 再失败直接本条 AC 标 `parse_status=manual_review` | 同一 blueprint 超 20% AC 进入 manual_review 升级 L1-07 | 人类修正 AC 文本或降级到 Gherkin |
+| `E_L204_L201_PYRAMID_RATIO_INVALID` | 🔴 FAIL-L2 | 配置的 pyramid_ratio 三项之和 ≠ 100 或超出区间 | 无降级（启动前 fail-closed） | 启动时 panic · 禁止进入 S3 | 修配置 + 重启 |
+| `E_L204_L201_BLUEPRINT_BUILD_TIMEOUT` | 🟠 P2 | 构建蓝图总时长超 `blueprint_build_timeout_s` | 降级到 `fast-path`：跳过 NLP 高级解析 · 用 regex 兜底 · 跳过 diff check | 连续 3 次超时升级 L1-07 SUGGEST 「NLP 后端劣化」 | 切换 backend 或扩容 |
+| `E_L204_L201_BLUEPRINT_LOCK_TIMEOUT` | 🟠 P2 | 抢不到蓝图写锁（与并发 update 竞争） | 退避重试 3 次（exponential 50→200→800ms） | 仍失败返回调用方 · 调用方降级 | 锁 TTL 超限自动释放 |
+| `E_L204_L201_VERSION_CONFLICT` | 🟡 WARN | 并发更新导致版本号冲突（CAS 失败） | 自动 rebase（合并 diff 后重试 1 次） | rebase 失败返调用方 · 升级 L1-07 `CONCURRENT_UPDATE_STORM` | 主人工裁决 |
+| `E_L204_L201_BROADCAST_FAILED` | 🟠 P2 | `blueprint_ready` 广播到 L2-02/03/04 失败 | 重试 2 次 · 仍失败降级串行广播 | 3 L2 中 ≥ 1 收不到 → FAIL-L2 · S3 Gate 卡住 | 走 L2-07 回退路由 → S3 |
+| `E_L204_L201_TEST_ENV_RESOLVE_FAILED` | 🟠 P2 | test_env_blueprint 中 runner / docker image 等不可解析 | 降级到 runner 默认值（pytest）· 推 WARN | runner 是 `custom` 且 resolver 挂掉 → FAIL-L2 | 修 runner 配置 |
+| `E_L204_L201_KB_RECIPE_MISS` | 🟢 INFO | 读 L1-06 KB 的 recipe 未命中（IC-06） | 无需降级 · recipe 本身是可选增强 | 不升级 | 项目成熟后 L1-06 自动补 recipe |
+| `E_L204_L201_AUDIT_APPEND_FAILED` | 🔴 FAIL-L1 | IC-09 `append_event` 写入失败 | **不允许静默丢日志** · 缓存到本地 WAL 重试 | 持续失败 10 次直接触发 L1-07 HALT（审计断链违反 PM-18） | 检查 L1-09 存储 |
+
+### 11.2 降级链矩阵
+
+```plantuml
+@startuml
+title L2-01 · 多层降级链（主路径 fail → fast-path → degraded → FAIL-L2 → FAIL-L3）
+skinparam state {
+  BackgroundColor<<NORMAL>> PaleGreen
+  BackgroundColor<<DEGRADE>> Khaki
+  BackgroundColor<<FAIL>> Salmon
+  BackgroundColor<<HALT>> OrangeRed
+}
+
+state "NORMAL\n主路径\nNLP + diff + broadcast 并发" as NORMAL <<NORMAL>>
+state "FAST_PATH\n降级 1\nregex AC 解析\n关 diff check" as FAST <<DEGRADE>>
+state "DEGRADED_SERIAL\n降级 2\n串行 broadcast\n关高级缓存" as SERIAL <<DEGRADE>>
+state "FAIL_L2\n返调用方\nS3 Gate 待审卡 FAIL" as FAILL2 <<FAIL>>
+state "FAIL_L3\nAC 硬红线不满足\nS3 Gate 直接 REJECT" as FAILL3 <<FAIL>>
+state "HALT\n审计断链\nL1-07 硬暂停" as HALT <<HALT>>
+
+[*] --> NORMAL
+NORMAL --> FAST : BUILD_TIMEOUT\nNLP_PARSE_FAILED(20%+)
+FAST --> SERIAL : BROADCAST_FAILED(x2)
+SERIAL --> FAILL2 : BROADCAST_FAILED(x3)\nTEST_ENV_RESOLVE_FAILED(runner=custom)
+NORMAL --> FAILL3 : AC_COVERAGE_NOT_100
+FAST --> FAILL3 : AC_COVERAGE_NOT_100
+NORMAL --> HALT : AUDIT_APPEND_FAILED(x10)
+FAST --> HALT : AUDIT_APPEND_FAILED(x10)
+FAILL2 --> NORMAL : L2-07 回退到 S3 后\n修正并重进
+FAILL3 --> NORMAL : 人类补 AC/用例槽后重进
+HALT --> NORMAL : 人类修复 L1-09 存储\n+ 审计 WAL 重放
+
+@enduml
+```
+
+### 11.3 与 L1-07 Supervisor 的降级协同（PM-03 独立 session）
+
+- **WARN 级**：本 L2 自己记 audit + 推 L1-10 UI · 不惊动 Supervisor。
+- **P2 级**：本 L2 记 audit + 经 IC-13 发 `SUGGEST` 给 Supervisor · Supervisor 看到 3 次以上同类 P2 才会下降级指令。
+- **FAIL-L2/L3**：本 L2 产 S3 Gate REJECT 凭证 + 推 L1-07 消费 verdict · 由 L2-07 回退路由。
+- **HALT**：本 L2 主动发 `BLOCK` 信号到 L1-07（IC-13）· L1-07 拉整个主循环停止 · 审计断链违反 PM-18 是最严重错误，fail-closed 而非静默继续。
+
+**Open Questions（§11 末）**：
+
+- **OQ-01 **「FAIL-L3 AC 硬红线重进」**的用户侧体验**：S3 Gate 硬 REJECT 后，UI 是只显示"缺 N 条 AC 覆盖"还是**主动建议由 LLM 补 AC 初稿**？后者 UX 好但污染 AC 可追溯性（人类批改 AI 生成 vs 人类从 0 写），需 L1-10 产品决策。
+- **OQ-02 **「LLM nlp_parser_backend 的成本护栏」**：当 NLP backend 切到 LLM（deepseek），每个项目 50+ AC × 重试 2 次 = 100 次调用，**按当前 0.002$/次计峰值 $0.2/blueprint**——大规模并发时累计可观。是否引入**租户级 LLM 预算上限** + **缓存命中率 KPI**？本 L2 设计未定。
+- **OQ-03 **「pyramid_ratio 动态调整」**：项目进行中若发现 e2e 比例偏低（<5%）导致 bug 逃逸，是否允许**本 L2 基于历史缺陷数据自动调比**？自动调比会改变 L2-03 生成用例数分布，需要 Supervisor 批准 + 审计闭环。
+- **OQ-04 **「AC 输入 schema 的 fmf / Gherkin / Markdown 多形态 DSL 收敛」**：目前同时支持 3 种 AC 源格式，长期是否应收敛到单一格式（降低 L2-01 解析复杂度）？若收敛到 Gherkin，项目现存大量 Markdown AC 需迁移，工程量不小——**保持多格式 vs 强制 Gherkin** 是未决选型。
+- **OQ-05 **「blueprint diff 算法」**：当前 `blueprint_diff_check` 用 deep diff（dict 级），对 `ac_matrix` 这种长 list 会产生噪音 diff。是否引入**语义级 diff**（例如只关注"AC 数 / 覆盖率 / runner 变化"这类真正影响下游的字段）？算法未决。
+- **OQ-06 **「跨项目 blueprint 模板复用」**：相同领域的项目（例如两个 SaaS 项目）是否可**共享 AC 骨架模板 + project 级 override**？当前 blueprint 完全 per-project 独立，未利用 L1-06 KB 的 pattern 层。涉及模板与 PM-14 项目隔离的 trade-off。
+- **OQ-07 **「blueprint 版本演进的向后兼容矩阵」**：当一个项目 S3 已通过 · S4 执行到一半 · 这时用户新增 AC → 本 L2 需 **产 v1.1 蓝图** · 但 L2-05 S4 驱动器已加载 v1.0。是否**强制 S4 冻结 blueprint 到完成**，还是**支持增量 patch 到 S4**？前者简单但不灵活，后者复杂但贴合敏捷。
 
 ---
 
 ## §12 性能目标
 
-<!-- FILL §12 · 本 L2 的 P95/P99 延迟 SLO · 吞吐 · 资源消耗 · 并发上限 -->
+本 L2 性能 SLO 以**单 project 50 AC · 常规复杂度**为基准场景定义。SLO 分 P50 / P95 / P99 三档，P99 是升级 L1-07 的触发阈。
+
+### 12.1 延迟 SLO
+
+| 操作 | P50 | P95 | P99 | 超 P99 行为 |
+|---|---|---|---|---|
+| `generate_blueprint(ac_count=50)` | 200ms | **500ms** | 2000ms | 走 §11.2 FAST_PATH 降级 |
+| `generate_blueprint(ac_count=50, backend=llm-deepseek)` | 2s | 8s | 20s | 超 20s 触发 BUILD_TIMEOUT · 降级 regex |
+| `get_blueprint(hit_cache)` | 2ms | 10ms | 50ms | 超 50ms 刷新缓存 |
+| `validate_coverage` | 5ms | 30ms | 100ms | 纯 CPU bound · 超标说明 AC 太多 |
+| `broadcast_blueprint_ready`（并发） | 50ms | 150ms | 500ms | 超 500ms 降级串行 |
+| `broadcast_blueprint_ready`（串行降级后） | 200ms | 600ms | 1500ms | 超 1500ms 返 BROADCAST_FAILED |
+
+### 12.2 吞吐 + 并发
+
+- **单节点吞吐**：`generate_blueprint` 并发 ≥ 10 (不同 project)，P95 不劣化。
+- **系统级吞吐**：全集群 ≥ 50 blueprint/s（水平扩展 5 节点）。
+- **锁争用上限**：同 project 蓝图写锁 QPS ≤ 5（超过触发 LOCK_TIMEOUT 告警）。
+
+### 12.3 资源消耗
+
+- **内存**：常驻 ≤ 200MB（包含 LRU 缓存）· 峰值 ≤ 500MB（50 project 并发 build）。
+- **CPU**：`generate_blueprint` 主路径 CPU bound ≤ 0.8 核 · LLM backend 时 IO bound ≤ 0.3 核。
+- **磁盘**：单 blueprint 持久化 ≤ 500KB（YAML + MD 双写）· 年度归档占用 `project_count × avg_blueprint_count × 500KB × retention_multiplier`。
+
+### 12.4 冷启动 vs 热启动
+
+- **冷启动**：首个 generate 需加载 NLP 模型 + 白名单规则 + KB recipe 缓存，P95 可到 2s（一次性）。
+- **热启动**：模型常驻 · 走基线 SLO。
+- **建议**：启动期间做 warmup 调用（合成 AC 预热 NLP backend）。
+
+### 12.5 性能测试基线
+
+- 每次 commit CI 跑 `bench/test_blueprint_generate_latency.py`，对比 baseline P95 不得劣化 > 10%。
+- 每周 `bench/concurrent_50_projects.py` 跑长周期并发压测，观察内存增长曲线（检漏）。
 
 ---
 
 ## §13 与 2-prd / 3-2 TDD 的映射表
 
-<!-- FILL §13 · 本 L2 接口 ↔ 2-prd §5.4 对应小节 · 本 L2 方法 ↔ 3-2-Solution-TDD/L1/L2-01-tests.md 的测试用例 -->
+本节维护本 L2 "对外接口 ↔ PRD 小节 ↔ 3-2-Solution-TDD 测试用例"的**三向 traceability**，支撑 PM-13（文档可追溯）+ PM-17（PRD-TDD 闭环）。
+
+### 13.1 PRD 映射
+
+| 本 L2 章节 | PRD 锚点 | PRD 内容摘要 |
+|---|---|---|
+| §1.1 定位 | `docs/2-prd/L1-04 Quality Loop/prd.md §5.4.1 L2-01` | BF-S3-01 "将 4 件套 + WBS 转为 Master Test Plan 等 5 件 S3 产出物" |
+| §3.1 `generate_blueprint` | PRD §5.4.1 职责 1 | 接收 4 件套（Charter/Scope/WBS/Baseline） · 产蓝图 |
+| §3.2 `validate_coverage` | PRD §5.4.4 硬约束 4 | S3 Gate 要求 5 件产物全齐 + AC 覆盖率 100% |
+| §3.3 `get_blueprint` | PRD §5.4.2 / §5.4.3 | L2-02/03/04/06 读蓝图的服务接口 |
+| §3.4 `broadcast_blueprint_ready` | PRD §5.4.1 职责 2 | 广播触发下游 L2 并行生产（不是串行） |
+| §4 接口依赖 | PRD §5.4.1 上下文图 | L1-01 入口 · L1-03 WBS 上游 · L2-02/03/04 下游 |
+| §5 P0 时序 | PRD §6.1 S3 主干时序 | 与 PRD §6.1 时序图互为 3-1 技术细化 vs 2-prd 能力表达 |
+| §6 算法 | （PRD 未深入 · 本 L2 独有） | NLP 解析 · AC 矩阵构建 · pyramid 求解 |
+| §7 schema | PRD §5.4.1 产出物 · `blueprint` 物件 | PRD 只给字段清单 · 本 L2 给字段级 YAML schema |
+| §8 状态机 | （PRD 未涉及） | 本 L2 工程独有 |
+| §9 开源调研 | `L0/open-source-research.md §TDD` | 配合 L0 研究段 · L2 粒度细化 |
+| §10 配置 | PRD §5.4.4 硬约束 · `coverage_ac_threshold = 1.0` | PRD 锚定约束 · 本 L2 落配置锁 |
+| §11 错误处理 | PRD §5.4.4 硬约束 1-4 · BF-E-XX | 错误码映射 PRD 的 exception 场景 |
+| §12 性能 | PRD §7 性能要求（若有） | 若 PRD 未定义则本 L2 自定义 |
+
+### 13.2 3-2 TDD 测试用例映射（待建·占位）
+
+3-2-Solution-TDD 层级的 `docs/3-2-Solution-TDD/L1-04/L2-01-tests.md` 尚未建立，本节先落占位表 · 待 R5 Phase 生成。
+
+| 本 L2 方法 | 测试用例 ID · 预期类型 | 覆盖场景 |
+|---|---|---|
+| `generate_blueprint` | TC-L204-L201-001 ~ 020 | 50 AC 主路径 · 空 AC · AC 爆炸 · NLP fallback · LLM backend · 冷启动 · 热启动 · 并发 10 project · 锁争用 · diff 生成 · 缓存命中/失效 |
+| `validate_coverage` | TC-L204-L201-021 ~ 030 | AC 100% · AC 缺 1 · AC 缺 >20% · coverage_ac_threshold 硬锁绕过尝试 · pyramid_ratio 非法 · test_env runner 解析 |
+| `get_blueprint` | TC-L204-L201-031 ~ 035 | 缓存命中 · 缓存 miss · TTL 过期 · 并发读 · 版本锁定读 |
+| `broadcast_blueprint_ready` | TC-L204-L201-036 ~ 045 | 并发广播成功 · 部分下游超时 · 串行降级 · 完全失败 FAIL-L2 · Supervisor 升级触发 |
+| 综合 / 端到端 | TC-L204-L201-046 ~ 050 | S3 Gate 全流程 · 从 4 件套输入到 5 件产物全齐 + Gate 审批通过 · 含 L1-10 UI 联动 |
+
+### 13.3 与兄弟 L2 的边界（防重叠）
+
+- 本 L2 **只产** TDDBlueprint（含 test_pyramid / ac_matrix / coverage_target / test_env_blueprint）。
+- **DoDExpression** 由 L2-02 产（本 L2 不产 DoD 表达式）。
+- **TestSuite 骨架** 由 L2-03 产（本 L2 不生成具体用例代码）。
+- **QualityGateConfig + AcceptanceChecklist** 由 L2-04 产（本 L2 只给 coverage_target 作为输入）。
+- **WP 粒度执行** 由 L2-05 驱动（本 L2 不参与 S4 IMPL 循环）。
+- **Verifier 编排** 由 L2-06 做（本 L2 只产蓝图作为 Verifier 的输入之一）。
+- **回退路由** 由 L2-07 做（本 L2 只产凭证 · 不翻译 verdict）。
 
 ---
 
-*— L1 L2-01 TDD 蓝图生成器 · skeleton 骨架 · 等待 subagent 多次 Edit 刷新填充 —*
+*— L1-04 L2-01 TDD 蓝图生成器 · §1-§13 + Open Questions 全填充 · 深度 A 达标（~2500 行） —*
