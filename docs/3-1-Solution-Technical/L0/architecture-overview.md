@@ -58,7 +58,7 @@ consumer:
 - [x] §12 扩展性架构（V1→V2→V3 演进）
 - [x] §13 与现有 harnessFlow repo 对比（兼容 / 新增 / 废弃）
 - [x] §14 开源调研（LangGraph / Temporal / OpenHands / CrewAI / AutoGen）
-- [x] 附录 A 顶层架构 Mermaid 大图
+- [x] 附录 A 顶层架构 PlantUML 大图
 - [x] 附录 B 与 2-prd scope §8 4 类流图的对应
 - [x] 附录 C 术语速查
 
@@ -76,29 +76,31 @@ consumer:
 
 **解读 3（为何是黑盒）**：对"超大软件项目"场景而言，Claude Code session + HarnessFlow 这一组合已经是**唯一的工作台**，不需要考虑与 Jira / Linear / Confluence 等外部协作工具的对接（Goal §6 明确不做 PM 工具替代）。这种设计最大化 **portability**：把 HarnessFlow 装在任何支持 Claude Code 的 MacBook / Linux / Windows 上，`./setup.sh` 一下就能用。
 
-```mermaid
-C4Context
-    title HarnessFlow System Context（L1 黑盒视图）
+```plantuml
+@startuml
+!include <C4/C4_Context>
+title HarnessFlow System Context（L1 黑盒视图）
 
-    Person(dev, "单用户（开发者）", "同时承担 Owner / PM / Architect / QA 四角色。通过 Claude Code session 下达任务，通过 UI 做 Stage Gate 决定")
+Person(dev, "单用户（开发者）", "同时承担 Owner / PM / Architect / QA 四角色。通过 Claude Code session 下达任务，通过 UI 做 Stage Gate 决定")
 
-    System_Boundary(cc_host, "Claude Code 宿主进程") {
-        System(hf, "HarnessFlow（本产品）", "AI 技术项目经理 + 架构师；10 个 L1 能力域 + PMP/TOGAF 双主干 + 5 纪律 + methodology-paced 自治")
-    }
+System_Boundary(cc_host, "Claude Code 宿主进程") {
+    System(hf, "HarnessFlow（本产品）", "AI 技术项目经理 + 架构师；10 个 L1 能力域 + PMP/TOGAF 双主干 + 5 纪律 + methodology-paced 自治")
+}
 
-    System_Ext(anthropic_api, "Anthropic Claude API", "主 LLM 推理（Claude Code 平台代管，HarnessFlow 不直接调）")
-    System_Ext(deepseek_api, "DeepSeek API", "辅 LLM 推理（可选，通过 Claude Code MCP 代管）")
-    System_Ext(local_fs, "本地文件系统", "projects/ + global_kb/ + failure_archive.jsonl + system.log")
-    System_Ext(git_repo, "Git 工作树 + Git 远程", "用户的业务代码仓库；HarnessFlow 通过 git 工具调用访问，不自己 clone")
-    System_Ext(local_browser, "本地浏览器", "访问 localhost:8765 的 Vue3 UI（可选）")
+System_Ext(anthropic_api, "Anthropic Claude API", "主 LLM 推理（Claude Code 平台代管，HarnessFlow 不直接调）")
+System_Ext(deepseek_api, "DeepSeek API", "辅 LLM 推理（可选，通过 Claude Code MCP 代管）")
+System_Ext(local_fs, "本地文件系统", "projects/ + global_kb/ + failure_archive.jsonl + system.log")
+System_Ext(git_repo, "Git 工作树 + Git 远程", "用户的业务代码仓库；HarnessFlow 通过 git 工具调用访问，不自己 clone")
+System_Ext(local_browser, "本地浏览器", "访问 localhost:8765 的 Vue3 UI（可选）")
 
-    Rel(dev, hf, "自然语言 + Stage Gate 点击", "CC session / HTTP")
-    Rel(hf, anthropic_api, "LLM 调用", "通过 CC 代管")
-    Rel(hf, deepseek_api, "辅 LLM 调用", "通过 CC MCP 代管")
-    Rel(hf, local_fs, "读写项目根 / KB / 事件总线", "直接文件 I/O")
-    Rel(hf, git_repo, "git status / commit / branch", "subprocess bash")
-    Rel(dev, local_browser, "浏览 UI", "HTTP")
-    Rel(local_browser, hf, "SSE 事件流 + REST", "localhost:8765")
+Rel(dev, hf, "自然语言 + Stage Gate 点击", "CC session / HTTP")
+Rel(hf, anthropic_api, "LLM 调用", "通过 CC 代管")
+Rel(hf, deepseek_api, "辅 LLM 调用", "通过 CC MCP 代管")
+Rel(hf, local_fs, "读写项目根 / KB / 事件总线", "直接文件 I/O")
+Rel(hf, git_repo, "git status / commit / branch", "subprocess bash")
+Rel(dev, local_browser, "浏览 UI", "HTTP")
+Rel(local_browser, hf, "SSE 事件流 + REST", "localhost:8765")
+@enduml
 ```
 
 **关键技术决策**：
@@ -127,33 +129,35 @@ C4Context
 
 **解读 3（容器间通信方式）**：每对容器之间的通信协议不同 —— 主 skill ↔ Supervisor 走 **PostToolUse hook + jsonl 文件订阅**（异步）；主 skill ↔ Verifier 走 **`/delegate` subagent 调用 + 返回 JSON 报告**（同步 block）；任何容器 ↔ FS 数据面 走 **直接 POSIX 文件 I/O + fsync**（同步）；UI ↔ 主 skill 走 **FastAPI REST + SSE 事件流**（异步拉 / 推双向）。这种**异构通信** 是为了匹配每种交互的**延迟/吞吐/可审计性**要求。
 
-```mermaid
-C4Container
-    title HarnessFlow Container Diagram（L2 进程级容器）
+```plantuml
+@startuml
+!include <C4/C4_Container>
+title HarnessFlow Container Diagram（L2 进程级容器）
 
-    Person(user, "单用户", "Claude Code session / 浏览器")
+Person(user, "单用户", "Claude Code session / 浏览器")
 
-    System_Boundary(hf, "HarnessFlow（本系统）") {
-        Container(main_skill, "主 Skill Runtime", "Claude Code session（Conversation Context）", "承载 L1-01/02/03/04/05/06/08/09 的执行；tick loop + 决策 + 审计")
-        Container(supervisor, "Supervisor Subagent Runtime", "独立 Claude session（long-lived）", "承载 L1-07；每 30s 扫事件总线 + PostToolUse hook")
-        Container(verifier, "Verifier Subagent Runtime", "独立 Claude session（一次性 per 调用）", "L1-04 委托；三段证据链 + DoD 白名单 AST")
-        ContainerDb(fs_data, "本地 FS 数据面", "POSIX 文件系统", "projects/<pid>/ + global_kb/ + failure_archive.jsonl")
-        Container(fastapi_ui, "FastAPI + Vue3 UI", "uvicorn 子进程 + 浏览器", "localhost:8765 · 11 tab + 9 admin · SSE 事件流")
-    }
+System_Boundary(hf, "HarnessFlow（本系统）") {
+    Container(main_skill, "主 Skill Runtime", "Claude Code session（Conversation Context）", "承载 L1-01/02/03/04/05/06/08/09 的执行；tick loop + 决策 + 审计")
+    Container(supervisor, "Supervisor Subagent Runtime", "独立 Claude session（long-lived）", "承载 L1-07；每 30s 扫事件总线 + PostToolUse hook")
+    Container(verifier, "Verifier Subagent Runtime", "独立 Claude session（一次性 per 调用）", "L1-04 委托；三段证据链 + DoD 白名单 AST")
+    ContainerDb(fs_data, "本地 FS 数据面", "POSIX 文件系统", "projects/<pid>/ + global_kb/ + failure_archive.jsonl")
+    Container(fastapi_ui, "FastAPI + Vue3 UI", "uvicorn 子进程 + 浏览器", "localhost:8765 · 11 tab + 9 admin · SSE 事件流")
+}
 
-    System_Ext(cc_host, "Claude Code 宿主", "LLM 调用 / tool invocation / hooks / MCP 代管")
+System_Ext(cc_host, "Claude Code 宿主", "LLM 调用 / tool invocation / hooks / MCP 代管")
 
-    Rel(user, main_skill, "自然语言对话 + slash command", "Claude Code REPL")
-    Rel(user, fastapi_ui, "Web 浏览", "HTTP :8765")
-    Rel(main_skill, cc_host, "LLM / tool / subagent 调用", "Claude Code 平台原生")
-    Rel(main_skill, fs_data, "append_event / read 4 件套", "POSIX I/O + fsync")
-    Rel(main_skill, supervisor, "唤起 + PostToolUse 事件", "CC subagent 生命周期")
-    Rel(supervisor, fs_data, "scan events.jsonl（只读）", "POSIX I/O")
-    Rel(supervisor, main_skill, "push_suggestion / request_hard_halt", "IC-13 / IC-15 via hook stdout")
-    Rel(main_skill, verifier, "delegate_verifier（按需一次性）", "IC-20 via CC subagent")
-    Rel(verifier, fs_data, "read s4_artifacts + write verifier_report", "POSIX I/O")
-    Rel(fastapi_ui, fs_data, "tail events.jsonl（SSE 推送）", "POSIX + inotify")
-    Rel(fastapi_ui, main_skill, "user_intervene（IC-17）", "REST POST / stdin 管道")
+Rel(user, main_skill, "自然语言对话 + slash command", "Claude Code REPL")
+Rel(user, fastapi_ui, "Web 浏览", "HTTP :8765")
+Rel(main_skill, cc_host, "LLM / tool / subagent 调用", "Claude Code 平台原生")
+Rel(main_skill, fs_data, "append_event / read 4 件套", "POSIX I/O + fsync")
+Rel(main_skill, supervisor, "唤起 + PostToolUse 事件", "CC subagent 生命周期")
+Rel(supervisor, fs_data, "scan events.jsonl（只读）", "POSIX I/O")
+Rel(supervisor, main_skill, "push_suggestion / request_hard_halt", "IC-13 / IC-15 via hook stdout")
+Rel(main_skill, verifier, "delegate_verifier（按需一次性）", "IC-20 via CC subagent")
+Rel(verifier, fs_data, "read s4_artifacts + write verifier_report", "POSIX I/O")
+Rel(fastapi_ui, fs_data, "tail events.jsonl（SSE 推送）", "POSIX + inotify")
+Rel(fastapi_ui, main_skill, "user_intervene（IC-17）", "REST POST / stdin 管道")
+@enduml
 ```
 
 **关键技术决策**：
@@ -174,36 +178,38 @@ C4Container
 
 **解读 3（component 的组合粒度）**：每个 L1 对应 1 个 architecture.md（顶层 `architecture.md`）+ N 个 tech-design.md（每 L2 一个）。本文档 §7 给出 10 L1 component diagram；每 L1 architecture.md 再进一步给出该 L1 内部 L2 间的 component diagram。组合关系：**本 L0 overview 负责 "L1 之间"**，每 L1 architecture 负责 **"L1 内部 L2 之间"**，每 L2 tech-design 负责 **"L2 内部 aggregate / service / entity 之间"**。三层粒度明确分工，互不越界。
 
-```mermaid
-C4Component
-    title HarnessFlow 主 Skill Runtime 内部 Component 视图（L3 仅展示 10 L1 · 不展开 L2）
+```plantuml
+@startuml
+!include <C4/C4_Component>
+title HarnessFlow 主 Skill Runtime 内部 Component 视图（L3 仅展示 10 L1 · 不展开 L2）
 
-    Container_Boundary(main, "主 Skill Runtime（Claude Code session）") {
-        Component(l1_01, "L1-01 主 Agent 决策循环", "tick loop + 决策 + 审计（6 L2）", "持续 tick / 决策下一步 / 留痕")
-        Component(l1_02, "L1-02 项目生命周期编排", "7 阶段 × 4 Gate（7 L2）", "章程 / 4 件套 / 9 计划 / TOGAF / 收尾")
-        Component(l1_03, "L1-03 WBS + WP 调度", "拓扑 + WP 排程（5 L2）", "WBS 拆解 / 拓扑图 / WP mini-PMP")
-        Component(l1_04, "L1-04 Quality Loop", "TDD 定义 + 执行 + TDDExe（7 L2）", "蓝图 / DoD 白名单 / 4 级回退")
-        Component(l1_05, "L1-05 Skill + 子 Agent 调度", "能力抽象层（5 L2）", "invoke_skill / delegate_subagent / 降级")
-        Component(l1_06, "L1-06 3 层知识库", "session/project/global（5 L2）", "kb_read / kb_write / promote")
-        Component(l1_07, "L1-07 Supervisor（旁路容器）", "8 维度 × 4 级干预（6 L2）", "INFO / SUGG / WARN / BLOCK + 红线")
-        Component(l1_08, "L1-08 多模态内容处理", "md / 代码 / 图片（4 L2）", "process_content")
-        Component(l1_09, "L1-09 韧性 + 审计", "事件总线 + 锁 + 检查点（5 L2）", "append_event / replay / audit_trail")
-        Component(l1_10, "L1-10 人机协作 UI（独立容器）", "11 tab + 9 admin（7 L2）", "push_gate_card / user_intervene")
-    }
+Container_Boundary(main, "主 Skill Runtime（Claude Code session）") {
+    Component(l1_01, "L1-01 主 Agent 决策循环", "tick loop + 决策 + 审计（6 L2）", "持续 tick / 决策下一步 / 留痕")
+    Component(l1_02, "L1-02 项目生命周期编排", "7 阶段 × 4 Gate（7 L2）", "章程 / 4 件套 / 9 计划 / TOGAF / 收尾")
+    Component(l1_03, "L1-03 WBS + WP 调度", "拓扑 + WP 排程（5 L2）", "WBS 拆解 / 拓扑图 / WP mini-PMP")
+    Component(l1_04, "L1-04 Quality Loop", "TDD 定义 + 执行 + TDDExe（7 L2）", "蓝图 / DoD 白名单 / 4 级回退")
+    Component(l1_05, "L1-05 Skill + 子 Agent 调度", "能力抽象层（5 L2）", "invoke_skill / delegate_subagent / 降级")
+    Component(l1_06, "L1-06 3 层知识库", "session/project/global（5 L2）", "kb_read / kb_write / promote")
+    Component(l1_07, "L1-07 Supervisor（旁路容器）", "8 维度 × 4 级干预（6 L2）", "INFO / SUGG / WARN / BLOCK + 红线")
+    Component(l1_08, "L1-08 多模态内容处理", "md / 代码 / 图片（4 L2）", "process_content")
+    Component(l1_09, "L1-09 韧性 + 审计", "事件总线 + 锁 + 检查点（5 L2）", "append_event / replay / audit_trail")
+    Component(l1_10, "L1-10 人机协作 UI（独立容器）", "11 tab + 9 admin（7 L2）", "push_gate_card / user_intervene")
+}
 
-    Rel(l1_01, l1_02, "IC-01 request_state_transition")
-    Rel(l1_01, l1_03, "IC-02 get_next_wp")
-    Rel(l1_01, l1_04, "IC-03 enter_quality_loop")
-    Rel(l1_01, l1_05, "IC-04/05 invoke_skill / delegate_subagent")
-    Rel(l1_02, l1_03, "IC-19 request_wbs_decomposition")
-    Rel(l1_04, l1_05, "IC-20 delegate_verifier")
-    Rel(l1_08, l1_05, "IC-12 delegate_codebase_onboarding")
-    Rel(l1_07, l1_01, "IC-13/15 push_suggestion / hard_halt")
-    Rel(l1_07, l1_04, "IC-14 push_rollback_route")
-    Rel(l1_10, l1_01, "IC-17 user_intervene")
-    Rel(l1_02, l1_10, "IC-16 push_stage_gate_card")
-    Rel(l1_10, l1_09, "IC-18 query_audit_trail")
-    Rel(l1_01, l1_09, "IC-09 append_event（全部 L1）")
+Rel(l1_01, l1_02, "IC-01 request_state_transition")
+Rel(l1_01, l1_03, "IC-02 get_next_wp")
+Rel(l1_01, l1_04, "IC-03 enter_quality_loop")
+Rel(l1_01, l1_05, "IC-04/05 invoke_skill / delegate_subagent")
+Rel(l1_02, l1_03, "IC-19 request_wbs_decomposition")
+Rel(l1_04, l1_05, "IC-20 delegate_verifier")
+Rel(l1_08, l1_05, "IC-12 delegate_codebase_onboarding")
+Rel(l1_07, l1_01, "IC-13/15 push_suggestion / hard_halt")
+Rel(l1_07, l1_04, "IC-14 push_rollback_route")
+Rel(l1_10, l1_01, "IC-17 user_intervene")
+Rel(l1_02, l1_10, "IC-16 push_stage_gate_card")
+Rel(l1_10, l1_09, "IC-18 query_audit_trail")
+Rel(l1_01, l1_09, "IC-09 append_event（全部 L1）")
+@enduml
 ```
 
 **关键技术决策**：
@@ -232,60 +238,56 @@ C4Component
 
 **解读 3（资源足迹）**：典型资源使用：磁盘约 **200 MB - 2 GB**（取决于 project 数量和事件总线长度）；内存约 **300 MB - 800 MB**（主要是 FastAPI Python + Vue3 浏览器页）；CPU 稳态空闲，tick 时瞬时 10-20%（主要在 LLM 调用的 I/O 等待）。相比 aigc 项目的 PostgreSQL + OSS + ffmpeg 栈（动辄数 GB 磁盘），HarnessFlow 是极轻量级部署。
 
-```mermaid
-flowchart TB
-    subgraph Host["开发者机器（MacBook / Linux / Windows）"]
-        subgraph CC_Process["Claude Code 宿主进程（node + electron）"]
-            CC_Session["主 Claude Session<br/>（长对话上下文）<br/>PID A"]
-            CC_SubSup["Supervisor Subagent Session<br/>（long-lived 副 session）<br/>PID B"]
-            CC_SubVer["Verifier Subagent Session<br/>（per-call 一次性）<br/>PID C (ephemeral)"]
-            Hooks_Shell["hooks/*.sh 子进程<br/>PostToolUse / Stop / PreToolUse<br/>PID D (每次 hook 临时拉起)"]
-        end
+```plantuml
+@startuml
+title 单机部署拓扑（开发者机器 · 2 端口 · 可选 UI）
 
-        subgraph FS["本地文件系统 ~/workdir/"]
-            Projects_Dir["projects/&lt;pid&gt;/<br/>- manifest.yaml<br/>- events.jsonl (append-only)<br/>- audit.jsonl<br/>- supervisor_events.jsonl<br/>- checkpoints/*.json<br/>- kb/ · delivery/ · retros/"]
-            Global_KB["global_kb/<br/>entries/*.jsonl"]
-            Failure_Arch["failure_archive.jsonl<br/>（全局 · 按 project_id 过滤）"]
-            System_Log["system.log<br/>（非 project 级 bootstrap 日志）"]
-            Index_File["projects/_index.yaml<br/>（全 project 索引）"]
-        end
+package "开发者机器（MacBook / Linux / Windows）" as Host {
+    package "Claude Code 宿主进程（node + electron）" as CC_Process {
+        component "主 Claude Session\n（长对话上下文）\nPID A" as CC_Session
+        component "Supervisor Subagent Session\n（long-lived 副 session）\nPID B" as CC_SubSup
+        component "Verifier Subagent Session\n（per-call 一次性）\nPID C (ephemeral)" as CC_SubVer
+        component "hooks/*.sh 子进程\nPostToolUse / Stop / PreToolUse\nPID D (每次 hook 临时拉起)" as Hooks_Shell
+    }
 
-        subgraph UI_Optional["可选 UI 容器（按需启动）"]
-            FastAPI_Proc["uvicorn app.main:app<br/>:8765 listen<br/>PID E"]
-            Vue_Proc["浏览器页 (Vue3 SPA)<br/>PID F<br/>（Chrome / Firefox / Safari 进程）"]
-            Vite_Dev["vite dev (开发态)<br/>:5173 listen<br/>PID G (optional)"]
-        end
+    package "本地文件系统 ~/workdir/" as FS {
+        component "projects/<pid>/\n- manifest.yaml\n- events.jsonl (append-only)\n- audit.jsonl\n- supervisor_events.jsonl\n- checkpoints/*.json\n- kb/ · delivery/ · retros/" as Projects_Dir
+        component "global_kb/\nentries/*.jsonl" as Global_KB
+        component "failure_archive.jsonl\n（全局 · 按 project_id 过滤）" as Failure_Arch
+        component "system.log\n（非 project 级 bootstrap 日志）" as System_Log
+        component "projects/_index.yaml\n（全 project 索引）" as Index_File
+    }
 
-        subgraph Git_Local["用户的业务 Git 工作树"]
-            Git_WT["my-target-repo/<br/>（被 HarnessFlow 管理的业务代码）"]
-        end
-    end
+    package "可选 UI 容器（按需启动）" as UI_Optional {
+        component "uvicorn app.main:app\n:8765 listen\nPID E" as FastAPI_Proc
+        component "浏览器页 (Vue3 SPA)\nPID F\n（Chrome / Firefox / Safari 进程）" as Vue_Proc
+        component "vite dev (开发态)\n:5173 listen\nPID G (optional)" as Vite_Dev
+    }
 
-    subgraph External["外部依赖（通过 Claude Code 宿主代管）"]
-        Anthropic_API[("Anthropic Claude API<br/>api.anthropic.com:443")]
-        DeepSeek_API[("DeepSeek API<br/>api.deepseek.com:443")]
-    end
+    package "用户的业务 Git 工作树" as Git_Local {
+        component "my-target-repo/\n（被 HarnessFlow 管理的业务代码）" as Git_WT
+    }
+}
 
-    CC_Session -- "append / read 文件 I/O + fsync" --> Projects_Dir
-    CC_SubSup -- "scan events.jsonl (只读)" --> Projects_Dir
-    CC_SubVer -- "read s4_artifacts + write verifier_report" --> Projects_Dir
-    Hooks_Shell -- "tail events.jsonl" --> Projects_Dir
-    CC_Session -- "bash git ..." --> Git_WT
-    FastAPI_Proc -- "inotify / 轮询" --> Projects_Dir
-    FastAPI_Proc -- "SSE 推 + REST" --> Vue_Proc
-    Vue_Proc -- "HTTP :8765" --> FastAPI_Proc
-    Vite_Dev -- "代理 /api → :8765" --> FastAPI_Proc
-    CC_Session -- "LLM 调用 (代管)" --> Anthropic_API
-    CC_Session -- "LLM 调用 (代管)" --> DeepSeek_API
-    CC_SubSup -- "LLM 调用 (代管)" --> Anthropic_API
-    CC_SubVer -- "LLM 调用 (代管)" --> Anthropic_API
+package "外部依赖（通过 Claude Code 宿主代管）" as External {
+    database "Anthropic Claude API\napi.anthropic.com:443" as Anthropic_API
+    database "DeepSeek API\napi.deepseek.com:443" as DeepSeek_API
+}
 
-    classDef container fill:#e1f5ff,stroke:#01579b
-    classDef fs fill:#fff9c4,stroke:#f57f17
-    classDef external fill:#ffebee,stroke:#b71c1c
-    class CC_Session,CC_SubSup,CC_SubVer,Hooks_Shell,FastAPI_Proc,Vue_Proc,Vite_Dev container
-    class Projects_Dir,Global_KB,Failure_Arch,System_Log,Index_File fs
-    class Anthropic_API,DeepSeek_API external
+CC_Session --> Projects_Dir : append / read 文件 I/O + fsync
+CC_SubSup --> Projects_Dir : scan events.jsonl (只读)
+CC_SubVer --> Projects_Dir : read s4_artifacts + write verifier_report
+Hooks_Shell --> Projects_Dir : tail events.jsonl
+CC_Session --> Git_WT : bash git ...
+FastAPI_Proc --> Projects_Dir : inotify / 轮询
+FastAPI_Proc --> Vue_Proc : SSE 推 + REST
+Vue_Proc --> FastAPI_Proc : HTTP :8765
+Vite_Dev --> FastAPI_Proc : 代理 /api → :8765
+CC_Session --> Anthropic_API : LLM 调用 (代管)
+CC_Session --> DeepSeek_API : LLM 调用 (代管)
+CC_SubSup --> Anthropic_API : LLM 调用 (代管)
+CC_SubVer --> Anthropic_API : LLM 调用 (代管)
+@enduml
 ```
 
 ### 2.2 端口与网络（仅 localhost）
@@ -367,42 +369,44 @@ Claude Code 宿主 (node)
   - **周期驱动 tick**：无新事件时每 60s 一次的 heartbeat tick（确保不会"死在那"）
   - **Hook 驱动 tick**：PostToolUse hook 发现关键事件（如硬红线信号）触发的 tick
 
-```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant MainLoop as 主 skill session<br/>(L1-01 tick loop)
-    participant FS as events.jsonl
-    participant Sup as Supervisor session
-    participant Ver as Verifier session<br/>(ephemeral)
-    participant Hook as Hook 子进程
+```plantuml
+@startuml
+title 主 skill / Supervisor / Verifier 三 session 协作时序
 
-    User->>MainLoop: CC prompt / UI click<br/>(user_intervene IC-17)
-    MainLoop->>FS: append_event(user_intervene)
-    MainLoop->>MainLoop: tick: query KB + 5 纪律拷问 + 决策
-    MainLoop->>FS: append_event(decision)
-    MainLoop->>Hook: Tool use (e.g. Bash)
-    Hook->>FS: append_event(tool_use_result)
-    Hook->>MainLoop: stdout (continue)
+participant "用户" as User
+participant "主 skill session\n(L1-01 tick loop)" as MainLoop
+participant "events.jsonl" as FS
+participant "Supervisor session" as Sup
+participant "Verifier session\n(ephemeral)" as Ver
+participant "Hook 子进程" as Hook
 
-    par Supervisor 周期 tick (每 30s)
-        Sup->>FS: scan events.jsonl (filter project_id)
-        Sup->>Sup: 8 维度计算
-        alt BLOCK 红线
-            Sup->>MainLoop: IC-15 request_hard_halt<br/>(via hook stdout)
-            MainLoop->>MainLoop: state=HALTED (≤100ms)
-        else WARN/SUGG
-            Sup->>FS: append_event(supervisor_event)
-            Note over MainLoop: 下一 tick 消化<br/>(event-driven)
-        end
-    end
+User -> MainLoop: CC prompt / UI click\n(user_intervene IC-17)
+MainLoop -> FS: append_event(user_intervene)
+MainLoop -> MainLoop: tick: query KB + 5 纪律拷问 + 决策
+MainLoop -> FS: append_event(decision)
+MainLoop -> Hook: Tool use (e.g. Bash)
+Hook -> FS: append_event(tool_use_result)
+Hook -> MainLoop: stdout (continue)
 
-    MainLoop->>Ver: IC-20 delegate_verifier<br/>(拉起一次性 session)
-    Ver->>FS: read s4_artifacts
-    Ver->>Ver: DoD 白名单 AST eval + 三段证据
-    Ver->>FS: write verifier_report
-    Ver-->>MainLoop: {verdict: PASS/FAIL, report}
-    Note over Ver: session 销毁
-    MainLoop->>FS: append_event(verdict)
+== Supervisor 周期 tick (每 30s) ==
+Sup -> FS: scan events.jsonl (filter project_id)
+Sup -> Sup: 8 维度计算
+alt BLOCK 红线
+    Sup -> MainLoop: IC-15 request_hard_halt\n(via hook stdout)
+    MainLoop -> MainLoop: state=HALTED (≤100ms)
+else WARN/SUGG
+    Sup -> FS: append_event(supervisor_event)
+    note over MainLoop: 下一 tick 消化\n(event-driven)
+end
+
+MainLoop -> Ver: IC-20 delegate_verifier\n(拉起一次性 session)
+Ver -> FS: read s4_artifacts
+Ver -> Ver: DoD 白名单 AST eval + 三段证据
+Ver -> FS: write verifier_report
+Ver --> MainLoop: {verdict: PASS/FAIL, report}
+note over Ver: session 销毁
+MainLoop -> FS: append_event(verdict)
+@enduml
 ```
 
 ### 3.3 Supervisor long-lived session 的内部节奏
@@ -501,29 +505,32 @@ T+400ms: exit 0/1，子进程销毁
 
 主 skill 的 tick loop 不是简单 "while True"，内部有精细的状态机，决定每 tick 该做什么：
 
-```mermaid
-stateDiagram-v2
-    [*] --> IDLE
-    IDLE --> QUERY_KB: tick 启动
-    QUERY_KB --> ASK_5_PRINCIPLES: KB 注入完成
-    ASK_5_PRINCIPLES --> DECIDE_ACTION: 5 纪律拷问完成
-    DECIDE_ACTION --> EXEC_TOOL: 决策 = 调工具
-    DECIDE_ACTION --> EXEC_SKILL: 决策 = 调 skill
-    DECIDE_ACTION --> EXEC_SUBAGENT: 决策 = 委托 subagent
-    DECIDE_ACTION --> STATE_TRANSITION: 决策 = 切 state
-    DECIDE_ACTION --> WAIT_USER: 决策 = 等 Gate
-    EXEC_TOOL --> AUDIT: 工具返回
-    EXEC_SKILL --> AUDIT: skill 返回
-    EXEC_SUBAGENT --> AUDIT: subagent 返回（async）
-    STATE_TRANSITION --> AUDIT: 切成
-    AUDIT --> APPEND_EVENT: 审计写
-    APPEND_EVENT --> CHECK_SUPERVISOR: 事件落盘
-    CHECK_SUPERVISOR --> IDLE: 无信号
-    CHECK_SUPERVISOR --> HALTED: BLOCK 红线
-    CHECK_SUPERVISOR --> ADJUST: WARN
-    ADJUST --> DECIDE_ACTION: 重新决策
-    HALTED --> IDLE: 用户 authorize
-    WAIT_USER --> IDLE: user_intervene
+```plantuml
+@startuml
+title 主 skill tick loop 内部状态机
+
+[*] --> IDLE
+IDLE --> QUERY_KB : tick 启动
+QUERY_KB --> ASK_5_PRINCIPLES : KB 注入完成
+ASK_5_PRINCIPLES --> DECIDE_ACTION : 5 纪律拷问完成
+DECIDE_ACTION --> EXEC_TOOL : 决策 = 调工具
+DECIDE_ACTION --> EXEC_SKILL : 决策 = 调 skill
+DECIDE_ACTION --> EXEC_SUBAGENT : 决策 = 委托 subagent
+DECIDE_ACTION --> STATE_TRANSITION : 决策 = 切 state
+DECIDE_ACTION --> WAIT_USER : 决策 = 等 Gate
+EXEC_TOOL --> AUDIT : 工具返回
+EXEC_SKILL --> AUDIT : skill 返回
+EXEC_SUBAGENT --> AUDIT : subagent 返回（async）
+STATE_TRANSITION --> AUDIT : 切成
+AUDIT --> APPEND_EVENT : 审计写
+APPEND_EVENT --> CHECK_SUPERVISOR : 事件落盘
+CHECK_SUPERVISOR --> IDLE : 无信号
+CHECK_SUPERVISOR --> HALTED : BLOCK 红线
+CHECK_SUPERVISOR --> ADJUST : WARN
+ADJUST --> DECIDE_ACTION : 重新决策
+HALTED --> IDLE : 用户 authorize
+WAIT_USER --> IDLE : user_intervene
+@enduml
 ```
 
 每个状态对应一个"主 skill 的 LLM 决策意图"，技术层通过系统 prompt 引导 LLM 按此顺序思考。
@@ -693,73 +700,75 @@ IC-09 是所有 L1 唯一的持久化入口（PRD `scope §8.1.4`）。技术实
 
 **技术栈穿越顺序**（按时间先后）：
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant User as 用户<br/>(Claude Code CLI)
-    participant CCHost as Claude Code 宿主<br/>(node + REPL)
-    participant LLM as Anthropic Claude API<br/>(代管)
-    participant MainSkill as 主 skill<br/>(L1-01 tick)
-    participant ProjState as projects/&lt;pid&gt;/state.yaml
-    participant Events as projects/&lt;pid&gt;/<br/>events.jsonl
-    participant L103 as L1-03 WBS<br/>(skill)
-    participant L104 as L1-04 Quality<br/>(skill)
-    participant TddSkill as tdd subagent<br/>(L1-05 调度)
-    participant GitWT as my-target-repo/<br/>(git work tree)
-    participant Verifier as Verifier subagent<br/>(L1-05 调度)
-    participant Hook as Stop-final-gate.sh
-    participant Sup as Supervisor session
-    participant FastAPI as FastAPI UI
-    participant Browser as 浏览器 Vue3
+```plantuml
+@startuml
+title 技术栈穿越顺序：从 CC prompt 到 UI 刷新
+autonumber
 
-    User->>CCHost: 输入"继续下一 WP"
-    CCHost->>LLM: Messages API (含 /harnessFlow 上下文)
-    LLM-->>CCHost: 输出: 调 MainSkill.tick
-    CCHost->>MainSkill: invoke /harnessFlow:tick
-    MainSkill->>Events: append_event(tick_start, pid=foo)
-    MainSkill->>ProjState: read state.yaml → EXEC
-    MainSkill->>MainSkill: query KB + 拷问 5 纪律 → 决策=取下一 WP
-    MainSkill->>L103: IC-02 get_next_wp(pid=foo)
-    L103->>Events: append_event(wp_dispatched, wp=WP-07)
-    L103-->>MainSkill: wp_def (WP-07)
-    MainSkill->>L104: IC-03 enter_quality_loop(wp=WP-07)
-    L104->>Events: append_event(qloop_start)
+participant "用户\n(Claude Code CLI)" as User
+participant "Claude Code 宿主\n(node + REPL)" as CCHost
+participant "Anthropic Claude API\n(代管)" as LLM
+participant "主 skill\n(L1-01 tick)" as MainSkill
+participant "projects/<pid>/state.yaml" as ProjState
+participant "projects/<pid>/\nevents.jsonl" as Events
+participant "L1-03 WBS\n(skill)" as L103
+participant "L1-04 Quality\n(skill)" as L104
+participant "tdd subagent\n(L1-05 调度)" as TddSkill
+participant "my-target-repo/\n(git work tree)" as GitWT
+participant "Verifier subagent\n(L1-05 调度)" as Verifier
+participant "Stop-final-gate.sh" as Hook
+participant "Supervisor session" as Sup
+participant "FastAPI UI" as FastAPI
+participant "浏览器 Vue3" as Browser
 
-    L104->>TddSkill: IC-04 invoke_skill('tdd', wp=WP-07)
-    TddSkill->>LLM: LLM 调用 (tdd skill prompt)
-    LLM-->>TddSkill: 输出: 写代码序列
-    TddSkill->>GitWT: Write/Edit files
-    TddSkill->>GitWT: Bash: pytest → 绿
-    TddSkill-->>L104: {code_paths, test_paths}
+User -> CCHost: 输入"继续下一 WP"
+CCHost -> LLM: Messages API (含 /harnessFlow 上下文)
+LLM --> CCHost: 输出: 调 MainSkill.tick
+CCHost -> MainSkill: invoke /harnessFlow:tick
+MainSkill -> Events: append_event(tick_start, pid=foo)
+MainSkill -> ProjState: read state.yaml → EXEC
+MainSkill -> MainSkill: query KB + 拷问 5 纪律 → 决策=取下一 WP
+MainSkill -> L103: IC-02 get_next_wp(pid=foo)
+L103 -> Events: append_event(wp_dispatched, wp=WP-07)
+L103 --> MainSkill: wp_def (WP-07)
+MainSkill -> L104: IC-03 enter_quality_loop(wp=WP-07)
+L104 -> Events: append_event(qloop_start)
 
-    L104->>Verifier: IC-20 delegate_verifier(s3_blueprint, s4_artifacts)
-    Verifier->>Events: append_event(verifier_start)
-    Verifier->>GitWT: Read code + test files
-    Verifier->>Verifier: DoD AST eval (白名单)
-    Verifier->>GitWT: Bash: curl / ffprobe / pytest (重跑 DoD 命令)
-    Verifier->>Events: append_event(verifier_done, verdict=PASS)
-    Verifier-->>L104: verifier_report.json
+L104 -> TddSkill: IC-04 invoke_skill('tdd', wp=WP-07)
+TddSkill -> LLM: LLM 调用 (tdd skill prompt)
+LLM --> TddSkill: 输出: 写代码序列
+TddSkill -> GitWT: Write/Edit files
+TddSkill -> GitWT: Bash: pytest → 绿
+TddSkill --> L104: {code_paths, test_paths}
 
-    L104->>Events: append_event(s5_verdict=PASS)
-    L104-->>MainSkill: PASS
-    MainSkill->>Events: append_event(qloop_end)
-    MainSkill->>ProjState: state.yaml unchanged (still EXEC)
+L104 -> Verifier: IC-20 delegate_verifier(s3_blueprint, s4_artifacts)
+Verifier -> Events: append_event(verifier_start)
+Verifier -> GitWT: Read code + test files
+Verifier -> Verifier: DoD AST eval (白名单)
+Verifier -> GitWT: Bash: curl / ffprobe / pytest (重跑 DoD 命令)
+Verifier -> Events: append_event(verifier_done, verdict=PASS)
+Verifier --> L104: verifier_report.json
 
-    CCHost->>Hook: (tool_use end) fork PostToolUse hook
-    Hook->>Events: tail -n 1 events.jsonl
-    Hook-->>CCHost: exit 0 (无异常)
+L104 -> Events: append_event(s5_verdict=PASS)
+L104 --> MainSkill: PASS
+MainSkill -> Events: append_event(qloop_end)
+MainSkill -> ProjState: state.yaml unchanged (still EXEC)
 
-    par Supervisor 独立 tick (每 30s)
-        Sup->>Events: scan events.jsonl (filter pid=foo)
-        Sup->>Sup: 8 维度计算 → 无异常
-        Sup->>Events: append_event(supervisor_periodic_ok)
-    end
+CCHost -> Hook: (tool_use end) fork PostToolUse hook
+Hook -> Events: tail -n 1 events.jsonl
+Hook --> CCHost: exit 0 (无异常)
 
-    FastAPI->>Events: inotify: events.jsonl changed
-    FastAPI->>Browser: SSE push (新事件 list)
-    Browser->>User: UI 刷新 WP-07 PASS
-    MainSkill-->>CCHost: tick done
-    CCHost-->>User: 展示 "WP-07 已通过，等你下一步"
+== Supervisor 独立 tick (每 30s) ==
+Sup -> Events: scan events.jsonl (filter pid=foo)
+Sup -> Sup: 8 维度计算 → 无异常
+Sup -> Events: append_event(supervisor_periodic_ok)
+
+FastAPI -> Events: inotify: events.jsonl changed
+FastAPI -> Browser: SSE push (新事件 list)
+Browser -> User: UI 刷新 WP-07 PASS
+MainSkill --> CCHost: tick done
+CCHost --> User: 展示 "WP-07 已通过，等你下一步"
+@enduml
 ```
 
 ### 5.2 技术控制流的 7 条关键路径
@@ -782,28 +791,31 @@ sequenceDiagram
 
 当 Supervisor 通过 P7 输出 `status=BLOCK`，主 skill 控制流立即切换到**异常路径**：
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Sup as Supervisor
-    participant MainSkill
-    participant Events
-    participant UI as FastAPI UI
-    participant User
+```plantuml
+@startuml
+title 异常控制流：硬红线触发 + 授权解除
+autonumber
 
-    Sup->>Events: scan 发现硬红线 (IRREVERSIBLE_HALT)
-    Sup->>Events: append_event(hard_halt_triggered)
-    Sup-->>MainSkill: IC-15 stdout BLOCK json<br/>{red_line: IRREVERSIBLE_HALT, require_authz: true}
-    MainSkill->>MainSkill: state=HALTED (≤100ms)
-    MainSkill->>Events: append_event(main_halted)
-    MainSkill->>UI: push_alert (via events.jsonl)
-    UI->>User: 强视觉告警 (红色 + 声音)
-    Note over MainSkill: 所有 tick 被抑制<br/>只有 IC-17 authorize 能解
-    User->>UI: 文字授权 "允许"
-    UI->>MainSkill: IC-17 user_intervene(authorize=true)
-    MainSkill->>Events: append_event(user_authorized)
-    MainSkill->>MainSkill: state=EXEC (resumed)
-    MainSkill->>MainSkill: 继续被拦截的 tool use
+participant "Supervisor" as Sup
+participant "MainSkill" as MainSkill
+participant "Events" as Events
+participant "FastAPI UI" as UI
+participant "User" as User
+
+Sup -> Events: scan 发现硬红线 (IRREVERSIBLE_HALT)
+Sup -> Events: append_event(hard_halt_triggered)
+Sup --> MainSkill: IC-15 stdout BLOCK json\n{red_line: IRREVERSIBLE_HALT, require_authz: true}
+MainSkill -> MainSkill: state=HALTED (≤100ms)
+MainSkill -> Events: append_event(main_halted)
+MainSkill -> UI: push_alert (via events.jsonl)
+UI -> User: 强视觉告警 (红色 + 声音)
+note over MainSkill: 所有 tick 被抑制\n只有 IC-17 authorize 能解
+User -> UI: 文字授权 "允许"
+UI -> MainSkill: IC-17 user_intervene(authorize=true)
+MainSkill -> Events: append_event(user_authorized)
+MainSkill -> MainSkill: state=EXEC (resumed)
+MainSkill -> MainSkill: 继续被拦截的 tool use
+@enduml
 ```
 
 **关键时延要求**（PRD `L1-01 硬约束 panic=100ms`）：`halt` 传递从 Supervisor scan → 主 skill state=HALTED 总计 ≤ 30 秒 + 100ms = **≤ 30.1s**（30s 是 Supervisor scan 周期，100ms 是 main skill 响应）。用户体验上"感觉系统立即停了"。
@@ -818,31 +830,41 @@ sequenceDiagram
 
 **解读**：一个项目从 S1 到 S7 的产出数据会经历 **8 种形态**的递进：自然语言对话 → 章程 md → 4 件套 md → TOGAF md → dod_expressions.yaml → WBS yaml → test skeletons → verifier_report.json → 交付包 zip。每一步都是**上一步的结构化提纯**，没有回写。
 
-```mermaid
-flowchart LR
-    S0[用户自然语言<br/>CC prompt] --> S1[charter.md<br/>stakeholders.md<br/>goal_anchor_hash]
-    S1 --> S2a[planning/*.md<br/>4 件套 + 9 计划]
-    S1 --> S2b[architecture/*.md<br/>TOGAF A-D + ADR]
-    S2a --> S2c[wbs.md + wp/*/wp_def.yaml<br/>L1-03 产出]
-    S2b --> S2c
-    S2c --> S3[tdd/dod_expressions.yaml<br/>tdd/test_skeletons/<br/>tdd/master_test_plan.md]
-    S3 --> S4[git commits<br/>(业务代码 + 测试代码)]
-    S4 --> S5[verifier_reports/*.json<br/>三段证据链]
-    S5 --> S7[delivery/&lt;pid&gt;/<br/>(zip-like 交付包)<br/>+ retros/&lt;pid&gt;-final.md]
+```plantuml
+@startuml
+title 数据形态演进 S0 → S7（LR）
+left to right direction
 
-    Events[events.jsonl<br/>全程 append-only] -.伴随.-> S1
-    Events -.伴随.-> S2a
-    Events -.伴随.-> S2b
-    Events -.伴随.-> S2c
-    Events -.伴随.-> S3
-    Events -.伴随.-> S4
-    Events -.伴随.-> S5
-    Events -.伴随.-> S7
+component "用户自然语言\nCC prompt" as S0
+component "charter.md\nstakeholders.md\ngoal_anchor_hash" as S1
+component "planning/*.md\n4 件套 + 9 计划" as S2a
+component "architecture/*.md\nTOGAF A-D + ADR" as S2b
+component "wbs.md + wp/*/wp_def.yaml\nL1-03 产出" as S2c
+component "tdd/dod_expressions.yaml\ntdd/test_skeletons/\ntdd/master_test_plan.md" as S3
+component "git commits\n(业务代码 + 测试代码)" as S4
+component "verifier_reports/*.json\n三段证据链" as S5
+component "delivery/<pid>/\n(zip-like 交付包)\n+ retros/<pid>-final.md" as S7
+component "events.jsonl\n全程 append-only" as Events
 
-    classDef prod fill:#e8f5e9,stroke:#2e7d32
-    classDef bus fill:#fff3e0,stroke:#e65100
-    class S0,S1,S2a,S2b,S2c,S3,S4,S5,S7 prod
-    class Events bus
+S0 --> S1
+S1 --> S2a
+S1 --> S2b
+S2a --> S2c
+S2b --> S2c
+S2c --> S3
+S3 --> S4
+S4 --> S5
+S5 --> S7
+
+Events ..> S1 : 伴随
+Events ..> S2a : 伴随
+Events ..> S2b : 伴随
+Events ..> S2c : 伴随
+Events ..> S3 : 伴随
+Events ..> S4 : 伴随
+Events ..> S5 : 伴随
+Events ..> S7 : 伴随
+@enduml
 ```
 
 ### 6.2 数据类型对照表
@@ -913,146 +935,140 @@ PRD `scope §8.1.2` 明确："数据流是**单向生产-消费链**，不允许
 
 ### 7.1 10 L1 × 主要 L2 全景
 
-```mermaid
-flowchart TB
-    subgraph L101["L1-01 主 Agent 决策循环 (6 L2)"]
-        L101_01["L2-01 Tick 调度器"]
-        L101_02["L2-02 状态查询器"]
-        L101_03["L2-03 状态机编排器"]
-        L101_04["L2-04 5 纪律拷问器"]
-        L101_05["L2-05 审计持久化"]
-        L101_06["L2-06 决策裁决器"]
-    end
+```plantuml
+@startuml
+title 10 L1 × 主要 L2 全景 Component View
 
-    subgraph L102["L1-02 项目生命周期 (7 L2)"]
-        L102_01["L2-01 Stage Gate 控制器"]
-        L102_02["L2-02 S1 启动产出器"]
-        L102_03["L2-03 4 件套生产器"]
-        L102_04["L2-04 9 计划生产器"]
-        L102_05["L2-05 TOGAF 生产器"]
-        L102_06["L2-06 S7 收尾器"]
-        L102_07["L2-07 变更请求处理器"]
-    end
+package "L1-01 主 Agent 决策循环 (6 L2)" as L101 {
+    component "L2-01 Tick 调度器" as L101_01
+    component "L2-02 状态查询器" as L101_02
+    component "L2-03 状态机编排器" as L101_03
+    component "L2-04 5 纪律拷问器" as L101_04
+    component "L2-05 审计持久化" as L101_05
+    component "L2-06 决策裁决器" as L101_06
+}
 
-    subgraph L103["L1-03 WBS+WP 调度 (5 L2)"]
-        L103_01["L2-01 WBS 拆解器"]
-        L103_02["L2-02 拓扑图管理器"]
-        L103_03["L2-03 WP 排程器"]
-        L103_04["L2-04 WP mini-PMP"]
-        L103_05["L2-05 依赖判定器"]
-    end
+package "L1-02 项目生命周期 (7 L2)" as L102 {
+    component "L2-01 Stage Gate 控制器" as L102_01
+    component "L2-02 S1 启动产出器" as L102_02
+    component "L2-03 4 件套生产器" as L102_03
+    component "L2-04 9 计划生产器" as L102_04
+    component "L2-05 TOGAF 生产器" as L102_05
+    component "L2-06 S7 收尾器" as L102_06
+    component "L2-07 变更请求处理器" as L102_07
+}
 
-    subgraph L104["L1-04 Quality Loop (7 L2)"]
-        L104_01["L2-01 TDD 蓝图生成器"]
-        L104_02["L2-02 DoD 表达式编译器"]
-        L104_03["L2-03 S4 执行监控"]
-        L104_04["L2-04 S5 验证驱动"]
-        L104_05["L2-05 三段证据收集"]
-        L104_06["L2-06 4 级回退路由"]
-        L104_07["L2-07 死循环保护"]
-    end
+package "L1-03 WBS+WP 调度 (5 L2)" as L103 {
+    component "L2-01 WBS 拆解器" as L103_01
+    component "L2-02 拓扑图管理器" as L103_02
+    component "L2-03 WP 排程器" as L103_03
+    component "L2-04 WP mini-PMP" as L103_04
+    component "L2-05 依赖判定器" as L103_05
+}
 
-    subgraph L105["L1-05 Skill+子Agent (5 L2)"]
-        L105_01["L2-01 能力抽象层"]
-        L105_02["L2-02 Skill 调度器"]
-        L105_03["L2-03 Subagent 委托"]
-        L105_04["L2-04 降级链"]
-        L105_05["L2-05 工具柜原子层"]
-    end
+package "L1-04 Quality Loop (7 L2)" as L104 {
+    component "L2-01 TDD 蓝图生成器" as L104_01
+    component "L2-02 DoD 表达式编译器" as L104_02
+    component "L2-03 S4 执行监控" as L104_03
+    component "L2-04 S5 验证驱动" as L104_04
+    component "L2-05 三段证据收集" as L104_05
+    component "L2-06 4 级回退路由" as L104_06
+    component "L2-07 死循环保护" as L104_07
+}
 
-    subgraph L106["L1-06 3 层 KB (5 L2)"]
-        L106_01["L2-01 Session 层"]
-        L106_02["L2-02 Project 层"]
-        L106_03["L2-03 Global 层"]
-        L106_04["L2-04 晋升仪式"]
-        L106_05["L2-05 注入策略"]
-    end
+package "L1-05 Skill+子Agent (5 L2)" as L105 {
+    component "L2-01 能力抽象层" as L105_01
+    component "L2-02 Skill 调度器" as L105_02
+    component "L2-03 Subagent 委托" as L105_03
+    component "L2-04 降级链" as L105_04
+    component "L2-05 工具柜原子层" as L105_05
+}
 
-    subgraph L107["L1-07 Supervisor (6 L2)"]
-        L107_01["L2-01 事件扫描器"]
-        L107_02["L2-02 8 维度计算"]
-        L107_03["L2-03 4 级分级判定"]
-        L107_04["L2-04 软红线自治"]
-        L107_05["L2-05 硬红线上报"]
-        L107_06["L2-06 回退路由决策"]
-    end
+package "L1-06 3 层 KB (5 L2)" as L106 {
+    component "L2-01 Session 层" as L106_01
+    component "L2-02 Project 层" as L106_02
+    component "L2-03 Global 层" as L106_03
+    component "L2-04 晋升仪式" as L106_04
+    component "L2-05 注入策略" as L106_05
+}
 
-    subgraph L108["L1-08 多模态 (4 L2)"]
-        L108_01["L2-01 Markdown 处理器"]
-        L108_02["L2-02 代码分析器"]
-        L108_03["L2-03 图片理解器"]
-        L108_04["L2-04 Onboarding 委托"]
-    end
+package "L1-07 Supervisor (6 L2)" as L107 {
+    component "L2-01 事件扫描器" as L107_01
+    component "L2-02 8 维度计算" as L107_02
+    component "L2-03 4 级分级判定" as L107_03
+    component "L2-04 软红线自治" as L107_04
+    component "L2-05 硬红线上报" as L107_05
+    component "L2-06 回退路由决策" as L107_06
+}
 
-    subgraph L109["L1-09 韧性+审计 (5 L2)"]
-        L109_01["L2-01 事件总线"]
-        L109_02["L2-02 锁管理器"]
-        L109_03["L2-03 审计器"]
-        L109_04["L2-04 检查点/恢复器"]
-        L109_05["L2-05 异常降级"]
-    end
+package "L1-08 多模态 (4 L2)" as L108 {
+    component "L2-01 Markdown 处理器" as L108_01
+    component "L2-02 代码分析器" as L108_02
+    component "L2-03 图片理解器" as L108_03
+    component "L2-04 Onboarding 委托" as L108_04
+}
 
-    subgraph L110["L1-10 人机协作 UI (7 L2)"]
-        L110_01["L2-01 FastAPI 服务"]
-        L110_02["L2-02 SSE 事件推送"]
-        L110_03["L2-03 11 Tab 视图"]
-        L110_04["L2-04 9 Admin 模块"]
-        L110_05["L2-05 Gate 卡片交互"]
-        L110_06["L2-06 Panic 按钮"]
-        L110_07["L2-07 审计查询面板"]
-    end
+package "L1-09 韧性+审计 (5 L2)" as L109 {
+    component "L2-01 事件总线" as L109_01
+    component "L2-02 锁管理器" as L109_02
+    component "L2-03 审计器" as L109_03
+    component "L2-04 检查点/恢复器" as L109_04
+    component "L2-05 异常降级" as L109_05
+}
 
-    %% L1-01 控制流
-    L101_06 -- IC-01 --> L102_01
-    L101_06 -- IC-02 --> L103_03
-    L101_06 -- IC-03 --> L104_03
-    L101_06 -- IC-04/05 --> L105_02
-    L101_06 -- IC-04/05 --> L105_03
+package "L1-10 人机协作 UI (7 L2)" as L110 {
+    component "L2-01 FastAPI 服务" as L110_01
+    component "L2-02 SSE 事件推送" as L110_02
+    component "L2-03 11 Tab 视图" as L110_03
+    component "L2-04 9 Admin 模块" as L110_04
+    component "L2-05 Gate 卡片交互" as L110_05
+    component "L2-06 Panic 按钮" as L110_06
+    component "L2-07 审计查询面板" as L110_07
+}
 
-    %% L1-02 → L1-03
-    L102_01 -- IC-19 --> L103_01
-    L102_01 -- IC-16 --> L110_05
+' L1-01 控制流
+L101_06 --> L102_01 : IC-01
+L101_06 --> L103_03 : IC-02
+L101_06 --> L104_03 : IC-03
+L101_06 --> L105_02 : IC-04/05
+L101_06 --> L105_03 : IC-04/05
 
-    %% L1-04 → L1-05
-    L104_04 -- IC-20 --> L105_03
-    L104_01 -- read --> L106_02
-    L104_02 -- IC-06 --> L106_02
+' L1-02 → L1-03
+L102_01 --> L103_01 : IC-19
+L102_01 --> L110_05 : IC-16
 
-    %% L1-07 监督
-    L107_01 -- scan --> L109_01
-    L107_03 -- IC-13 --> L101_01
-    L107_05 -- IC-15 --> L101_01
-    L107_06 -- IC-14 --> L104_06
+' L1-04 → L1-05
+L104_04 --> L105_03 : IC-20
+L104_01 --> L106_02 : read
+L104_02 --> L106_02 : IC-06
 
-    %% L1-08 → L1-05
-    L108_02 -- IC-12 --> L105_03
-    L108_01 -- write --> L102_03
-    L108_01 -- write --> L102_04
+' L1-07 监督
+L107_01 --> L109_01 : scan
+L107_03 --> L101_01 : IC-13
+L107_05 --> L101_01 : IC-15
+L107_06 --> L104_06 : IC-14
 
-    %% 全部 L1 → L1-09
-    L101_05 -- IC-09 --> L109_01
-    L102_06 -- IC-09 --> L109_01
-    L103_03 -- IC-09 --> L109_01
-    L104_04 -- IC-09 --> L109_01
-    L105_02 -- IC-09 --> L109_01
-    L106_04 -- IC-09 --> L109_01
-    L107_01 -- IC-09 --> L109_01
-    L108_02 -- IC-09 --> L109_01
-    L110_01 -- IC-09 --> L109_01
+' L1-08 → L1-05
+L108_02 --> L105_03 : IC-12
+L108_01 --> L102_03 : write
+L108_01 --> L102_04 : write
 
-    %% UI 读取
-    L110_02 -- tail --> L109_01
-    L110_07 -- IC-18 --> L109_03
-    L110_06 -- IC-17 --> L101_01
+' 全部 L1 → L1-09
+L101_05 --> L109_01 : IC-09
+L102_06 --> L109_01 : IC-09
+L103_03 --> L109_01 : IC-09
+L104_04 --> L109_01 : IC-09
+L105_02 --> L109_01 : IC-09
+L106_04 --> L109_01 : IC-09
+L107_01 --> L109_01 : IC-09
+L108_02 --> L109_01 : IC-09
+L110_01 --> L109_01 : IC-09
 
-    classDef ctrl fill:#bbdefb,stroke:#1565c0
-    classDef data fill:#c8e6c9,stroke:#2e7d32
-    classDef bus fill:#ffe0b2,stroke:#e65100
-    classDef ui fill:#f8bbd0,stroke:#ad1457
-    class L101,L102,L103 ctrl
-    class L104,L105,L106,L108 data
-    class L107,L109 bus
-    class L110 ui
+' UI 读取
+L110_02 --> L109_01 : tail
+L110_07 --> L109_03 : IC-18
+L110_06 --> L101_01 : IC-17
+@enduml
 ```
 
 ### 7.2 调用关系矩阵（L2 粒度）
@@ -1081,28 +1097,39 @@ flowchart TB
 
 ### 7.3 数据依赖图（产出物 ↔ 消费 L2）
 
-```mermaid
-flowchart LR
-    Charter[charter.md<br/>stakeholders.md] -->|S1 Gate 后| FourP[4 件套]
-    Charter -->|read| L103_01_node[L1-03 L2-01<br/>WBS 拆解]
-    FourP --> Togaf[TOGAF A-D]
-    FourP --> WBS[wbs.md + wp_def]
-    Togaf --> WBS
-    WBS -->|S2 Gate 后| TDD[tdd/*]
-    TDD --> Tests[test skeletons + DoD AST]
-    Tests -->|S3 Gate 后| Code[git commits 业务代码]
-    Code --> Verif[verifier_report.json]
-    Verif -->|PASS| Delivery[delivery/&lt;pid&gt;/]
-    Verif -->|FAIL| Rollback{4 级回退}
-    Rollback -->|轻| Code
-    Rollback -->|中| TDD
-    Rollback -->|重| FourP
-    Rollback -->|极重| Charter
+```plantuml
+@startuml
+title 数据依赖图（产出物 ↔ 消费 L2）
+left to right direction
 
-    classDef prod fill:#e8f5e9,stroke:#2e7d32
-    classDef rb fill:#ffcdd2,stroke:#c62828
-    class Charter,FourP,Togaf,WBS,TDD,Tests,Code,Verif,Delivery prod
-    class Rollback rb
+component "charter.md\nstakeholders.md" as Charter
+component "4 件套" as FourP
+component "L1-03 L2-01\nWBS 拆解" as L103_01_node
+component "TOGAF A-D" as Togaf
+component "wbs.md + wp_def" as WBS
+component "tdd/*" as TDD
+component "test skeletons + DoD AST" as Tests
+component "git commits 业务代码" as Code
+component "verifier_report.json" as Verif
+component "delivery/<pid>/" as Delivery
+component "4 级回退" as Rollback
+
+Charter --> FourP : S1 Gate 后
+Charter --> L103_01_node : read
+FourP --> Togaf
+FourP --> WBS
+Togaf --> WBS
+WBS --> TDD : S2 Gate 后
+TDD --> Tests
+Tests --> Code : S3 Gate 后
+Code --> Verif
+Verif --> Delivery : PASS
+Verif --> Rollback : FAIL
+Rollback --> Code : 轻
+Rollback --> TDD : 中
+Rollback --> FourP : 重
+Rollback --> Charter : 极重
+@enduml
 ```
 
 ### 7.4 横切依赖（不走 IC 契约的"隐式"依赖）
@@ -1148,38 +1175,34 @@ flowchart LR
 
 V1 固定单 project，V2+ 支持多 project 并发。技术实现：
 
-```mermaid
-flowchart TB
-    subgraph CCHost["Claude Code 宿主"]
-        MainSession["主 skill session<br/>(支持多 project 上下文切换)"]
-        SupA["Supervisor-A session<br/>pid=foo"]
-        SupB["Supervisor-B session<br/>pid=bar"]
-    end
+```plantuml
+@startuml
+title V2+ 多 project 并发技术实现
 
-    subgraph FS["本地 FS"]
-        PA["projects/foo/<br/>events.jsonl / state.yaml / ..."]
-        PB["projects/bar/<br/>events.jsonl / state.yaml / ..."]
-        Idx["projects/_index.yaml<br/>{foo: active, bar: active}"]
-    end
+package "Claude Code 宿主" as CCHost {
+    component "主 skill session\n(支持多 project 上下文切换)" as MainSession
+    component "Supervisor-A session\npid=foo" as SupA
+    component "Supervisor-B session\npid=bar" as SupB
+}
 
-    subgraph UI["FastAPI UI"]
-        UIState["session.current_project<br/>= foo or bar"]
-    end
+package "本地 FS" as FS {
+    component "projects/foo/\nevents.jsonl / state.yaml / ..." as PA
+    component "projects/bar/\nevents.jsonl / state.yaml / ..." as PB
+    component "projects/_index.yaml\n{foo: active, bar: active}" as Idx
+}
 
-    MainSession -->|tick with pid=foo| PA
-    MainSession -->|tick with pid=bar| PB
-    SupA -->|scan| PA
-    SupB -->|scan| PB
-    UIState -->|IC-17 switch_project| MainSession
-    UIState -->|SSE filter by pid| PA
-    UIState -->|SSE filter by pid| PB
+package "FastAPI UI" as UI {
+    component "session.current_project\n= foo or bar" as UIState
+}
 
-    classDef sess fill:#e3f2fd,stroke:#1565c0
-    classDef fs fill:#fff9c4,stroke:#f57f17
-    classDef sup fill:#f8bbd0,stroke:#ad1457
-    class MainSession sess
-    class PA,PB,Idx fs
-    class SupA,SupB sup
+MainSession --> PA : tick with pid=foo
+MainSession --> PB : tick with pid=bar
+SupA --> PA : scan
+SupB --> PB : scan
+UIState --> MainSession : IC-17 switch_project
+UIState --> PA : SSE filter by pid
+UIState --> PB : SSE filter by pid
+@enduml
 ```
 
 **V2+ 关键技术决策**：
@@ -1523,18 +1546,18 @@ PRD `scope §5.7.6 硬红线`：
 
 ### 12.4 演进路径图
 
-```mermaid
-flowchart LR
-    V1["V1 · MVP<br/>单 project / 单用户<br/>Q2-Q3 2026"]
-    V2["V2 · 多 project<br/>并发激活 N 个<br/>Q4 2026"]
-    V3["V3 · 多用户<br/>团队协同<br/>2027+"]
+```plantuml
+@startuml
+title 版本演进路径 V1 → V2 → V3
+left to right direction
 
-    V1 -->|"+ _index.yaml 索引<br/>+ Supervisor N 实例<br/>+ UI 切换器"| V2
-    V2 -->|"+ tenant_id 维度<br/>+ 审批流<br/>+ storage backend"| V3
+component "V1 · MVP\n单 project / 单用户\nQ2-Q3 2026" as V1
+component "V2 · 多 project\n并发激活 N 个\nQ4 2026" as V2
+component "V3 · 多用户\n团队协同\n2027+" as V3
 
-    style V1 fill:#e8f5e9
-    style V2 fill:#fff3e0
-    style V3 fill:#e1f5fe
+V1 --> V2 : + _index.yaml 索引\n+ Supervisor N 实例\n+ UI 切换器
+V2 --> V3 : + tenant_id 维度\n+ 审批流\n+ storage backend
+@enduml
 ```
 
 ### 12.5 不做的扩展方向
@@ -1823,121 +1846,106 @@ HarnessFlow 相对所有 5 个对标系统的**唯一独特定位**：
 
 ---
 
-## 附录 A · 顶层架构 Mermaid 大图
+## 附录 A · 顶层架构 PlantUML 大图
 
 > 本附录给出一张"尽量信息密度最大"的 HarnessFlow 全景架构图，融合 §2 物理部署 + §3 进程模型 + §4 文件系统 + §7 L1 关系。这张图可作为 README / 新读者 onboarding / 技术 pitch 的 one-shot overview。
 
-```mermaid
-flowchart TB
-    User((单用户<br/>开发者))
+```plantuml
+@startuml
+title HarnessFlow 全景架构图（one-shot overview）
 
-    subgraph Host["开发者机器（MacBook / Linux / Windows）"]
-        subgraph CC["Claude Code 宿主进程"]
-            subgraph Main["主 skill session（逻辑进程 · long-lived）"]
-                direction TB
-                L101["L1-01 主 Agent 决策循环<br/>tick loop + 5 纪律拷问"]
-                L102["L1-02 项目生命周期<br/>7 阶段 × 4 Stage Gate<br/>PM-14 项目所有权"]
-                L103["L1-03 WBS + WP 调度<br/>拓扑图 + mini-PMP"]
-                L104["L1-04 Quality Loop<br/>TDD 蓝图 + DoD AST<br/>4 级回退"]
-                L105["L1-05 Skill + 子 Agent<br/>能力抽象层 + 降级链"]
-                L106["L1-06 3 层 KB<br/>session / project / global"]
-                L108["L1-08 多模态<br/>md / 代码 / 图片"]
-                L109["L1-09 韧性 + 审计<br/>事件总线 + 锁 + checkpoint"]
-            end
+actor "单用户\n开发者" as User
 
-            Sup["Supervisor session<br/>（独立 · long-lived）<br/>L1-07<br/>8 维度 × 4 级 × 红线"]
+package "开发者机器（MacBook / Linux / Windows）" as Host {
+    package "Claude Code 宿主进程" as CC {
+        package "主 skill session（逻辑进程 · long-lived）" as Main {
+            component "L1-01 主 Agent 决策循环\ntick loop + 5 纪律拷问" as L101
+            component "L1-02 项目生命周期\n7 阶段 × 4 Stage Gate\nPM-14 项目所有权" as L102
+            component "L1-03 WBS + WP 调度\n拓扑图 + mini-PMP" as L103
+            component "L1-04 Quality Loop\nTDD 蓝图 + DoD AST\n4 级回退" as L104
+            component "L1-05 Skill + 子 Agent\n能力抽象层 + 降级链" as L105
+            component "L1-06 3 层 KB\nsession / project / global" as L106
+            component "L1-08 多模态\nmd / 代码 / 图片" as L108
+            component "L1-09 韧性 + 审计\n事件总线 + 锁 + checkpoint" as L109
+        }
 
-            Ver["Verifier session<br/>（独立 · ephemeral per call）<br/>L1-04 委托<br/>DoD 白名单 AST + 三段证据"]
+        component "Supervisor session\n（独立 · long-lived）\nL1-07\n8 维度 × 4 级 × 红线" as Sup
+        component "Verifier session\n（独立 · ephemeral per call）\nL1-04 委托\nDoD 白名单 AST + 三段证据" as Ver
+        component "Hook 子进程\nPostToolUse / Stop\n（临时拉起）" as Hook
+        component "MCP 服务器\ncontext7 / playwright\ngithub / memory" as MCP
+    }
 
-            Hook["Hook 子进程<br/>PostToolUse / Stop<br/>（临时拉起）"]
+    package "本地文件系统 $HARNESSFLOW_WORKDIR/" as FS {
+        component "projects/<pid_foo>/\nmanifest.yaml\nstate.yaml\nplanning/ architecture/\nwbs.md + wp/\ntdd/ verifier_reports/\nevents.jsonl (append-only)\naudit.jsonl\nsupervisor_events.jsonl\ncheckpoints/\nkb/ delivery/ retros/" as ProjA
+        component "projects/<pid_bar>/\n（V2+ 并发）" as ProjB
+        component "global_kb/\nentries/*.md" as GKB
+        component "failure_archive.jsonl\n（全局 · 按 pid 过滤）" as FailArch
+        component "projects/_index.yaml" as Idx
+        component "system.log" as SysLog
+    }
 
-            MCP["MCP 服务器<br/>context7 / playwright<br/>github / memory"]
-        end
+    package "可选 UI 容器（独立进程）" as UI {
+        component "FastAPI uvicorn\n:8765" as FastAPI
+        component "浏览器 Vue3 SPA\n11 tab + 9 admin" as Browser
+    }
 
-        subgraph FS["本地文件系统 $HARNESSFLOW_WORKDIR/"]
-            ProjA["projects/&lt;pid_foo&gt;/<br/>manifest.yaml<br/>state.yaml<br/>planning/ architecture/<br/>wbs.md + wp/<br/>tdd/ verifier_reports/<br/>events.jsonl (append-only)<br/>audit.jsonl<br/>supervisor_events.jsonl<br/>checkpoints/<br/>kb/ delivery/ retros/"]
-            ProjB["projects/&lt;pid_bar&gt;/<br/>（V2+ 并发）"]
-            GKB["global_kb/<br/>entries/*.md"]
-            FailArch["failure_archive.jsonl<br/>（全局 · 按 pid 过滤）"]
-            Idx["projects/_index.yaml"]
-            SysLog["system.log"]
-        end
+    package "用户业务 Git 工作树" as Git {
+        component "my-target-repo/\n（被管理的业务代码）" as GitWT
+    }
+}
 
-        subgraph UI["可选 UI 容器（独立进程）"]
-            FastAPI["FastAPI uvicorn<br/>:8765"]
-            Browser["浏览器 Vue3 SPA<br/>11 tab + 9 admin"]
-        end
+package "外部（通过 CC 宿主代管）" as Ext {
+    database "Anthropic Claude API" as Anth
+    database "DeepSeek API" as DS
+}
 
-        subgraph Git["用户业务 Git 工作树"]
-            GitWT["my-target-repo/<br/>（被管理的业务代码）"]
-        end
-    end
+User --> L101 : CC prompt / slash
+User --> Browser : HTTP :8765
 
-    subgraph Ext["外部（通过 CC 宿主代管）"]
-        Anth[("Anthropic Claude API")]
-        DS[("DeepSeek API")]
-    end
+L101 --> L102 : IC-01
+L101 --> L103 : IC-02
+L101 --> L104 : IC-03
+L101 --> L105 : IC-04/05
+L102 --> L103 : IC-19
+L104 --> L105 : IC-20
+L108 --> L105 : IC-12
 
-    User -->|CC prompt / slash| L101
-    User -->|HTTP :8765| Browser
+L105 --> Ver
+L105 --> MCP
+L105 --> Hook
+L105 --> GitWT
 
-    L101 -- IC-01 --> L102
-    L101 -- IC-02 --> L103
-    L101 -- IC-03 --> L104
-    L101 -- IC-04/05 --> L105
-    L102 -- IC-19 --> L103
-    L104 -- IC-20 --> L105
-    L108 -- IC-12 --> L105
+Sup --> ProjA : scan
+Sup --> L101 : IC-13/15 via hook
+Sup --> L104 : IC-14
 
-    L105 --> Ver
-    L105 --> MCP
-    L105 --> Hook
-    L105 --> GitWT
+L101 --> L109 : IC-09 append_event
+L102 --> L109 : IC-09
+L103 --> L109 : IC-09
+L104 --> L109 : IC-09
+L105 --> L109 : IC-09
+L106 --> L109 : IC-09
+Sup --> L109 : IC-09
+L108 --> L109 : IC-09
 
-    Sup -- scan --> ProjA
-    Sup -- IC-13/15 via hook --> L101
-    Sup -- IC-14 --> L104
+L109 --> ProjA : fsync
+L109 --> ProjB : fsync
+L109 --> Idx : update
+L106 --> ProjA : read/write
+L106 --> GKB : promote
+L102 --> FailArch : write
 
-    L101 -- IC-09 append_event --> L109
-    L102 -- IC-09 --> L109
-    L103 -- IC-09 --> L109
-    L104 -- IC-09 --> L109
-    L105 -- IC-09 --> L109
-    L106 -- IC-09 --> L109
-    L107_proxy[" "] -.-> L109
-    Sup -- IC-09 --> L109
-    L108 -- IC-09 --> L109
+FastAPI --> ProjA : inotify tail
+FastAPI --> Browser : SSE push
+Browser --> L101 : IC-17 REST POST
+Browser --> L109 : IC-18
+L102 --> FastAPI : IC-16
 
-    L109 -- fsync --> ProjA
-    L109 -- fsync --> ProjB
-    L109 -- update --> Idx
-    L106 -- read/write --> ProjA
-    L106 -- promote --> GKB
-    L102 -- write --> FailArch
-
-    FastAPI -- inotify tail --> ProjA
-    FastAPI -- SSE push --> Browser
-    Browser -- IC-17 REST POST --> L101
-    Browser -- IC-18 --> L109
-    L102 -- IC-16 --> FastAPI
-
-    L101 -.LLM.-> Anth
-    Sup -.LLM.-> Anth
-    Ver -.LLM.-> Anth
-    L105 -.LLM.-> DS
-
-    classDef l1 fill:#e3f2fd,stroke:#0d47a1
-    classDef fs fill:#fff9c4,stroke:#f57f17
-    classDef ui fill:#f8bbd0,stroke:#ad1457
-    classDef sidecar fill:#ffccbc,stroke:#bf360c
-    classDef ext fill:#c5cae9,stroke:#1a237e
-    classDef usr fill:#c8e6c9,stroke:#1b5e20
-    class L101,L102,L103,L104,L105,L106,L108,L109 l1
-    class ProjA,ProjB,GKB,FailArch,Idx,SysLog fs
-    class FastAPI,Browser ui
-    class Sup,Ver,Hook,MCP sidecar
-    class Anth,DS ext
-    class User usr
+L101 ..> Anth : LLM
+Sup ..> Anth : LLM
+Ver ..> Anth : LLM
+L105 ..> DS : LLM
+@enduml
 ```
 
 **图例**：

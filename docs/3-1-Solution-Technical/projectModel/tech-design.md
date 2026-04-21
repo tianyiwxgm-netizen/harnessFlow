@@ -751,131 +751,134 @@ delete_project:
 | L1-09 韧性+审计 | 事件 / 审计 / 检查点全按 project 分片 | `Event.project_id`（强制 root 字段） |
 | L1-10 人机协作 UI | UI 视图按 project 过滤 | `ViewContext.project_id` |
 
-### 4.4 依赖图（Mermaid）
+### 4.4 依赖图（PlantUML）
 
-```mermaid
-graph TB
-    subgraph UPSTREAM["上游 · 调用 ProjectModel 的 L1"]
-        L102_L202[L1-02 L2-02<br/>启动产出器]
-        L102_L201[L1-02 L2-01<br/>Stage Gate]
-        L102_L206[L1-02 L2-06<br/>收尾执行器]
-        L109_L204[L1-09 L2-04<br/>检查点恢复器]
-        L110[L1-10<br/>admin UI]
-        L107[L1-07<br/>监督]
-    end
+```plantuml
+@startuml
+title ProjectModel Bounded Context 依赖图
 
-    subgraph PM["ProjectModel Bounded Context"]
-        API1["create_project"]
-        API2["activate_project"]
-        API3["archive_project"]
-        API4["query_project"]
-        API5["list_projects"]
-        API6["delete_project"]
-        PLS["ProjectLifecycleService"]
-        PIS["ProjectIndexService"]
-        PSM["ProjectStateMachine"]
-    end
+package "上游 · 调用 ProjectModel 的 L1" as UPSTREAM {
+    component "L1-02 L2-02\n启动产出器" as L102_L202
+    component "L1-02 L2-01\nStage Gate" as L102_L201
+    component "L1-02 L2-06\n收尾执行器" as L102_L206
+    component "L1-09 L2-04\n检查点恢复器" as L109_L204
+    component "L1-10\nadmin UI" as L110
+    component "L1-07\n监督" as L107
+}
 
-    subgraph DOWNSTREAM["下游 · ProjectModel 依赖"]
-        L109_L205[L1-09 L2-05<br/>原子写]
-        L109_L201[L1-09 L2-01<br/>事件总线]
-        L109_L202[L1-09 L2-02<br/>锁管理器]
-        L106_L204[L1-06 L2-04<br/>晋升仪式]
-    end
+package "ProjectModel Bounded Context" as PM {
+    component "create_project" as API1
+    component "activate_project" as API2
+    component "archive_project" as API3
+    component "query_project" as API4
+    component "list_projects" as API5
+    component "delete_project" as API6
+    component "ProjectLifecycleService" as PLS
+    component "ProjectIndexService" as PIS
+    component "ProjectStateMachine" as PSM
+}
 
-    L102_L202 -->|create_project| API1
-    L102_L201 -->|activate_project| API2
-    L102_L206 -->|archive_project| API3
-    L109_L204 -->|activate_project| API2
-    L109_L204 -->|list_projects| API5
-    L110 -->|list/query/delete| API4
-    L110 -->|delete| API6
-    L107 -->|query| API4
+package "下游 · ProjectModel 依赖" as DOWNSTREAM {
+    component "L1-09 L2-05\n原子写" as L109_L205
+    component "L1-09 L2-01\n事件总线" as L109_L201
+    component "L1-09 L2-02\n锁管理器" as L109_L202
+    component "L1-06 L2-04\n晋升仪式" as L106_L204
+}
 
-    API1 --> PLS
-    API2 --> PLS
-    API3 --> PLS
-    API4 --> PIS
-    API5 --> PIS
-    API6 --> PLS
+L102_L202 --> API1 : create_project
+L102_L201 --> API2 : activate_project
+L102_L206 --> API3 : archive_project
+L109_L204 --> API2 : activate_project
+L109_L204 --> API5 : list_projects
+L110 --> API4 : list/query/delete
+L110 --> API6 : delete
+L107 --> API4 : query
 
-    PLS --> PSM
-    PLS -->|atomic_write| L109_L205
-    PLS -->|append_event| L109_L201
-    PIS -->|acquire_lock| L109_L202
-    PLS -->|promote_candidates| L106_L204
+API1 --> PLS
+API2 --> PLS
+API3 --> PLS
+API4 --> PIS
+API5 --> PIS
+API6 --> PLS
 
-    style PM fill:#fef3c7,stroke:#b45309,stroke-width:3px
-    style PSM fill:#ddd6fe,stroke:#5b21b6
+PLS --> PSM
+PLS --> L109_L205 : atomic_write
+PLS --> L109_L201 : append_event
+PIS --> L109_L202 : acquire_lock
+PLS --> L106_L204 : promote_candidates
+@enduml
 ```
 
 
 
 ## 5. P0/P1 核心时序图
 
-本节给出 5 张 Mermaid 时序图，覆盖 ProjectModel 的核心生命周期：**创建**（P0） / **跨 session 激活恢复**（P0） / **归档 + KB 晋升**（P0） / **并发激活争用**（P1） / **manifest 写失败降级**（P1）。
+本节给出 5 张 PlantUML 时序图，覆盖 ProjectModel 的核心生命周期：**创建**（P0） / **跨 session 激活恢复**（P0） / **归档 + KB 晋升**（P0） / **并发激活争用**（P1） / **manifest 写失败降级**（P1）。
 
 ### 5.1 图 1 · P0 · 项目创建 + manifest 写盘 + 事件发布
 
 **场景**：用户在 S1 阶段输入目标 → L1-02 L2-02 澄清通过 → 调 `create_project` → 新 project 诞生。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant User as 用户
-    participant L102_L202 as L1-02 L2-02<br/>启动产出器
-    participant PLS as ProjectLifecycleService
-    participant PIG as ProjectIdGenerator
-    participant PSM as ProjectStateMachine
-    participant Repo as ProjectRepository
-    participant L109_L205 as L1-09 L2-05<br/>原子写
-    participant L109_L202 as L1-09 L2-02<br/>锁管理器
-    participant L109_L201 as L1-09 L2-01<br/>事件总线
+```plantuml
+@startuml
+title P0-SEQ-1 · create_project 时序
+autonumber
 
-    User->>L102_L202: 输入项目目标 + 3 轮澄清
-    L102_L202->>L102_L202: charter_draft 生成
-    L102_L202->>PLS: create_project(goal_anchor, charter_draft, slug_hint?)
-    Note over PLS: 入参 schema 校验<br/>(见 §3.2)
+participant "用户" as User
+participant "L1-02 L2-02\n启动产出器" as L102_L202
+participant "ProjectLifecycleService" as PLS
+participant "ProjectIdGenerator" as PIG
+participant "ProjectStateMachine" as PSM
+participant "ProjectRepository" as Repo
+participant "L1-09 L2-05\n原子写" as L109_L205
+participant "L1-09 L2-02\n锁管理器" as L109_L202
+participant "L1-09 L2-01\n事件总线" as L109_L201
 
-    PLS->>PIG: generate_id(goal_anchor, slug_hint, title)
-    PIG->>PIG: slug = sanitize_slug(slug_hint or title)
-    PIG->>PIG: uuid_short = uuid4().hex[:8]
-    PIG->>PIG: candidate = f"{slug}-{uuid_short}"
-    PIG->>Repo: find_by_id(candidate) 冲突检测
-    Repo-->>PIG: None（未冲突）
-    PIG-->>PLS: harnessFlowProjectId(candidate, title, now)
+User -> L102_L202: 输入项目目标 + 3 轮澄清
+L102_L202 -> L102_L202: charter_draft 生成
+L102_L202 -> PLS: create_project(goal_anchor, charter_draft, slug_hint?)
+note over PLS: 入参 schema 校验\n(见 §3.2)
 
-    PLS->>L109_L202: acquire_lock("_index.yaml", ttl=5s)
-    L109_L202-->>PLS: lock_token
-    Note over PLS: 进入 index 写事务
+PLS -> PIG: generate_id(goal_anchor, slug_hint, title)
+PIG -> PIG: slug = sanitize_slug(slug_hint or title)
+PIG -> PIG: uuid_short = uuid4().hex[:8]
+PIG -> PIG: candidate = f"{slug}-{uuid_short}"
+PIG -> Repo: find_by_id(candidate) 冲突检测
+Repo --> PIG: None（未冲突）
+PIG --> PLS: harnessFlowProjectId(candidate, title, now)
 
-    PLS->>PSM: __init__(state=INITIALIZED)
-    PSM-->>PLS: state_machine instance
+PLS -> L109_L202: acquire_lock("_index.yaml", ttl=5s)
+L109_L202 --> PLS: lock_token
+note over PLS: 进入 index 写事务
 
-    PLS->>PLS: 构造 ProjectAggregate<br/>(id, state, manifest, state_machine)
+PLS -> PSM: __init__(state=INITIALIZED)
+PSM --> PLS: state_machine instance
 
-    PLS->>Repo: save(aggregate)
-    Repo->>L109_L205: atomic_write(projects/<pid>/manifest.yaml, ...)
-    L109_L205->>L109_L205: write tmp → fsync → rename
-    L109_L205-->>Repo: ok
-    Repo->>L109_L205: atomic_write(projects/<pid>/state.yaml, ...)
-    L109_L205-->>Repo: ok
-    Repo->>L109_L205: atomic_write(projects/<pid>/charter.md, ...)
-    L109_L205-->>Repo: ok
-    Repo->>L109_L205: atomic_update(projects/_index.yaml, append entry)
-    L109_L205-->>Repo: ok
-    Repo-->>PLS: saved
+PLS -> PLS: 构造 ProjectAggregate\n(id, state, manifest, state_machine)
 
-    PLS->>L109_L202: release_lock(lock_token)
+PLS -> Repo: save(aggregate)
+Repo -> L109_L205: atomic_write(projects/<pid>/manifest.yaml, ...)
+L109_L205 -> L109_L205: write tmp → fsync → rename
+L109_L205 --> Repo: ok
+Repo -> L109_L205: atomic_write(projects/<pid>/state.yaml, ...)
+L109_L205 --> Repo: ok
+Repo -> L109_L205: atomic_write(projects/<pid>/charter.md, ...)
+L109_L205 --> Repo: ok
+Repo -> L109_L205: atomic_update(projects/_index.yaml, append entry)
+L109_L205 --> Repo: ok
+Repo --> PLS: saved
 
-    PLS->>L109_L201: append_event(project_created, {pid, goal_anchor_hash, created_at})
-    L109_L201-->>PLS: event_id
-    Note over L109_L201: 因为此时本 project 的 events.jsonl 尚未写过任何事件,<br/>L109_L201 会先创建 projects/<pid>/events.jsonl<br/>文件并写第一条
+PLS -> L109_L202: release_lock(lock_token)
 
-    PLS-->>L102_L202: harnessFlowProjectId
-    L102_L202-->>User: "项目已创建，ID: todo-app-a1b2c3d4，即将进入 S1 Gate"
+PLS -> L109_L201: append_event(project_created, {pid, goal_anchor_hash, created_at})
+L109_L201 --> PLS: event_id
+note over L109_L201: 因为此时本 project 的 events.jsonl 尚未写过任何事件,\nL109_L201 会先创建 projects/<pid>/events.jsonl\n文件并写第一条
 
-    Note over PSM,L109_L201: 时间总预算 ≤ 2s(§12 性能目标)<br/>P50 ≤ 800ms, P99 ≤ 1800ms
+PLS --> L102_L202: harnessFlowProjectId
+L102_L202 --> User: "项目已创建，ID: todo-app-a1b2c3d4，即将进入 S1 Gate"
+
+note over PSM,L109_L201: 时间总预算 ≤ 2s(§12 性能目标)\nP50 ≤ 800ms, P99 ≤ 1800ms
+@enduml
 ```
 
 **关键细节说明**：
@@ -889,84 +892,87 @@ sequenceDiagram
 
 **场景**：用户昨天启动 project foo 跑到 S3 Gate，今天重启 Claude Code → `/harnessFlow` → 系统自动恢复。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant User as 用户
-    participant L101 as L1-01 主 loop
-    participant L109_L204 as L1-09 L2-04<br/>恢复器
-    participant PIS as ProjectIndexService
-    participant PLS as ProjectLifecycleService
-    participant Repo as ProjectRepository
-    participant L109_L205 as L1-09 L2-05<br/>校验层
-    participant PSM as ProjectStateMachine
-    participant L110 as L1-10 UI
+```plantuml
+@startuml
+title P0-SEQ-2 · 跨 session 激活恢复
+autonumber
 
-    User->>L101: /harnessFlow (启动 skill)
-    L101->>L109_L204: bootstrap()
-    L109_L204->>PIS: list_projects(filter={status:[ACTIVE,PAUSED,HALTED]})
-    PIS->>Repo: list_all(status_filter=...)
-    Repo->>Repo: read projects/_index.yaml
-    Repo-->>PIS: [ProjectManifest(foo), ProjectManifest(bar)]
-    PIS-->>L109_L204: 2 个未关闭项目
+participant "用户" as User
+participant "L1-01 主 loop" as L101
+participant "L1-09 L2-04\n恢复器" as L109_L204
+participant "ProjectIndexService" as PIS
+participant "ProjectLifecycleService" as PLS
+participant "ProjectRepository" as Repo
+participant "L1-09 L2-05\n校验层" as L109_L205
+participant "ProjectStateMachine" as PSM
+participant "L1-10 UI" as L110
 
-    alt 单 project 且最近 24h 有活动
-        L109_L204->>L110: 提示 "恢复 project foo（最后活动 12h 前）？"
-        L110-->>User: 确认
-        User-->>L110: 确认恢复
-    else 多 project
-        L109_L204->>L110: 展示 project 选择器
-        User->>L110: 选 foo
-        L110-->>L109_L204: 用户选 foo
-    end
+User -> L101: /harnessFlow (启动 skill)
+L101 -> L109_L204: bootstrap()
+L109_L204 -> PIS: list_projects(filter={status:[ACTIVE,PAUSED,HALTED]})
+PIS -> Repo: list_all(status_filter=...)
+Repo -> Repo: read projects/_index.yaml
+Repo --> PIS: [ProjectManifest(foo), ProjectManifest(bar)]
+PIS --> L109_L204: 2 个未关闭项目
 
-    L109_L204->>PLS: activate_project(foo.id, acquire_lease=true)
-    PLS->>Repo: find_by_id(foo.id)
-    Repo->>L109_L205: read_and_verify(projects/foo/manifest.yaml)
-    L109_L205->>L109_L205: sha256(content) vs manifest.metadata.hash
-    alt hash 校验通过
-        L109_L205-->>Repo: verified manifest
-    else manifest 损坏
-        L109_L205-->>Repo: CORRUPTED
-        Repo-->>PLS: MANIFEST_UNREADABLE
-        PLS->>L109_L204: 降级 · 触发 rebuild_index_from_scan
-        Note over L109_L204: 见 §5.5 降级路径
-    end
+alt 单 project 且最近 24h 有活动
+    L109_L204 -> L110: 提示 "恢复 project foo（最后活动 12h 前）？"
+    L110 --> User: 确认
+    User --> L110: 确认恢复
+else 多 project
+    L109_L204 -> L110: 展示 project 选择器
+    User -> L110: 选 foo
+    L110 --> L109_L204: 用户选 foo
+end
 
-    Repo-->>PLS: manifest, state, state_machine
+L109_L204 -> PLS: activate_project(foo.id, acquire_lease=true)
+PLS -> Repo: find_by_id(foo.id)
+Repo -> L109_L205: read_and_verify(projects/foo/manifest.yaml)
+L109_L205 -> L109_L205: sha256(content) vs manifest.metadata.hash
+alt hash 校验通过
+    L109_L205 --> Repo: verified manifest
+else manifest 损坏
+    L109_L205 --> Repo: CORRUPTED
+    Repo --> PLS: MANIFEST_UNREADABLE
+    PLS -> L109_L204: 降级 · 触发 rebuild_index_from_scan
+    note over L109_L204: 见 §5.5 降级路径
+end
 
-    PLS->>L109_L204: restore_checkpoint(foo.id)
-    L109_L204->>L109_L204: 读 projects/foo/checkpoints/latest.json
-    L109_L204->>L109_L205: verify_checkpoint_integrity()
-    alt checkpoint 完整
-        L109_L205-->>L109_L204: ok, seq=42
-        L109_L204->>L109_L204: 从 seq=43 开始回放 events.jsonl
-    else checkpoint 损坏
-        L109_L204->>L109_L204: 回退到上一 checkpoint (seq=40)
-        L109_L204->>L109_L204: 从 seq=41 回放
-    end
+Repo --> PLS: manifest, state, state_machine
 
-    L109_L204->>L109_L204: 重建 task-board + 主状态
-    L109_L204-->>PLS: restored_context (last_checkpoint_seq=42)
+PLS -> L109_L204: restore_checkpoint(foo.id)
+L109_L204 -> L109_L204: 读 projects/foo/checkpoints/latest.json
+L109_L204 -> L109_L205: verify_checkpoint_integrity()
+alt checkpoint 完整
+    L109_L205 --> L109_L204: ok, seq=42
+    L109_L204 -> L109_L204: 从 seq=43 开始回放 events.jsonl
+else checkpoint 损坏
+    L109_L204 -> L109_L204: 回退到上一 checkpoint (seq=40)
+    L109_L204 -> L109_L204: 从 seq=41 回放
+end
 
-    PLS->>PSM: restore_state(current=TDD_PLANNING)
-    PSM->>PSM: validate state_history 连续性
-    PSM-->>PLS: ok
+L109_L204 -> L109_L204: 重建 task-board + 主状态
+L109_L204 --> PLS: restored_context (last_checkpoint_seq=42)
 
-    PLS->>Repo: acquire_lease(foo.id, session_id, ttl=5min)
-    Repo->>Repo: write projects/foo/.lease
-    Repo-->>PLS: lease_token
+PLS -> PSM: restore_state(current=TDD_PLANNING)
+PSM -> PSM: validate state_history 连续性
+PSM --> PLS: ok
 
-    PLS-->>L109_L204: ProjectContext(pid, root, current_state=TDD_PLANNING, lease_token)
-    L109_L204-->>L101: context ready
-    L101->>L110: "已恢复 project foo，当前 state=TDD_PLANNING，继续？"
-    L110-->>User: 显示
+PLS -> Repo: acquire_lease(foo.id, session_id, ttl=5min)
+Repo -> Repo: write projects/foo/.lease
+Repo --> PLS: lease_token
 
-    User->>L110: 继续
-    L110-->>L101: go_ahead
-    L101->>L101: resume tick cycle
+PLS --> L109_L204: ProjectContext(pid, root, current_state=TDD_PLANNING, lease_token)
+L109_L204 --> L101: context ready
+L101 -> L110: "已恢复 project foo，当前 state=TDD_PLANNING，继续？"
+L110 --> User: 显示
 
-    Note over L101,L110: 时间预算 ≤ 30s(L1-09 硬约束)<br/>本图路径 P50 ≤ 1s, P99 ≤ 5s
+User -> L110: 继续
+L110 --> L101: go_ahead
+L101 -> L101: resume tick cycle
+
+note over L101,L110: 时间预算 ≤ 30s(L1-09 硬约束)\n本图路径 P50 ≤ 1s, P99 ≤ 5s
+@enduml
 ```
 
 **关键细节说明**：
@@ -980,69 +986,72 @@ sequenceDiagram
 
 **场景**：project foo 在 S7 最终 Gate 通过 → L1-02 L2-06 调 `archive_project`。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant L102_L206 as L1-02 L2-06<br/>收尾执行器
-    participant PLS as ProjectLifecycleService
-    participant PSM as ProjectStateMachine
-    participant Repo as ProjectRepository
-    participant L109_L205 as L1-09 L2-05<br/>原子写
-    participant L106_L204 as L1-06 L2-04<br/>晋升仪式
-    participant L109_L201 as L1-09 L2-01<br/>事件总线
-    participant L110 as L1-10 UI
+```plantuml
+@startuml
+title P0-SEQ-3 · 归档 + KB 晋升
+autonumber
 
-    L102_L206->>PLS: archive_project(foo.id, reason=NORMAL_COMPLETION, delivery_bundle_path="delivery/bundle-v1")
-    Note over PLS: schema 校验入参
+participant "L1-02 L2-06\n收尾执行器" as L102_L206
+participant "ProjectLifecycleService" as PLS
+participant "ProjectStateMachine" as PSM
+participant "ProjectRepository" as Repo
+participant "L1-09 L2-05\n原子写" as L109_L205
+participant "L1-06 L2-04\n晋升仪式" as L106_L204
+participant "L1-09 L2-01\n事件总线" as L109_L201
+participant "L1-10 UI" as L110
 
-    PLS->>Repo: find_by_id(foo.id)
-    Repo-->>PLS: aggregate (state=CLOSING)
-    PLS->>PSM: can_transition(from=CLOSING, to=CLOSED, trigger=gate_approved)
-    PSM->>PSM: guard: 检查 delivery_bundle 存在 + retro.md 存在
-    PSM-->>PLS: true
+L102_L206 -> PLS: archive_project(foo.id, reason=NORMAL_COMPLETION, delivery_bundle_path="delivery/bundle-v1")
+note over PLS: schema 校验入参
 
-    PLS->>PSM: transition(to=CLOSED, action=FREEZE_ROOT)
-    PSM->>PSM: state_history.append({from, to, trigger, ts})
-    PSM-->>PLS: ok
+PLS -> Repo: find_by_id(foo.id)
+Repo --> PLS: aggregate (state=CLOSING)
+PLS -> PSM: can_transition(from=CLOSING, to=CLOSED, trigger=gate_approved)
+PSM -> PSM: guard: 检查 delivery_bundle 存在 + retro.md 存在
+PSM --> PLS: true
 
-    PLS->>Repo: write_sentinel(projects/foo/.archived, content="NORMAL_COMPLETION|2026-04-20T14:30:00Z")
-    Repo->>L109_L205: atomic_write(.archived, ...)
-    L109_L205-->>Repo: ok
-    Note over Repo: 后续任何对 projects/foo/ 的写入被<br/>Repository 层拒绝(除 failure_archive 追加)
+PLS -> PSM: transition(to=CLOSED, action=FREEZE_ROOT)
+PSM -> PSM: state_history.append({from, to, trigger, ts})
+PSM --> PLS: ok
 
-    PLS->>Repo: update_manifest(state=CLOSED, archived_at=now, archive_reason=NORMAL_COMPLETION)
-    Repo->>L109_L205: atomic_write(projects/foo/manifest.yaml)
-    L109_L205-->>Repo: ok
+PLS -> Repo: write_sentinel(projects/foo/.archived, content="NORMAL_COMPLETION|2026-04-20T14:30:00Z")
+Repo -> L109_L205: atomic_write(.archived, ...)
+L109_L205 --> Repo: ok
+note over Repo: 后续任何对 projects/foo/ 的写入被\nRepository 层拒绝(除 failure_archive 追加)
 
-    PLS->>Repo: update_index(foo.id, status=ARCHIVED)
-    Repo->>L109_L205: atomic_update(projects/_index.yaml)
-    L109_L205-->>Repo: ok
+PLS -> Repo: update_manifest(state=CLOSED, archived_at=now, archive_reason=NORMAL_COMPLETION)
+Repo -> L109_L205: atomic_write(projects/foo/manifest.yaml)
+L109_L205 --> Repo: ok
 
-    PLS->>L106_L204: promote_candidates(foo.id)
-    L106_L204->>L106_L204: 扫 projects/foo/kb/candidates/*.md
-    loop 每个候选条目
-        L106_L204->>L106_L204: 检查 observed_count ≥ 3 OR 用户已批准
-        alt 满足晋升条件
-            L106_L204->>L106_L204: copy → global_kb/entries/
-            L106_L204->>L106_L204: 写 promotion_log.jsonl
-        else 不满足
-            L106_L204->>L106_L204: retire → projects/foo/kb/retired/
-        end
+PLS -> Repo: update_index(foo.id, status=ARCHIVED)
+Repo -> L109_L205: atomic_update(projects/_index.yaml)
+L109_L205 --> Repo: ok
+
+PLS -> L106_L204: promote_candidates(foo.id)
+L106_L204 -> L106_L204: 扫 projects/foo/kb/candidates/*.md
+loop 每个候选条目
+    L106_L204 -> L106_L204: 检查 observed_count ≥ 3 OR 用户已批准
+    alt 满足晋升条件
+        L106_L204 -> L106_L204: copy → global_kb/entries/
+        L106_L204 -> L106_L204: 写 promotion_log.jsonl
+    else 不满足
+        L106_L204 -> L106_L204: retire → projects/foo/kb/retired/
     end
-    L106_L204-->>PLS: {promoted: 5, retired: 12}
+end
+L106_L204 --> PLS: {promoted: 5, retired: 12}
 
-    PLS->>L109_L201: append_event(project_state_transitioned, {foo.id, CLOSING → CLOSED})
-    L109_L201-->>PLS: ok
-    PLS->>L109_L201: append_event(project_archived, {foo.id, archived_at, reason, promoted:5, retired:12})
-    L109_L201-->>PLS: ok
+PLS -> L109_L201: append_event(project_state_transitioned, {foo.id, CLOSING → CLOSED})
+L109_L201 --> PLS: ok
+PLS -> L109_L201: append_event(project_archived, {foo.id, archived_at, reason, promoted:5, retired:12})
+L109_L201 --> PLS: ok
 
-    PLS-->>L102_L206: ArchivedProject(foo.id, archived_at, retention_until=+90d, promoted:5, retired:12)
+PLS --> L102_L206: ArchivedProject(foo.id, archived_at, retention_until=+90d, promoted:5, retired:12)
 
-    L102_L206->>L110: 通知 UI 归档完成
-    L110->>L110: 项目列表中 foo 标 "已归档"
-    L110->>L110: 详情页禁用编辑按钮
+L102_L206 -> L110: 通知 UI 归档完成
+L110 -> L110: 项目列表中 foo 标 "已归档"
+L110 -> L110: 详情页禁用编辑按钮
 
-    Note over PLS,L110: 时间预算 ≤ 3s<br/>其中 KB 晋升占大部分(扫描 + 复制文件)
+note over PLS,L110: 时间预算 ≤ 3s\n其中 KB 晋升占大部分(扫描 + 复制文件)
+@enduml
 ```
 
 **关键细节说明**：
@@ -1055,48 +1064,51 @@ sequenceDiagram
 
 **场景**：用户在 Mac 和 iPad 两台设备同时 `/harnessFlow`，两个 session 都想激活 project foo。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant S1 as Session-A<br/>(Mac)
-    participant S2 as Session-B<br/>(iPad)
-    participant PLS as ProjectLifecycleService
-    participant Repo as ProjectRepository
-    participant Lock as L1-09 L2-02 锁
+```plantuml
+@startuml
+title P1-SEQ · 并发激活争用
+autonumber
 
-    par Session-A 尝试激活
-        S1->>PLS: activate_project(foo.id, acquire_lease=true)
-        PLS->>Lock: acquire_lock(f"project:{foo.id}:lease", ttl=1s)
-        Lock-->>PLS: lock_A
-        PLS->>Repo: check .lease file
-        alt 无 lease 或过期
-            PLS->>Repo: write .lease (session_id=A, expires=+5min)
-            Repo-->>PLS: ok
-            PLS->>Lock: release_lock(lock_A)
-            PLS-->>S1: ProjectContext(lease_token=A_token)
-        end
-    and Session-B 尝试激活(同时间)
-        S2->>PLS: activate_project(foo.id, acquire_lease=true)
-        PLS->>Lock: acquire_lock(f"project:{foo.id}:lease", ttl=1s)
-        Note over Lock: 排队 50ms
-        Lock-->>PLS: lock_B
-        PLS->>Repo: check .lease file
-        Repo-->>PLS: .lease 存在(session_id=A, 未过期)
-        PLS-->>S2: LEASE_HELD_BY_OTHER(session_id=A, expires_at=+5min)
-    end
+participant "Session-A\n(Mac)" as S1
+participant "Session-B\n(iPad)" as S2
+participant "ProjectLifecycleService" as PLS
+participant "ProjectRepository" as Repo
+participant "L1-09 L2-02 锁" as Lock
 
-    Note over S2: UI 显示<br/>"已被 Mac session 持有, 选择:<br/>(a) 等 5 分钟 (b) 强制接管"
+== Session-A 尝试激活 ==
+S1 -> PLS: activate_project(foo.id, acquire_lease=true)
+PLS -> Lock: acquire_lock(f"project:{foo.id}:lease", ttl=1s)
+Lock --> PLS: lock_A
+PLS -> Repo: check .lease file
+alt 无 lease 或过期
+    PLS -> Repo: write .lease (session_id=A, expires=+5min)
+    Repo --> PLS: ok
+    PLS -> Lock: release_lock(lock_A)
+    PLS --> S1: ProjectContext(lease_token=A_token)
+end
 
-    alt 用户选强制接管
-        S2->>PLS: activate_project(foo.id, acquire_lease=true, force=true)
-        PLS->>Lock: acquire_lock(...)
-        PLS->>Repo: write .lease (session_id=B, force=true)
-        PLS->>Repo: broadcast lease_revoked event
-        Note over S1: Session-A 下次 tick 检测到 lease 被撤销<br/>触发 graceful shutdown
-        PLS-->>S2: ProjectContext(lease_token=B_token)
-    else 用户选等待
-        Note over S2: 每 30s 重试激活 / 直到 A 过期
-    end
+== Session-B 尝试激活(同时间) ==
+S2 -> PLS: activate_project(foo.id, acquire_lease=true)
+PLS -> Lock: acquire_lock(f"project:{foo.id}:lease", ttl=1s)
+note over Lock: 排队 50ms
+Lock --> PLS: lock_B
+PLS -> Repo: check .lease file
+Repo --> PLS: .lease 存在(session_id=A, 未过期)
+PLS --> S2: LEASE_HELD_BY_OTHER(session_id=A, expires_at=+5min)
+
+note over S2: UI 显示\n"已被 Mac session 持有, 选择:\n(a) 等 5 分钟 (b) 强制接管"
+
+alt 用户选强制接管
+    S2 -> PLS: activate_project(foo.id, acquire_lease=true, force=true)
+    PLS -> Lock: acquire_lock(...)
+    PLS -> Repo: write .lease (session_id=B, force=true)
+    PLS -> Repo: broadcast lease_revoked event
+    note over S1: Session-A 下次 tick 检测到 lease 被撤销\n触发 graceful shutdown
+    PLS --> S2: ProjectContext(lease_token=B_token)
+else 用户选等待
+    note over S2: 每 30s 重试激活 / 直到 A 过期
+end
+@enduml
 ```
 
 **关键细节说明**：
@@ -1109,42 +1121,45 @@ sequenceDiagram
 
 **场景**：`create_project` 过程中磁盘满 / 权限问题导致 manifest 写失败。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant PLS as ProjectLifecycleService
-    participant Repo as ProjectRepository
-    participant L109_L205 as L1-09 L2-05<br/>原子写
-    participant PIS as ProjectIndexService
-    participant L107 as L1-07 Supervisor
-    participant L110 as L1-10 UI
+```plantuml
+@startuml
+title P1-SEQ · manifest 写失败降级
+autonumber
 
-    PLS->>Repo: save(aggregate)
-    Repo->>L109_L205: atomic_write(manifest.yaml)
-    L109_L205->>L109_L205: write tmpfile
-    L109_L205->>L109_L205: fsync tmpfile
-    L109_L205->>L109_L205: rename tmp → manifest.yaml
-    L109_L205-->>Repo: DISK_FULL / PERMISSION_DENIED
+participant "ProjectLifecycleService" as PLS
+participant "ProjectRepository" as Repo
+participant "L1-09 L2-05\n原子写" as L109_L205
+participant "ProjectIndexService" as PIS
+participant "L1-07 Supervisor" as L107
+participant "L1-10 UI" as L110
 
-    Repo->>Repo: rollback: rm projects/<pid>/ 子树(若已创建)
-    Repo-->>PLS: DISK_FULL
+PLS -> Repo: save(aggregate)
+Repo -> L109_L205: atomic_write(manifest.yaml)
+L109_L205 -> L109_L205: write tmpfile
+L109_L205 -> L109_L205: fsync tmpfile
+L109_L205 -> L109_L205: rename tmp → manifest.yaml
+L109_L205 --> Repo: DISK_FULL / PERMISSION_DENIED
 
-    PLS->>PLS: 清理内存中的 aggregate
-    PLS->>L107: report_incident(type=DISK_FULL, pid=pending_pid)
-    L107->>L107: 评估严重度
-    L107->>PLS: hard_halt 建议
-    PLS->>L110: UI 红屏告警 "磁盘满,无法创建项目,请释放空间后重试"
+Repo -> Repo: rollback: rm projects/<pid>/ 子树(若已创建)
+Repo --> PLS: DISK_FULL
 
-    alt index 也已被污染(部分写入)
-        Note over PIS: 检测到 _index.yaml hash 不匹配
-        PIS->>PIS: rebuild_index_from_scan()
-        PIS->>PIS: 遍历 projects/* 重建 index
-        PIS->>L109_L205: atomic_write(_index.yaml, rebuilt)
-        L109_L205-->>PIS: ok
-        PIS->>PIS: append project_index_rebuilt event
-    end
+PLS -> PLS: 清理内存中的 aggregate
+PLS -> L107: report_incident(type=DISK_FULL, pid=pending_pid)
+L107 -> L107: 评估严重度
+L107 -> PLS: hard_halt 建议
+PLS -> L110: UI 红屏告警 "磁盘满,无法创建项目,请释放空间后重试"
 
-    PLS-->>PLS: return DISK_FULL error
+alt index 也已被污染(部分写入)
+    note over PIS: 检测到 _index.yaml hash 不匹配
+    PIS -> PIS: rebuild_index_from_scan()
+    PIS -> PIS: 遍历 projects/* 重建 index
+    PIS -> L109_L205: atomic_write(_index.yaml, rebuilt)
+    L109_L205 --> PIS: ok
+    PIS -> PIS: append project_index_rebuilt event
+end
+
+PLS --> PLS: return DISK_FULL error
+@enduml
 ```
 
 **关键细节说明**：
@@ -2520,79 +2535,82 @@ FailureArchiveEntry:
 
 ## 8. 项目主状态机
 
-本节是对 projectModel.md §5 的**实现级补齐**：把产品级"7 主态 + 3 横切态"翻译成 Mermaid stateDiagram-v2 + 完整转换表（每一转换的 trigger / guard / action 函数签名）。
+本节是对 projectModel.md §5 的**实现级补齐**：把产品级"7 主态 + 3 横切态"翻译成 PlantUML @startuml ... @enduml (state) + 完整转换表（每一转换的 trigger / guard / action 函数签名）。
 
-### 8.1 Mermaid 状态图
+### 8.1 PlantUML 状态图
 
-```mermaid
-stateDiagram-v2
-    [*] --> NOT_EXIST: 未创建
+```plantuml
+@startuml
+title ProjectStateMachine 状态图
 
-    NOT_EXIST --> INITIALIZED: create_project
-    note right of INITIALIZED
-      S1 启动完成
-      charter + goal_anchor 锁定
-    end note
+[*] --> NOT_EXIST : 未创建
 
-    INITIALIZED --> PLANNING: s1_gate_approved
-    note right of PLANNING
-      S2 规划
-      4 件套 / 9 计划 / TOGAF 产出
-    end note
+NOT_EXIST --> INITIALIZED : create_project
+note right of INITIALIZED
+  S1 启动完成
+  charter + goal_anchor 锁定
+end note
 
-    PLANNING --> TDD_PLANNING: s2_gate_approved
-    note right of TDD_PLANNING
-      S3 TDD 规划
-      测试蓝图 + DoD + quality-gates
-    end note
+INITIALIZED --> PLANNING : s1_gate_approved
+note right of PLANNING
+  S2 规划
+  4 件套 / 9 计划 / TOGAF 产出
+end note
 
-    TDD_PLANNING --> EXECUTING: s3_gate_approved
-    note right of EXECUTING
-      S4 + S5 + S6 合并态
-      WP commit / 测试 / supervisor
-    end note
+PLANNING --> TDD_PLANNING : s2_gate_approved
+note right of TDD_PLANNING
+  S3 TDD 规划
+  测试蓝图 + DoD + quality-gates
+end note
 
-    EXECUTING --> CLOSING: s5_all_pass_and_wp_done
-    note right of CLOSING
-      S7 收尾
-      delivery bundle + retro
-    end note
+TDD_PLANNING --> EXECUTING : s3_gate_approved
+note right of EXECUTING
+  S4 + S5 + S6 合并态
+  WP commit / 测试 / supervisor
+end note
 
-    CLOSING --> CLOSED: s7_gate_approved
-    CLOSED --> [*]: 终态 归档
+EXECUTING --> CLOSING : s5_all_pass_and_wp_done
+note right of CLOSING
+  S7 收尾
+  delivery bundle + retro
+end note
 
-    %% 横切态
-    PLANNING --> PAUSED: user_panic_pause
-    TDD_PLANNING --> PAUSED: user_panic_pause
-    EXECUTING --> PAUSED: user_panic_pause
-    CLOSING --> PAUSED: user_panic_pause
-    PAUSED --> PLANNING: user_resume (if prev=PLANNING)
-    PAUSED --> TDD_PLANNING: user_resume (if prev=TDD_PLANNING)
-    PAUSED --> EXECUTING: user_resume (if prev=EXECUTING)
-    PAUSED --> CLOSING: user_resume (if prev=CLOSING)
+CLOSING --> CLOSED : s7_gate_approved
+CLOSED --> [*] : 终态 归档
 
-    EXECUTING --> HALTED: supervisor_hard_halt
-    TDD_PLANNING --> HALTED: supervisor_hard_halt
-    CLOSING --> HALTED: supervisor_hard_halt
-    HALTED --> EXECUTING: user_unhalt (if prev=EXECUTING)
-    HALTED --> TDD_PLANNING: user_unhalt (if prev=TDD_PLANNING)
-    HALTED --> CLOSING: user_unhalt (if prev=CLOSING)
+' 横切态
+PLANNING --> PAUSED : user_panic_pause
+TDD_PLANNING --> PAUSED : user_panic_pause
+EXECUTING --> PAUSED : user_panic_pause
+CLOSING --> PAUSED : user_panic_pause
+PAUSED --> PLANNING : user_resume (if prev=PLANNING)
+PAUSED --> TDD_PLANNING : user_resume (if prev=TDD_PLANNING)
+PAUSED --> EXECUTING : user_resume (if prev=EXECUTING)
+PAUSED --> CLOSING : user_resume (if prev=CLOSING)
 
-    %% FAILED_TERMINAL
-    EXECUTING --> FAILED_TERMINAL: fatal_failure
-    TDD_PLANNING --> FAILED_TERMINAL: fatal_failure
-    FAILED_TERMINAL --> CLOSED: archive_failed_terminal
-    note right of FAILED_TERMINAL
-      极端失败闭环
-      强制进入 CLOSING 做失败闭环
-    end note
+EXECUTING --> HALTED : supervisor_hard_halt
+TDD_PLANNING --> HALTED : supervisor_hard_halt
+CLOSING --> HALTED : supervisor_hard_halt
+HALTED --> EXECUTING : user_unhalt (if prev=EXECUTING)
+HALTED --> TDD_PLANNING : user_unhalt (if prev=TDD_PLANNING)
+HALTED --> CLOSING : user_unhalt (if prev=CLOSING)
 
-    %% USER_ABANDONED
-    PLANNING --> CLOSED: archive_user_abandoned
-    TDD_PLANNING --> CLOSED: archive_user_abandoned
-    EXECUTING --> CLOSED: archive_user_abandoned
-    PAUSED --> CLOSED: archive_user_abandoned
-    HALTED --> CLOSED: archive_user_abandoned
+' FAILED_TERMINAL
+EXECUTING --> FAILED_TERMINAL : fatal_failure
+TDD_PLANNING --> FAILED_TERMINAL : fatal_failure
+FAILED_TERMINAL --> CLOSED : archive_failed_terminal
+note right of FAILED_TERMINAL
+  极端失败闭环
+  强制进入 CLOSING 做失败闭环
+end note
+
+' USER_ABANDONED
+PLANNING --> CLOSED : archive_user_abandoned
+TDD_PLANNING --> CLOSED : archive_user_abandoned
+EXECUTING --> CLOSED : archive_user_abandoned
+PAUSED --> CLOSED : archive_user_abandoned
+HALTED --> CLOSED : archive_user_abandoned
+@enduml
 ```
 
 ### 8.2 完整转换表（主表 · 20 条合法转换）

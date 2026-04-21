@@ -559,93 +559,85 @@ BC-10 是 HarnessFlow 唯一的人机交互界面（localhost Web）。L2-01 11 
 
 ### 3.1 全景 Context Map（10 BC × 6 种关系）
 
-```mermaid
-graph TB
-    subgraph "Shared Kernel (SK) - 全 BC 共享"
-        SK[HarnessFlowProjectId VO<br/>PM-14 Root Aggregate Id<br/>必带于所有聚合根]
-    end
+```plantuml
+@startuml
+title 全景 Context Map（10 BC × 6 种关系）
 
-    subgraph "Control Plane - 控制面"
-        BC01[BC-01<br/>Agent Decision Loop<br/>L1-01]
-        BC07[BC-07<br/>Harness Supervision<br/>L1-07]
-    end
+package "Shared Kernel (SK) - 全 BC 共享" {
+    component "HarnessFlowProjectId VO\nPM-14 Root Aggregate Id\n必带于所有聚合根" as SK
+}
 
-    subgraph "Domain Plane - 业务面"
-        BC02[BC-02<br/>Project Lifecycle<br/>L1-02]
-        BC03[BC-03<br/>WBS+WP Topology<br/>L1-03]
-        BC04[BC-04<br/>Quality Loop<br/>L1-04]
-        BC06[BC-06<br/>3-Tier KB<br/>L1-06]
-    end
+package "Control Plane - 控制面" {
+    component "BC-01\nAgent Decision Loop\nL1-01" as BC01
+    component "BC-07\nHarness Supervision\nL1-07" as BC07
+}
 
-    subgraph "Infrastructure Plane - 基础设施面"
-        BC05[BC-05<br/>Skill & Subagent<br/>L1-05<br/>- ACL -<br/>对 Claude/MCP]
-        BC08[BC-08<br/>Multimodal Content<br/>L1-08]
-        BC09[BC-09<br/>Resilience & Audit<br/>L1-09<br/>- OHS/PL -<br/>append_event]
-    end
+package "Domain Plane - 业务面" {
+    component "BC-02\nProject Lifecycle\nL1-02" as BC02
+    component "BC-03\nWBS+WP Topology\nL1-03" as BC03
+    component "BC-04\nQuality Loop\nL1-04" as BC04
+    component "BC-06\n3-Tier KB\nL1-06" as BC06
+}
 
-    subgraph "Presentation Plane - 表现面"
-        BC10[BC-10<br/>Human-Agent UI<br/>L1-10<br/>- PL -<br/>user_intervene]
-    end
+package "Infrastructure Plane - 基础设施面" {
+    component "BC-05\nSkill & Subagent\nL1-05\n- ACL -\n对 Claude/MCP" as BC05
+    component "BC-08\nMultimodal Content\nL1-08" as BC08
+    component "BC-09\nResilience & Audit\nL1-09\n- OHS/PL -\nappend_event" as BC09
+}
 
-    %% Partnership 关系（强耦合同步演进）
-    BC01 <-->|"Partnership<br/>append_event 强耦合"| BC09
-    BC01 <-->|"Partnership<br/>建议/硬暂停强耦合"| BC07
-    BC04 <-->|"Partnership<br/>verdict/rollback 强耦合"| BC07
-    BC03 <-->|"Partnership<br/>failure_advice 强耦合"| BC07
+package "Presentation Plane - 表现面" {
+    component "BC-10\nHuman-Agent UI\nL1-10\n- PL -\nuser_intervene" as BC10
+}
 
-    %% Customer-Supplier 关系
-    BC01 -->|"Customer<br/>IC-01 state 转换"| BC02
-    BC01 -->|"Customer<br/>IC-02 get_next_wp"| BC03
-    BC01 -->|"Customer<br/>IC-03 enter_quality_loop"| BC04
-    BC01 -->|"Customer<br/>IC-04/05 invoke_skill/delegate"| BC05
-    BC01 -->|"Customer<br/>IC-06/07 kb_read/write"| BC06
-    BC01 -->|"Customer<br/>IC-11 process_content"| BC08
-    BC02 -->|"Customer<br/>IC-19 wbs_decompose"| BC03
-    BC02 -->|"Customer<br/>触发 S3 蓝图"| BC04
-    BC03 <-->|"Customer-Supplier<br/>WP 定义 ↔ 完成信号"| BC04
-    BC04 -->|"Customer<br/>IC-20 delegate_verifier"| BC05
-    BC08 -->|"Customer<br/>IC-12 codebase-onboarding"| BC05
+' Partnership 关系（强耦合同步演进）
+BC01 <--> BC09 : Partnership\nappend_event 强耦合
+BC01 <--> BC07 : Partnership\n建议/硬暂停强耦合
+BC04 <--> BC07 : Partnership\nverdict/rollback 强耦合
+BC03 <--> BC07 : Partnership\nfailure_advice 强耦合
 
-    %% Supplier: BC-09 单向发布 Published Language
-    BC09 -.->|"OHS/PL<br/>append_event schema"| BC01
-    BC09 -.->|"OHS/PL"| BC02
-    BC09 -.->|"OHS/PL"| BC03
-    BC09 -.->|"OHS/PL"| BC04
-    BC09 -.->|"OHS/PL"| BC05
-    BC09 -.->|"OHS/PL"| BC06
-    BC09 -.->|"OHS/PL"| BC07
-    BC09 -.->|"OHS/PL"| BC08
-    BC09 -.->|"OHS/PL"| BC10
+' Customer-Supplier 关系
+BC01 --> BC02 : Customer\nIC-01 state 转换
+BC01 --> BC03 : Customer\nIC-02 get_next_wp
+BC01 --> BC04 : Customer\nIC-03 enter_quality_loop
+BC01 --> BC05 : Customer\nIC-04/05 invoke_skill/delegate
+BC01 --> BC06 : Customer\nIC-06/07 kb_read/write
+BC01 --> BC08 : Customer\nIC-11 process_content
+BC02 --> BC03 : Customer\nIC-19 wbs_decompose
+BC02 --> BC04 : Customer\n触发 S3 蓝图
+BC03 <--> BC04 : Customer-Supplier\nWP 定义 ↔ 完成信号
+BC04 --> BC05 : Customer\nIC-20 delegate_verifier
+BC08 --> BC05 : Customer\nIC-12 codebase-onboarding
 
-    %% BC-10 对用户发布 PL
-    BC10 -->|"Customer-Supplier<br/>IC-16/17 Gate卡片/干预"| BC01
-    BC10 -->|"Customer<br/>读 Gate 卡"| BC02
-    BC10 -->|"Customer<br/>读 KB"| BC06
-    BC10 -->|"Customer<br/>读告警"| BC07
-    BC10 -.->|"Customer<br/>订阅事件流"| BC09
+' Supplier: BC-09 单向发布 Published Language
+BC09 ..> BC01 : OHS/PL\nappend_event schema
+BC09 ..> BC02 : OHS/PL
+BC09 ..> BC03 : OHS/PL
+BC09 ..> BC04 : OHS/PL
+BC09 ..> BC05 : OHS/PL
+BC09 ..> BC06 : OHS/PL
+BC09 ..> BC07 : OHS/PL
+BC09 ..> BC08 : OHS/PL
+BC09 ..> BC10 : OHS/PL
 
-    %% Shared Kernel
-    SK -.->|"Shared Kernel"| BC01
-    SK -.->|"Shared Kernel"| BC02
-    SK -.->|"Shared Kernel"| BC03
-    SK -.->|"Shared Kernel"| BC04
-    SK -.->|"Shared Kernel"| BC05
-    SK -.->|"Shared Kernel"| BC06
-    SK -.->|"Shared Kernel"| BC07
-    SK -.->|"Shared Kernel"| BC08
-    SK -.->|"Shared Kernel"| BC09
-    SK -.->|"Shared Kernel"| BC10
+' BC-10 对用户发布 PL
+BC10 --> BC01 : Customer-Supplier\nIC-16/17 Gate卡片/干预
+BC10 --> BC02 : Customer\n读 Gate 卡
+BC10 --> BC06 : Customer\n读 KB
+BC10 --> BC07 : Customer\n读告警
+BC10 ..> BC09 : Customer\n订阅事件流
 
-    classDef shared fill:#fce4ec,stroke:#c2185b
-    classDef control fill:#e3f2fd,stroke:#1976d2
-    classDef domain fill:#e8f5e9,stroke:#388e3c
-    classDef infra fill:#fff3e0,stroke:#f57c00
-    classDef ui fill:#f3e5f5,stroke:#7b1fa2
-    class SK shared
-    class BC01,BC07 control
-    class BC02,BC03,BC04,BC06 domain
-    class BC05,BC08,BC09 infra
-    class BC10 ui
+' Shared Kernel
+SK ..> BC01 : Shared Kernel
+SK ..> BC02 : Shared Kernel
+SK ..> BC03 : Shared Kernel
+SK ..> BC04 : Shared Kernel
+SK ..> BC05 : Shared Kernel
+SK ..> BC06 : Shared Kernel
+SK ..> BC07 : Shared Kernel
+SK ..> BC08 : Shared Kernel
+SK ..> BC09 : Shared Kernel
+SK ..> BC10 : Shared Kernel
+@enduml
 ```
 
 ### 3.2 Partnership 关系清单（强耦合 · 发版同步）
@@ -1027,45 +1019,45 @@ DDD 语境下 IC 契约被分为三类原语：
 
 ### 5.4 事件 vs 命令 vs 查询的生命周期对比
 
-```mermaid
-sequenceDiagram
-    participant U as User / Trigger
-    participant BC01 as BC-01 (Caller)
-    participant BC02 as BC-02 (Callee)
-    participant BC09 as BC-09 (Event Bus)
-    participant BC10 as BC-10 (UI)
+```plantuml
+@startuml
+title 事件 vs 命令 vs 查询的生命周期对比
 
-    rect rgb(230, 240, 255)
-        Note over U,BC10: Command 生命周期
-        U->>BC01: 用户输入
-        BC01->>BC02: Command: RequestStateTransition(from, to, reason)
-        BC02->>BC02: 验证 allowed_next
-        alt 接受
-            BC02->>BC09: AppendEvent(L1-02:stage_transitioned)
-            BC09-->>BC02: {event_id, sequence, hash}
-            BC02-->>BC01: {accepted: true, new_entry}
-            BC09->>BC10: 事件广播（异步）
-        else 拒绝
-            BC02-->>BC01: {accepted: false, reason}
-        end
-    end
+participant "User / Trigger" as U
+participant "BC-01 (Caller)" as BC01
+participant "BC-02 (Callee)" as BC02
+participant "BC-09 (Event Bus)" as BC09
+participant "BC-10 (UI)" as BC10
 
-    rect rgb(230, 255, 230)
-        Note over U,BC10: Query 生命周期
-        U->>BC10: 用户查询审计
-        BC10->>BC09: Query: QueryAuditTrail(anchor)
-        BC09-->>BC10: {trail: [...]}
-        Note right of BC10: Query 不产 event · 幂等
+group Command 生命周期
+    U -> BC01: 用户输入
+    BC01 -> BC02: Command: RequestStateTransition(from, to, reason)
+    BC02 -> BC02: 验证 allowed_next
+    alt 接受
+        BC02 -> BC09: AppendEvent(L1-02:stage_transitioned)
+        BC09 --> BC02: {event_id, sequence, hash}
+        BC02 --> BC01: {accepted: true, new_entry}
+        BC09 -> BC10: 事件广播（异步）
+    else 拒绝
+        BC02 --> BC01: {accepted: false, reason}
     end
+end
 
-    rect rgb(255, 240, 230)
-        Note over U,BC10: Domain Event 生命周期
-        BC02->>BC09: AppendEvent(L1-02:project_created)
-        BC09->>BC09: sequence 分配 + hash 链化 + fsync
-        BC09->>BC10: 订阅者广播
-        BC09->>BC01: 订阅者广播
-        BC09->>BC09: 持久化到 projects/<pid>/events.jsonl
-    end
+group Query 生命周期
+    U -> BC10: 用户查询审计
+    BC10 -> BC09: Query: QueryAuditTrail(anchor)
+    BC09 --> BC10: {trail: [...]}
+    note right of BC10: Query 不产 event · 幂等
+end
+
+group Domain Event 生命周期
+    BC02 -> BC09: AppendEvent(L1-02:project_created)
+    BC09 -> BC09: sequence 分配 + hash 链化 + fsync
+    BC09 -> BC10: 订阅者广播
+    BC09 -> BC01: 订阅者广播
+    BC09 -> BC09: 持久化到 projects/<pid>/events.jsonl
+end
+@enduml
 ```
 
 ### 5.5 Domain Event 与 Audit Entry 的关系
@@ -1143,35 +1135,38 @@ Aggregate Root XXX:
 
 ### 6.4 project_id 生命周期（DDD 视角）
 
-```mermaid
-stateDiagram-v2
-    [*] --> NotExist: 用户未启动
-    NotExist --> Initialized: BC-02 ProjectFactory.create()<br/>触发 L1-02:project_created
-    Initialized --> Planning: S1 Gate 批准
-    Planning --> TDDPlanning: S2 Gate 批准
-    TDDPlanning --> Executing: S3 Gate 批准
-    Executing --> Closing: S5 全 PASS + WP done
-    Closing --> Closed: S7 Gate 最终批准<br/>触发 L1-02:project_archived
+```plantuml
+@startuml
+title project_id 生命周期（DDD 视角）
 
-    Planning --> Paused: 用户 panic
-    TDDPlanning --> Paused: 用户 panic
-    Executing --> Paused: 用户 panic
-    Closing --> Paused: 用户 panic
-    Paused --> Planning: 用户 resume
-    Paused --> TDDPlanning: 用户 resume
-    Paused --> Executing: 用户 resume
-    Paused --> Closing: 用户 resume
+[*] --> NotExist : 用户未启动
+NotExist --> Initialized : BC-02 ProjectFactory.create()\n触发 L1-02:project_created
+Initialized --> Planning : S1 Gate 批准
+Planning --> TDDPlanning : S2 Gate 批准
+TDDPlanning --> Executing : S3 Gate 批准
+Executing --> Closing : S5 全 PASS + WP done
+Closing --> Closed : S7 Gate 最终批准\n触发 L1-02:project_archived
 
-    Planning --> Halted: supervisor 硬红线
-    TDDPlanning --> Halted: supervisor 硬红线
-    Executing --> Halted: supervisor 硬红线
-    Closing --> Halted: supervisor 硬红线
-    Halted --> Planning: 用户授权解除
-    Halted --> TDDPlanning: 用户授权解除
-    Halted --> Executing: 用户授权解除
-    Halted --> Closing: 用户授权解除
+Planning --> Paused : 用户 panic
+TDDPlanning --> Paused : 用户 panic
+Executing --> Paused : 用户 panic
+Closing --> Paused : 用户 panic
+Paused --> Planning : 用户 resume
+Paused --> TDDPlanning : 用户 resume
+Paused --> Executing : 用户 resume
+Paused --> Closing : 用户 resume
 
-    Closed --> [*]: 90 天冷存后可删
+Planning --> Halted : supervisor 硬红线
+TDDPlanning --> Halted : supervisor 硬红线
+Executing --> Halted : supervisor 硬红线
+Closing --> Halted : supervisor 硬红线
+Halted --> Planning : 用户授权解除
+Halted --> TDDPlanning : 用户授权解除
+Halted --> Executing : 用户授权解除
+Halted --> Closing : 用户授权解除
+
+Closed --> [*] : 90 天冷存后可删
+@enduml
 ```
 
 ### 6.5 聚合根获取 project_id 的三种路径

@@ -1995,7 +1995,7 @@ simple_eval("foo(x)", functions={"foo": lambda x: x+1}, names={"x": 10})  # 11
 
 ### 13.1 模块定位
 
-HarnessFlow 在 3-1 tech-design 标准模板（§5）里要求**每个 L2 至少 1 张 Mermaid 时序图**。UI 侧（L1-10）也需要渲染 DAG / 状态机图。调研：**Mermaid / PlantUML / Graphviz / D2** 四大主流工具对比。
+HarnessFlow 在 3-1 tech-design 标准模板（§5）里要求**每个 L2 至少 1 张 PlantUML 时序图**。UI 侧（L1-10）也需要渲染 DAG / 状态机图。调研：**Mermaid / PlantUML / Graphviz / D2** 四大主流工具对比。
 
 ### 13.2 Mermaid
 
@@ -2008,7 +2008,7 @@ HarnessFlow 在 3-1 tech-design 标准模板（§5）里要求**每个 L2 至少
 
 **可学习点 + 选型理由（Learn + Adopt）**：
 
-1. **GitHub 原生渲染** · markdown 里直接写 ```mermaid 代码块就渲染 · tech-design.md 直接可用。
+1. **GitHub 原生渲染** · markdown 里直接写 `(mermaid)` 代码块就渲染 · tech-design.md 直接可用（本项目最终决定切 PlantUML · 见 spec v2.0）。
 2. **类 markdown 语法** · `A --> B` 这种极直观 · 作者写作成本极低。
 3. **多种图表类型**：flowchart / sequenceDiagram / stateDiagram / erDiagram / ganttDiagram / classDiagram / C4 diagram 等完整覆盖。
 4. **浏览器端渲染** · 私有 · 离线可用 · HarnessFlow 本地 UI 直接嵌入 `mermaid.js`。
