@@ -1801,7 +1801,7 @@ checkpoint_latest:
 ### 5.4 最终自检 checklist（本文件 v1.0 内建）
 
 - [x] 12 条 P0 流全部有 `@startuml`/`@enduml` + `autonumber` + `activate/deactivate`
-- [x] 禁 Mermaid（全文无 ```mermaid 块）
+- [x] 禁 Mermaid（全文无 `(mermaid)` 块）
 - [x] IC 编号 100% 对齐 `ic-contracts.md §3`（IC-01~IC-20 · 19 条出现 · IC-15 仅指向 L0 §2.6 P0-06）
 - [x] 字段名 100% 英文 snake_case（`project_id` / `tick_id` / `decision_id` / `loop_session_id` 等）
 - [x] PM-14：12 条 P0 图的所有 payload YAML 示例均含 `project_id`（pid 生成前 P0-01 step 2 用 `project_id: "system"` 显式标）
