@@ -2,8 +2,8 @@
 doc_id: 3-solution-resume-status
 doc_type: resume-status
 last_updated: 2026-04-21
-current_phase: R2 · L1-01 模板填充中
-next_action: 等 5 个 R2.2-R2.6 subagent 完成 → 两阶段 review → commit → M2
+current_phase: R3 · L1-04/L1-07 深度 A 批量填充
+next_action: 启动 R3.1 L1-04 × 5 subagent 并发批1 → R3.2 批2 → R3.3 批3 → M3
 parent_doc:
   - docs/superpowers/specs/2026-04-21-3-solution-resume-design.md v2.0
   - docs/superpowers/plans/2026-04-21-3-solution-resume.md
@@ -26,12 +26,13 @@ parent_doc:
 | R1.4 · cross-l1-integration.md | ✅ | 2026-04-21 | 2bc931e | 1112 行 · 10×10 依赖矩阵 + DDD BC 全景 + PM-14 传播链 |
 | **M1 里程碑** | ✅ | 2026-04-21 | e76efa2 | integration 4 份合 7007 行 · 56 PlantUML · 20 IC 锁死 |
 | R2.1 · L2-02 §2/§4-§13 | ✅ | 2026-04-21 | e76efa2 | 563 → 1493 行（+930）· 标杆最终态 |
-| R2.2 · L2-01 Tick 调度器 | 🔄 | — | — | subagent 执行中 |
-| R2.3 · L2-03 状态机编排器 | 🔄 | — | — | subagent 执行中 |
-| R2.4 · L2-04 任务链执行器 | 🔄 | — | — | subagent 执行中 |
-| R2.5 · L2-05 决策审计记录器 | 🔄 | — | — | subagent 执行中 |
-| R2.6 · L2-06 Supervisor 接收器 | 🔄 | — | — | subagent 执行中 |
-| R2.7 · Gate + Commit → M2 | ⏳ | — | — | 等 R2.2-R2.6 完成 |
+| R2.2 · L2-01 Tick 调度器 | ✅ | 2026-04-21 | fcf93f0 | 2103 行 · 4 PlantUML · 29 E_TICK_* · §9/§11/OQ |
+| R2.3 · L2-03 状态机编排器 | ✅ | 2026-04-21 | 699eb33 | 2096 行 · 7 PlantUML · 97 E_TRANS_* · §9/§11/OQ |
+| R2.4 · L2-04 任务链执行器 | ✅ | 2026-04-21 | 39d11e0 | 2257 行 · 5 PlantUML · 20 E_CHAIN_* · §9/§11/OQ |
+| R2.5 · L2-05 决策审计记录器 | ✅ | 2026-04-21 | 014f050 | 1570 行 · 4 PlantUML · 10 E_AUDIT_* · §9/§11/OQ |
+| R2.6 · L2-06 Supervisor 接收器 | ✅ | 2026-04-21 | b4d5c77 | 2194 行 · 6 PlantUML · 74 E_SUP_* · §9/§11/OQ |
+| R2.7 · Gate + Commit → M2 | ✅ | 2026-04-21 | eac11ba | Gate PASS · 两阶段 review · L2-06 方法名统一 · L2-02 status 修正 |
+| **M2 里程碑** | ✅ | 2026-04-21 | eac11ba | L1-01 主循环 6 份 L2 端到端完成 · 合计 ~11700 行 · 38 PlantUML |
 | R3.1 · L1-04 × 5（批1）| ⏳ | — | — | 待 R2 完成 |
 | R3.2 · L1-04 × 2 + L1-07 × 3（批2）| ⏳ | — | — | |
 | R3.3 · L1-07 × 3（批3）→ M3 | ⏳ | — | — | |
@@ -121,8 +122,8 @@ parent_doc:
 
 | 指标 | 值 | 说明 |
 |---|---|---|
-| 总文档产出 | **~11500 行** | 4 integration + 1 L2-02 + 10 architecture + 5 L0 + projectModel |
-| PlantUML 图数 | **~230 张** | R0 迁移 169 + R1 新增 56 + R2.1 新增 4 |
+| 总文档产出 | **~22700 行** | 4 integration + 6 L1-01 L2 + 10 architecture + 5 L0 + projectModel |
+| PlantUML 图数 | **~268 张** | R0 迁移 169 + R1 新增 56 + R2 新增 43 |
 | Mermaid 残留 | 0 | Gate 1 硬约束 |
 | FILL 占位残留 | 53 份骨架（R2-R4 清）| Gate 2 WARN（R7 前期望） |
 | IC 契约锁定 | 20 条 | ic-contracts.md v1.0 locked |
