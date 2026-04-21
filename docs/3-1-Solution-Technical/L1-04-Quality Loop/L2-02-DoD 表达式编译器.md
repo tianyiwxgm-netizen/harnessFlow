@@ -811,9 +811,956 @@ end note
 
 ---
 
-## §5 P0/P1 时序图（PlantUML ≥ 2 张）
+## §5 P0/P1 时序图（PlantUML）
 
-<!-- FILL §5 · 本 L2 的 P0 场景时序图（≥ 2 张 · PlantUML）· 可引用 L0/sequence-diagrams-index.md 的对应 P0/P1 链路 · 聚焦本 L2 内部流程 -->
+本节给 3 张时序图（2 P0 主干 + 1 P1 安全事件），覆盖编译主路径 · eval 主路径（含沙盒 kill） · 白名单篡改检测。
+
+### 5.1 P0-A · `compile_batch` S3 批量编译时序（主干 · 最高频）
+
+```plantuml
+@startuml
+title L2-02 · P0-A · compile_batch S3 主干时序（50 条 DoD 条款 · P95 ≤ 60s）
+autonumber
+participant "L2-01\nTDD 蓝图生成器" as L201
+participant "事件总线\n(L1-09)" as BUS
+participant "<b>L2-02\norchestrator</b>\nDoDExpressionCompilationOrchestrator" as ORC
+participant "<b>WhitelistRegistry</b>\n(本 L2 持有)" as WR
+participant "<b>DoDExpressionCompiler</b>\n(Domain Service)" as CMP
+participant "<b>SafeExprValidator</b>\n(ast.NodeVisitor)" as VAL
+participant "DoDExpressionSetRepo" as REPO
+participant "L1-02\nStage Gate 模块" as L102
+participant "L1-09\n审计" as L09
+participant "L1-07\nSupervisor" as L07
+participant "L1-10\nUI" as L10
+
+== 触发阶段 ==
+L201 -> BUS : emit L1-04:blueprint_issued\n{blueprint_id, project_id, ac_matrix_hash}
+BUS -> ORC : on_blueprint_ready(event)
+activate ORC
+
+== 前置校验 ==
+ORC -> ORC : validate project_id present\n(PM-14 第一道门)
+alt project_id missing
+    ORC -> L09 : IC-09 E_L204_L202_NO_PROJECT_ID + reject
+    ORC --> L201 : reject
+else valid
+    ORC -> WR : get_current_version()
+    WR --> ORC : whitelist_version="v1.3.0"
+    note right: D-03 · 启动时锁定版本\n运行期只读
+end
+
+== 编译循环（按 clause 逐条）==
+loop 每条 clause ∈ clauses[]
+    ORC -> CMP : compile_single(clause_text, ac_matrix, whitelist_version)
+    activate CMP
+
+    CMP -> CMP : Step 1 · 分词 + 预处理\n(去注释 / 规整空格)
+    CMP -> CMP : Step 2 · 谓词识别\n(比对 WhitelistRegistry)
+
+    alt 未命中白名单
+        CMP -> CMP : compute similarity_scores[]\n(Levenshtein / 词干)
+        CMP --> ORC : UnmappableClause{clause_id, suggested_predicates[]}
+    else 命中白名单
+        CMP -> CMP : Step 3 · ast.parse(mode='eval')
+        alt SyntaxError
+            CMP --> ORC : ParseError{E_L204_L202_AST_SYNTAX_ERROR}
+        else 语法成功
+            CMP -> VAL : visit(tree)
+            activate VAL
+            VAL -> VAL : Step 4 · 白名单节点校验\n(§5.2 ALLOWED_NODES)
+            alt 非法节点 (如 Import/Attribute/Lambda)
+                VAL --> CMP : raise E_L204_L202_AST_ILLEGAL_NODE
+                CMP -> L07 : **IC-13 push_suggestion{BLOCK,\nSA-01 检测}**
+            else 节点合法
+                VAL -> VAL : Step 5 · 函数白名单校验\n(ALLOWED_FUNCS)
+                alt 非法函数
+                    VAL --> CMP : raise E_L204_L202_AST_ILLEGAL_FUNCTION
+                else 通过
+                    VAL -> VAL : Step 6 · 深度校验\nmax_ast_depth=32\n(SA-03)
+                    VAL -> VAL : Step 7 · 节点数校验\nmax_ast_nodes=200
+                    VAL --> CMP : validation_ok
+                end
+            end
+            deactivate VAL
+
+            CMP -> CMP : Step 8 · 反查 AC matrix\n(硬约束 4)
+            alt AC 反查失败
+                CMP --> ORC : E_L204_L202_AC_REVERSE_LOOKUP_FAILED
+            else 反查成功
+                CMP -> CMP : Step 9 · 冻结为 DoDExpression VO\n(immutable · cache_key 计算)
+                CMP --> ORC : DoDExpression{expr_id, ast, source_ac_ids, cache_key}
+            end
+        end
+    end
+    deactivate CMP
+end
+
+== 聚合 + 持久化 ==
+ORC -> ORC : build DoDExpressionSet\n(version = latest + 1 · PM-14 路径)
+ORC -> ORC : size check: yaml < 500KB?
+alt yaml > 500KB
+    ORC -> L07 : IC-13 WARN "WP 切分过碎"
+    ORC -> L09 : E_L204_L202_COMPILE_OVERSIZED
+end
+
+ORC -> REPO : save(set_, version=N+1)
+activate REPO
+REPO -> REPO : write projects/<pid>/testing/\ndod-expressions-v{N+1}.yaml\n+ append compile_audit.jsonl
+REPO --> ORC : saved
+deactivate REPO
+
+== 事件广播 ==
+ORC -> L09 : IC-09 append_event\nL1-04:dod_compiled\n{project_id, set_id, version, wp_count,\nexpr_count, unmappable_clauses[],\nwhitelist_version}
+
+alt unmappable_clauses 非空
+    ORC -> L07 : IC-13 push_suggestion{INFO,\nreason=unmappable_clauses,\nclauses[], suggested_predicates[]}
+    note right: 触发流 F 澄清回路
+end
+
+ORC -> L102 : IC-16 push_stage_gate_card\n{card_id, gate_id=S3,\nartifact_bundle=[dod-expressions.yaml],\nblocks_progress=true}
+L102 -> L10 : render Gate Card\n(S3 Gate 五件之一)
+
+ORC --> BUS : on_blueprint_ready(done)
+deactivate ORC
+@enduml
+```
+
+**时序性能预算**（50 条条款 · 对齐 §12 SLO）：
+
+| 阶段 | P50 | P95 | 备注 |
+|---|---|---|---|
+| 前置校验 + Registry 读 | 2 ms | 5 ms | 内存读 |
+| 单 clause 编译（含 validator）| 400 ms | 1000 ms | parse + walker + lookup |
+| 总编译（50 条）| 20 s | 50 s | 允许 **parallel** 编译（`max_concurrent_compilers=4` · §10）|
+| Repo save + jsonl | 50 ms | 200 ms | fsync |
+| 事件广播 | 20 ms | 50 ms | IC-09 async |
+| IC-16 Gate 推卡 | 100 ms | 500 ms | 经 L1-02 |
+| **总 P95** | **30 s** | **60 s** | 满足 §9.4 硬约束 |
+
+### 5.2 P0-B · `eval_expression` 运行期 eval 时序（含沙盒 + 超时 kill）
+
+```plantuml
+@startuml
+title L2-02 · P0-B · eval_expression 运行期时序\n(含受限沙盒 · 超时 kill · evidence 组装)
+autonumber
+participant "调用方\n(L2-05/L2-06/verifier)" as CALLER
+participant "<b>DoDEvaluator</b>\n(Domain Service)" as EVAL
+participant "<b>ASTCacheManager</b>" as CACHE
+participant "<b>SafeExprValidator</b>\n(re-validate)" as VAL
+participant "<b>SandboxRunner</b>\n(in_process / subprocess)" as SBX
+participant "WhitelistRegistry" as WR
+participant "L1-09 审计" as L09
+
+CALLER -> EVAL : eval_expression(command_id,\nproject_id, expr_id,\ndata_sources_snapshot, caller,\ntimeout_ms=500)
+activate EVAL
+
+== Step 1 · 前置校验（防 SA 攻击）==
+EVAL -> EVAL : assert project_id present\n(PM-14)
+EVAL -> EVAL : assert caller ∈ WHITELISTED_CALLERS\n(SA-07 防伪冒)
+alt caller unauthorized
+    EVAL -> L09 : E_L204_L202_CALLER_UNAUTHORIZED
+    EVAL --> CALLER : raise
+end
+
+== Step 2 · 加载 DoDExpression ==
+EVAL -> EVAL : load expr from repo\n(projects/<pid>/testing/\ndod-expressions.yaml)
+EVAL -> WR : get_current_whitelist_version()
+WR --> EVAL : current_version="v1.3.0"
+
+alt expr.whitelist_version != current_version
+    EVAL -> L09 : E_L204_L202_WHITELIST_VERSION_MISMATCH\n触发重编译 (OQ-04)
+    EVAL --> CALLER : FAIL{reason=whitelist_stale}
+end
+
+== Step 3 · AST 缓存查询（D-04）==
+EVAL -> CACHE : lookup(expr.cache_key)
+activate CACHE
+alt cache HIT
+    CACHE --> EVAL : cached_ast
+    note right: P95 < 1ms (热路径)
+else cache MISS
+    CACHE --> EVAL : miss
+    EVAL -> EVAL : ast.parse(expr.expression_text)
+    EVAL -> VAL : re-validate(ast)\n**运行期再次白名单校验**\n(§5.5 防 yaml tamper)
+    activate VAL
+    alt re-validation 失败
+        VAL --> EVAL : E_L204_L202_CACHE_POISON\n+ tampering 告警
+        EVAL -> L09 : emit whitelist_tampering_detected
+    else 通过
+        VAL --> EVAL : ast_ok
+        EVAL -> CACHE : put(expr.cache_key, ast)
+    end
+    deactivate VAL
+end
+deactivate CACHE
+
+== Step 4 · DataSource Pydantic 校验（SA-07）==
+EVAL -> EVAL : for each ds in data_sources_snapshot:\n  pydantic_model.parse_obj(ds)
+alt Pydantic 校验失败
+    EVAL -> L09 : E_L204_L202_DATA_SOURCE_INVALID
+    EVAL --> CALLER : raise
+end
+
+== Step 5 · 沙盒执行（核心）==
+EVAL -> SBX : run_restricted(ast, data_sources,\nallowed_funcs, timeout_ms)
+activate SBX
+
+alt eval_isolation_mode=in_process (默认)
+    SBX -> SBX : setup signal.alarm(timeout_s)\n+ resource.setrlimit(RLIMIT_AS, 64MB)
+    SBX -> SBX : compile(ast) + exec restricted\n(globals=__safe_builtins__)\n(locals=allowed_funcs + data_sources)
+    alt 执行正常
+        SBX --> EVAL : (result_value, evidence_accessed_fields)
+    else SIGALRM 超时
+        SBX -> SBX : cancel alarm + raise TimeoutError
+        SBX --> EVAL : E_L204_L202_EVAL_TIMEOUT
+    else MemoryError (RLIMIT_AS 触发)
+        SBX --> EVAL : E_L204_L202_EVAL_MEMORY_EXCEEDED
+    else RecursionError
+        SBX --> EVAL : E_L204_L202_RECURSION_LIMIT
+    end
+else eval_isolation_mode=subprocess (可选 · OQ-06)
+    SBX -> SBX : mp.Process(target=_run_ast) + start()
+    SBX -> SBX : join(timeout_ms/1000)
+    alt 正常返回
+        SBX --> EVAL : via Pipe (result, evidence)
+    else 超时
+        SBX -> SBX : p.terminate() (SIGTERM)
+        SBX -> SBX : sleep 100ms → p.kill() (SIGKILL fallback)
+        SBX --> EVAL : E_L204_L202_EVAL_TIMEOUT
+    end
+end
+deactivate SBX
+
+== Step 6 · 结果组装 ==
+EVAL -> EVAL : build EvalResult\n{eval_id=uuid-v7,\npass=result_value,\nreason=<from_rule_match>,\nevidence_snapshot=<subset_of_ds>,\nduration_ms,\nwhitelist_version,\ncache_hit=true/false}
+EVAL -> EVAL : freeze as VO (immutable)
+
+== Step 7 · 审计（采样）==
+alt duration_ms > eval_p95_ms OR caller=critical OR not pass
+    EVAL -> L09 : IC-09 append_event\nL1-04:dod_evaluated\n{project_id, expr_id, pass, duration_ms}
+else sampled (ratio = eval_audit_sample_rate)
+    EVAL -> L09 : emit (async · low-priority)
+end
+
+EVAL --> CALLER : EvalResult
+deactivate EVAL
+
+note right of CALLER
+  **调用方消费 EvalResult 后**
+  决定是否 emit 业务事件
+  (如 L2-05 在 "所有 WP exprs 全 pass"
+  时 emit L1-04:wp_executed)
+end note
+@enduml
+```
+
+**eval 路径性能预算**（满足 §12 P95 ≤ 10ms · P99 ≤ 50ms）：
+
+| 阶段 | P50（cache HIT） | P50（cache MISS） | P95 | 备注 |
+|---|---|---|---|---|
+| 前置校验 | 0.1 ms | 0.1 ms | 0.2 ms | dict 查 |
+| Expression 加载 | 0.5 ms | 0.5 ms | 2 ms | 内存读 |
+| Whitelist 版本校验 | 0.01 ms | 0.01 ms | 0.05 ms | frozen dict |
+| AST 缓存 | 0.1 ms | 1 ms（parse + validate）| 3 ms | — |
+| DataSource Pydantic | 0.5 ms | 0.5 ms | 2 ms | — |
+| 沙盒执行（in_process）| 1 ms | 1 ms | 3 ms | 小表达式 |
+| 结果组装 + audit 采样 | 0.5 ms | 0.5 ms | 1 ms | — |
+| **总 P95（in_process）** | **3 ms** | **5 ms** | **10 ms** | 满足 SLO |
+| 总 P95（subprocess）| 40 ms | 60 ms | **100 ms** | fork 开销 · P99 ≤ 500ms |
+
+### 5.3 P1 · 白名单运行期篡改检测 · 紧急 BLOCK（SA-06）
+
+```plantuml
+@startuml
+title L2-02 · P1 · 白名单运行期篡改检测 → BLOCK 紧急响应（SA-06）
+autonumber
+participant "恶意路径\n(或 bug)" as ATK
+participant "<b>WhitelistRegistry</b>\n(frozen dict)" as WR
+participant "<b>ASTCacheManager</b>" as CACHE
+participant "DoDEvaluator" as EVAL
+participant "watchdog\n(周期性哈希校验)" as WD
+participant "L1-07\nSupervisor" as L07
+participant "L1-09\n审计" as L09
+participant "L1-01\n主 loop" as L01
+
+== 启动期基线 ==
+WR -> WR : load whitelist_v1.3.0.yaml\n+ compute SHA-256 baseline_hash
+WR -> L09 : IC-09 emit L1-04:whitelist_loaded
+
+== 运行期 watchdog（每 60s）==
+loop 每 60s
+    WD -> WR : compute current_hash
+    WR --> WD : current_hash
+    alt current_hash == baseline_hash
+        WD -> WD : ok (静默)
+    else 不一致（被修改）
+        WD -> WR : **RAISE WhitelistImmutableError**
+        WD -> L09 : IC-09 emit\nL1-04:whitelist_tampering_detected\n{baseline_hash, current_hash, actor, stack_trace}
+        WD -> CACHE : invalidate_all()\n(清空所有 AST 缓存 · 防 cache_poison)
+        WD -> L07 : **IC-13 push_suggestion{BLOCK,\nreason=whitelist_tampered,\nevidence=hash_diff}**
+        L07 -> L01 : IC-15 request_hard_halt\n(BLOCK 硬红线)
+        note right: ≤ 100ms 端到端硬暂停
+    end
+end
+
+== 同时期 attack 尝试 eval（应被挡住）==
+ATK -> WR : 试图 ALLOWED_FUNCS["evil"] = dangerous_fn
+WR -> WR : __setitem__ 抛 **TypeError**\n(frozendict 不可变)
+WR --> ATK : fail
+
+ATK -> EVAL : eval_expression(\nexpr_text="evil()")
+EVAL -> WR : lookup("evil")
+WR --> EVAL : KeyError (不在白名单)
+EVAL -> L09 : E_L204_L202_AST_ILLEGAL_FUNCTION\n+ SA-01 审计告警
+EVAL --> ATK : FAIL
+
+@enduml
+```
+
+### 5.4 时序说明总结
+
+1. **P0-A 编译主路径**最长：60s P95，来自 50 条 × 1s/条（可并行到 4 core 并行化）
+2. **P0-B eval 主路径**最短：10 ms P95（cache HIT 情况下 3 ms）；这是 L2-05 / L2-06 频繁调用的热路径
+3. **P1 白名单篡改**是最高优先级事件：watchdog 60s 检测 + BLOCK 端到端 100ms 硬暂停（复用 L1-07 IC-15 通路）
+4. **所有时序都经过 IC-09 审计单一通道**（§4.4 特性 2）
+5. **PM-14 `project_id` 在每个时序的第一步都校验**（§1.5 第 5 条）
+
+---
+
+## §6 内部核心算法（伪代码）
+
+本节给本 L2 的 6 个核心算法：`SafeExprValidator`（NodeVisitor 白名单校验 · 核心安全点）· `DoDEvaluator.eval`（沙盒 eval + 超时 kill）· `DoDExpressionCompiler.compile_single` · 递归深度计数 · 超时 kill 策略（in_process / subprocess）· Whitelist 版本锁 + 运行期 watchdog。
+
+### 6.1 `SafeExprValidator`（核心白名单校验算法）
+
+```python
+"""
+SafeExprValidator · L2-02 核心安全组件
+· 架构锚点：L1-04/architecture.md §5.3
+· 测试锚点：3-2-Solution-TDD/L1-04/L2-02-tests.md §3 + §4（mutation testing）
+"""
+import ast
+from typing import FrozenSet
+from frozendict import frozendict
+
+# ======================= 白名单常量（启动加载 · frozen 不可变）=======================
+ALLOWED_NODES: FrozenSet[type] = frozenset({
+    # 容器
+    ast.Expression,
+    # 布尔
+    ast.BoolOp, ast.And, ast.Or, ast.UnaryOp, ast.Not,
+    # 比较
+    ast.Compare, ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.In, ast.NotIn,
+    # 字面量 / 标识符
+    ast.Constant, ast.Name, ast.Load,
+    # 函数调用（仅 ast.Name 作为 func · 其他要拒）
+    ast.Call,
+})
+
+# 明确禁止的节点（冗余显式黑名单 · 防白名单漏列）
+DENIED_NODES: FrozenSet[type] = frozenset({
+    ast.Import, ast.ImportFrom,
+    ast.Attribute, ast.Subscript,
+    ast.Lambda, ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef,
+    ast.For, ast.While, ast.Comprehension, ast.ListComp, ast.SetComp,
+    ast.DictComp, ast.GeneratorExp,
+    ast.Try, ast.Raise, ast.With, ast.Assert,
+    ast.Assign, ast.AugAssign, ast.AnnAssign,
+    ast.Yield, ast.YieldFrom, ast.Await,
+    ast.Starred, ast.FormattedValue, ast.JoinedStr,
+    ast.Global, ast.Nonlocal, ast.Pass, ast.Break, ast.Continue,
+    ast.Delete,
+})
+
+# 由 WhitelistRegistry 启动时填充（frozendict 不可变）
+ALLOWED_FUNCS: frozendict  # {name: signature_spec}
+
+class SafeExprValidator(ast.NodeVisitor):
+    """
+    白名单 AST 校验器 · 架构级引 arch §5.3
+    · 编译期调用：L2-02 DoDExpressionCompiler
+    · 运行期调用：L2-02 DoDEvaluator (re-validate · 防 yaml tamper)
+    · 无副作用：不执行 AST · 只 walk
+    """
+    def __init__(
+        self,
+        max_depth: int = 32,          # SA-03 防递归炸弹
+        max_nodes: int = 200,         # SA-03 防资源耗尽
+        allowed_funcs: frozendict | None = None,
+    ):
+        self.max_depth = max_depth
+        self.max_nodes = max_nodes
+        self._current_depth = 0
+        self._node_count = 0
+        self._allowed_funcs = allowed_funcs or ALLOWED_FUNCS
+
+    # ------------------- 公共入口 -------------------
+    def validate(self, tree: ast.AST, whitelist_version: str) -> None:
+        """
+        完整校验入口 · 失败抛异常 · 成功返回 None
+        """
+        if not isinstance(tree, ast.Expression):
+            raise IllegalNodeError(
+                f"E_L204_L202_AST_ILLEGAL_NODE: root must be ast.Expression, got {type(tree).__name__}"
+            )
+        try:
+            self.visit(tree)
+        finally:
+            self._current_depth = 0
+            self._node_count = 0
+
+    # ------------------- NodeVisitor 钩子 -------------------
+    def visit(self, node: ast.AST):
+        self._node_count += 1
+        if self._node_count > self.max_nodes:
+            raise ResourceExhaustionError(
+                f"E_L204_L202_RECURSION_LIMIT: ast_nodes={self._node_count} > max={self.max_nodes}"
+            )
+
+        # 显式黑名单优先校验（冗余防御）
+        if type(node) in DENIED_NODES:
+            raise IllegalNodeError(
+                f"E_L204_L202_AST_ILLEGAL_NODE: explicitly denied {type(node).__name__}"
+            )
+        # 白名单校验
+        if type(node) not in ALLOWED_NODES:
+            raise IllegalNodeError(
+                f"E_L204_L202_AST_ILLEGAL_NODE: {type(node).__name__} not in whitelist"
+            )
+
+        # 深度控制
+        self._current_depth += 1
+        if self._current_depth > self.max_depth:
+            raise ResourceExhaustionError(
+                f"E_L204_L202_RECURSION_LIMIT: ast_depth={self._current_depth} > max={self.max_depth}"
+            )
+
+        try:
+            # 针对性强化校验
+            if isinstance(node, ast.Call):
+                self._check_call(node)
+            elif isinstance(node, ast.Constant):
+                self._check_constant(node)
+            elif isinstance(node, ast.Name):
+                self._check_name(node)
+
+            # 递归下探
+            for child in ast.iter_child_nodes(node):
+                self.visit(child)
+        finally:
+            self._current_depth -= 1
+
+    # ------------------- 私有校验 -------------------
+    def _check_call(self, node: ast.Call) -> None:
+        # func 必须是 Name（禁 Attribute / 链式 Call · 防 __builtins__.eval 等逃逸）
+        if not isinstance(node.func, ast.Name):
+            raise IllegalNodeError(
+                "E_L204_L202_AST_ILLEGAL_NODE: ast.Call.func must be ast.Name "
+                f"(got {type(node.func).__name__} · SA-01 Attribute/Call-chain escape 被拦截)"
+            )
+        # 函数名在白名单
+        if node.func.id not in self._allowed_funcs:
+            raise IllegalFunctionError(
+                f"E_L204_L202_AST_ILLEGAL_FUNCTION: function '{node.func.id}' not in whitelist"
+            )
+        # 禁止 keyword 参数（降低注入面）
+        if node.keywords:
+            raise IllegalNodeError(
+                "E_L204_L202_AST_ILLEGAL_NODE: keyword arguments forbidden in DoD calls "
+                "(use positional only · OQ-07)"
+            )
+        # 禁 starred args
+        for arg in node.args:
+            if isinstance(arg, ast.Starred):
+                raise IllegalNodeError(
+                    "E_L204_L202_AST_ILLEGAL_NODE: *args (Starred) forbidden"
+                )
+        # 签名简易校验（数量）
+        sig = self._allowed_funcs[node.func.id]
+        expected_arg_count = sig.get("arg_count", 0)
+        if len(node.args) != expected_arg_count:
+            raise IllegalFunctionError(
+                f"E_L204_L202_AST_ILLEGAL_FUNCTION: '{node.func.id}' "
+                f"expects {expected_arg_count} args, got {len(node.args)}"
+            )
+
+    def _check_constant(self, node: ast.Constant) -> None:
+        # 只允许 int / float / str / bool / None
+        if not isinstance(node.value, (int, float, str, bool, type(None))):
+            raise IllegalNodeError(
+                f"E_L204_L202_AST_ILLEGAL_NODE: ast.Constant value type "
+                f"{type(node.value).__name__} forbidden"
+            )
+        # str 长度限制（防大字符串 DoS · SA-03）
+        if isinstance(node.value, str) and len(node.value) > 500:
+            raise ResourceExhaustionError(
+                "E_L204_L202_RECURSION_LIMIT: str Constant > 500 chars"
+            )
+        # int 范围限制（防 10**100 大数幂 DoS · SA-03）
+        if isinstance(node.value, int) and abs(node.value) > 10**9:
+            raise ResourceExhaustionError(
+                "E_L204_L202_RECURSION_LIMIT: int Constant > 10^9"
+            )
+
+    def _check_name(self, node: ast.Name) -> None:
+        # 禁 dunder（__builtins__ / __class__ / __mro__ 等逃逸）
+        if node.id.startswith("__") and node.id.endswith("__"):
+            raise IllegalNodeError(
+                f"E_L204_L202_AST_ILLEGAL_NODE: dunder name '{node.id}' forbidden "
+                f"(SA-02 sandbox escape prevention)"
+            )
+        # 必须是 Load 上下文（禁 Store · 禁 Del）
+        if not isinstance(node.ctx, ast.Load):
+            raise IllegalNodeError(
+                f"E_L204_L202_AST_ILLEGAL_NODE: ast.Name '{node.id}' ctx must be Load, "
+                f"got {type(node.ctx).__name__}"
+            )
+```
+
+**算法复杂度**：`O(n)` 单次遍历，n = AST 节点数；最大 200 节点 → 最差 200 次 visit。**P95 < 0.5ms**。
+
+### 6.2 `DoDEvaluator.eval`（沙盒 eval 主算法 · 含超时 kill）
+
+```python
+"""
+DoDEvaluator · L2-02 共享受限 eval 沙盒
+· 架构锚点：arch §5.4
+· 是全 L1-04 唯一 eval 入口（arch §5.6 / 本文 §1.4）
+"""
+import ast
+import signal
+import resource
+import multiprocessing as mp
+import time
+import uuid
+import hashlib
+from contextlib import contextmanager
+
+class DoDEvaluator:
+    def __init__(
+        self,
+        whitelist_registry: WhitelistRegistry,
+        ast_cache: ASTCacheManager,
+        repo: DoDExpressionSetRepository,
+        isolation_mode: str = "in_process",   # "in_process" | "subprocess"
+        eval_timeout_ms: int = 500,
+        eval_memory_limit_mb: int = 64,
+        max_concurrent: int = 50,
+    ):
+        self._wr = whitelist_registry
+        self._cache = ast_cache
+        self._repo = repo
+        self._isolation = isolation_mode
+        self._timeout_ms = eval_timeout_ms
+        self._mem_limit = eval_memory_limit_mb
+        self._sem = threading.Semaphore(max_concurrent)     # 并发限流（SA-11）
+
+    def eval_expression(
+        self,
+        project_id: str,
+        expr_id: str,
+        data_sources_snapshot: dict,
+        caller: str,
+        timeout_ms: int | None = None,
+    ) -> EvalResult:
+        # ---------------- Step 1 · 前置校验（8 层防御 L1-L2）----------------
+        if not project_id:
+            raise NoProjectIdError("E_L204_L202_NO_PROJECT_ID")
+        if caller not in WHITELISTED_CALLERS:   # SA-07 防伪冒
+            raise CallerUnauthorizedError(f"E_L204_L202_CALLER_UNAUTHORIZED: {caller}")
+
+        # ---------------- Step 2 · 加载 expression + PM-14 断言 ----------------
+        expr = self._repo.get_expr(project_id, expr_id)
+        if expr is None:
+            raise NotFoundError(f"expr {expr_id} not found in project {project_id}")
+        if expr.project_id != project_id:   # PM-14 + SA-06 交叉防护
+            self._audit_emit("cross_project_attempt", project_id, expr_id, caller)
+            raise CrossProjectError("E_L204_L202_CROSS_PROJECT")
+
+        # ---------------- Step 3 · 白名单版本一致性 ----------------
+        current_version = self._wr.current_version()
+        if expr.whitelist_version != current_version:
+            raise WhitelistVersionMismatchError(
+                f"E_L204_L202_WHITELIST_VERSION_MISMATCH: expr={expr.whitelist_version} "
+                f"vs current={current_version} · need recompile (OQ-04)"
+            )
+
+        # ---------------- Step 4 · AST 缓存查询 + 运行期 re-validate ----------------
+        cached_ast = self._cache.get(expr.cache_key)
+        cache_hit = cached_ast is not None
+        if cached_ast is None:
+            tree = ast.parse(expr.expression_text, mode="eval")
+            validator = SafeExprValidator(
+                allowed_funcs=self._wr.allowed_funcs_frozen(),
+            )
+            try:
+                validator.validate(tree, current_version)
+            except (IllegalNodeError, IllegalFunctionError) as e:
+                # 运行期 re-validation 失败 = yaml 被 tamper 或 cache poison
+                self._cache.clear()
+                self._audit_emit("cache_poison_detected", project_id, expr_id, caller, str(e))
+                raise CachePoisonError("E_L204_L202_CACHE_POISON") from e
+            self._cache.put(expr.cache_key, tree)
+            cached_ast = tree
+
+        # ---------------- Step 5 · DataSource Pydantic 校验 ----------------
+        validated_ds = {}
+        for ds_key, ds_raw in data_sources_snapshot.items():
+            model_class = DATA_SOURCE_MODELS.get(ds_key)
+            if model_class is None:
+                raise DataSourceUnknownTypeError(
+                    f"E_L204_L202_DATA_SOURCE_UNKNOWN_TYPE: {ds_key}"
+                )
+            try:
+                validated_ds[ds_key] = model_class.model_validate(ds_raw)
+            except ValidationError as e:
+                raise DataSourceInvalidError(
+                    f"E_L204_L202_DATA_SOURCE_INVALID: {ds_key}: {e}"
+                ) from e
+
+        # ---------------- Step 6 · 并发限流 ----------------
+        with self._sem.acquire_timeout(timeout_ms=100) as acquired:
+            if not acquired:
+                raise ConcurrentEvalCapError("E_L204_L202_CONCURRENT_EVAL_CAP")
+
+            # ---------------- Step 7 · 沙盒执行 ----------------
+            t_start_ns = time.monotonic_ns()
+            try:
+                if self._isolation == "in_process":
+                    result, evidence = self._run_in_process(
+                        cached_ast, validated_ds, timeout_ms or self._timeout_ms
+                    )
+                else:  # subprocess
+                    result, evidence = self._run_in_subprocess(
+                        cached_ast, validated_ds, timeout_ms or self._timeout_ms
+                    )
+            except TimeoutError:
+                raise EvalTimeoutError("E_L204_L202_EVAL_TIMEOUT")
+            except MemoryError:
+                raise EvalMemoryExceededError("E_L204_L202_EVAL_MEMORY_EXCEEDED")
+            except RecursionError:
+                raise RecursionLimitError("E_L204_L202_RECURSION_LIMIT")
+            duration_ms = (time.monotonic_ns() - t_start_ns) // 1_000_000
+
+        # ---------------- Step 8 · 结果组装 ----------------
+        eval_result = EvalResult(
+            eval_id=f"eval-{uuid.uuid7()}",
+            project_id=project_id,
+            expr_id=expr_id,
+            pass_=bool(result),
+            reason=self._format_reason(expr, result, evidence),
+            evidence_snapshot=evidence,
+            duration_ms=duration_ms,
+            whitelist_version=current_version,
+            evaluated_at=utc_now_iso(),
+            caller=caller,
+            cache_hit=cache_hit,
+        )
+
+        # ---------------- Step 9 · 审计采样（§10 eval_audit_sample_rate）----------------
+        self._audit_sampled(eval_result)
+
+        return eval_result
+
+    # ----- in-process 沙盒（默认）-----
+    def _run_in_process(
+        self, tree: ast.Expression, ds: dict, timeout_ms: int
+    ) -> tuple[Any, dict]:
+        evidence_tracker: dict = {}
+        allowed_globals = self._build_safe_globals(ds, evidence_tracker)
+        code = compile(tree, filename="<dod-expr>", mode="eval")
+
+        # signal.alarm 超时（仅主线程可用）
+        def _timeout_handler(signum, frame):
+            raise TimeoutError("eval timeout via SIGALRM")
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.setitimer(signal.ITIMER_REAL, timeout_ms / 1000)
+
+        # 内存限制（Linux/macOS）
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        try:
+            resource.setrlimit(
+                resource.RLIMIT_AS, (self._mem_limit * 1024 * 1024, hard)
+            )
+            # 核心执行（受限 globals · 空 locals · no __builtins__）
+            result = eval(code, allowed_globals, {})
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)    # cancel
+            signal.signal(signal.SIGALRM, old_handler)
+            resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+
+        return result, evidence_tracker
+
+    # ----- subprocess 沙盒（可选 · OQ-06）-----
+    def _run_in_subprocess(
+        self, tree: ast.Expression, ds: dict, timeout_ms: int
+    ) -> tuple[Any, dict]:
+        parent_conn, child_conn = mp.Pipe()
+        proc = mp.Process(
+            target=_subprocess_worker,
+            args=(tree, ds, self._wr.allowed_funcs_serialized(), child_conn),
+            daemon=True,
+        )
+        proc.start()
+        proc.join(timeout_ms / 1000)
+        if proc.is_alive():
+            # 超时 · 两阶段 kill
+            proc.terminate()       # SIGTERM
+            proc.join(0.1)
+            if proc.is_alive():
+                proc.kill()        # SIGKILL
+                proc.join(0.1)
+            raise TimeoutError("subprocess eval timeout")
+        if parent_conn.poll():
+            payload = parent_conn.recv()
+            if payload["status"] == "ok":
+                return payload["result"], payload["evidence"]
+            else:
+                raise EvalExceptionError(payload["error"])
+        raise IsolationFailureError("E_L204_L202_ISOLATION_FAILURE")
+
+    def _build_safe_globals(self, ds: dict, evidence_tracker: dict) -> dict:
+        """
+        构建受限 globals（无 __builtins__ · 仅白名单函数 + 数据源访问器）
+        """
+        safe_globals = {"__builtins__": {}}   # 屏蔽所有内置（SA-02 关键点）
+        for fname, impl in self._wr.allowed_funcs_impls():
+            # 包装原语函数 · 自动记录 evidence 访问
+            safe_globals[fname] = _wrap_with_evidence_tracker(
+                impl, ds, evidence_tracker
+            )
+        return safe_globals
+
+    def _format_reason(self, expr, result, evidence):
+        """生成可读 reason · 如 'line_coverage=0.75 < threshold 0.8'"""
+        if result:
+            return f"expr[{expr.expr_id}] PASS · evidence_keys={list(evidence.keys())}"
+        # 对 Compare 节点专门诊断：解包左右值
+        diag = diagnose_compare_failure(expr.expression_text, evidence)
+        return f"expr[{expr.expr_id}] FAIL · {diag}"
+
+    def _audit_sampled(self, result: EvalResult) -> None:
+        """按 §10 eval_audit_sample_rate 采样 · 失败 / critical 必写"""
+        should_audit = (
+            not result.pass_
+            or result.duration_ms > 100
+            or result.caller == "verifier_subagent"
+            or random.random() < EVAL_AUDIT_SAMPLE_RATE
+        )
+        if should_audit:
+            emit_event("L1-04:dod_evaluated", result.to_dict())
+```
+
+### 6.3 超时 kill 策略（in_process vs subprocess 对比）
+
+| 机制 | in_process（`signal.alarm`） | subprocess（`mp.Process` + SIGTERM/SIGKILL）|
+|---|---|---|
+| 适用场景 | 默认模式 · 已通过编译期校验的 trusted AST | 可选模式 · OQ-06 延伸场景（v1.1+ 第三方谓词）|
+| kill 粒度 | 主线程级别（signal 只能发给主线程）| 进程级别（强隔离）|
+| 开销 | ~0ms（纯 signal 寄存器）| ~20-50ms（fork + pipe）|
+| 可靠性 | 依赖 Python 解释器响应 signal · 部分 C-extension 可能无法中断 | **强可靠**（SIGKILL 兜底）|
+| 资源限制 | `resource.setrlimit(RLIMIT_AS)` · 只限虚拟内存 | 额外可 `nsjail` / `cgroups`（未来）|
+| 失败降级 | 超时抛 `E_L204_L202_EVAL_TIMEOUT` | 超时两阶段 kill → 同 |
+
+**策略选择流程**：
+```
+if expression_source == "system_compiled":      # 编译期已校验
+    use in_process       # 默认
+elif expression_source == "third_party_plugin": # v1.1+ 可选
+    use subprocess       # 物理隔离
+elif env.EVAL_ISOLATION_MODE == "subprocess":   # 强制 override
+    use subprocess
+else:
+    use in_process
+```
+
+### 6.4 `DoDExpressionCompiler.compile_single`（单条编译算法）
+
+```python
+class DoDExpressionCompiler:
+    def __init__(
+        self,
+        whitelist_registry: WhitelistRegistry,
+        ac_matrix_indexer: ACMatrixIndexer,
+    ):
+        self._wr = whitelist_registry
+        self._ac_idx = ac_matrix_indexer
+
+    def compile_single(
+        self,
+        clause: dict,        # {clause_id, clause_text, source_ac_ids, priority, wp_id}
+        ac_matrix: dict,
+        whitelist_version: str,
+    ) -> DoDExpression | UnmappableClause:
+        # Step 1 · 分词 + 规整化
+        normalized_text = self._normalize(clause["clause_text"])
+
+        # Step 2 · 谓词识别（比对白名单 + 预定义映射）
+        candidate_ast_text = self._predicate_recognize(normalized_text)
+        if candidate_ast_text is None:
+            # 未命中白名单 · 计算 suggest 列表
+            suggested = self._compute_suggestions(normalized_text)
+            return UnmappableClause(
+                clause_id=clause["clause_id"],
+                clause_text=clause["clause_text"],
+                suggested_predicates=suggested,
+                rejection_reason="no_whitelist_predicate_matched",
+            )
+
+        # Step 3 · ast.parse(mode='eval')
+        try:
+            tree = ast.parse(candidate_ast_text, mode="eval")
+        except SyntaxError as e:
+            raise ASTSyntaxError(f"E_L204_L202_AST_SYNTAX_ERROR: {e}")
+
+        # Step 4-7 · SafeExprValidator
+        validator = SafeExprValidator(allowed_funcs=self._wr.allowed_funcs_frozen())
+        validator.validate(tree, whitelist_version)
+
+        # Step 8 · AC 反查
+        source_ac_ids = clause.get("source_ac_ids", [])
+        if not source_ac_ids:
+            raise ACReverseLookupFailedError(
+                "E_L204_L202_AC_REVERSE_LOOKUP_FAILED: source_ac_ids empty"
+            )
+        for ac_id in source_ac_ids:
+            if not self._ac_idx.exists(ac_id, ac_matrix):
+                raise ACReverseLookupFailedError(
+                    f"E_L204_L202_AC_REVERSE_LOOKUP_FAILED: ac_id={ac_id} not in ac_matrix"
+                )
+
+        # Step 9 · 冻结为 VO
+        cache_key = hashlib.sha256(
+            (candidate_ast_text + "\u0001" + whitelist_version).encode("utf-8")
+        ).hexdigest()
+        return DoDExpression(
+            expr_id=f"expr-{uuid.uuid7()}",
+            project_id=clause["project_id"],
+            wp_id=clause["wp_id"],
+            expression_text=candidate_ast_text,
+            ast=tree,
+            source_ac_ids=source_ac_ids,
+            whitelist_version=whitelist_version,
+            cache_key=cache_key,
+            compiled_at=utc_now_iso(),
+        )
+
+    def _normalize(self, text: str) -> str:
+        """去注释 · 规整空格 · 统一 unicode · lower"""
+        # 实现细节略（~50 行正则 + unicodedata.normalize）
+        return text.strip()
+
+    def _predicate_recognize(self, text: str) -> str | None:
+        """
+        谓词识别：自然语言 → AST 源码
+        "覆盖率 ≥ 80%"  →  "line_coverage() >= 0.8"
+        "P0 用例全 PASS" →  "p0_cases_all_pass()"
+        "lint 无 error" →  "lint_errors() == 0"
+        查 WhitelistRegistry.predicate_patterns[] · 匹配 → 返回 AST 源码；未匹配 → None
+        """
+        for rule in self._wr.predicate_patterns():
+            match = rule.pattern.match(text)
+            if match:
+                return rule.ast_template.format(**match.groupdict())
+        return None
+
+    def _compute_suggestions(self, text: str) -> list[dict]:
+        """
+        未命中白名单时 · 基于 Levenshtein 距离给 3 个建议
+        """
+        scores = []
+        for rule in self._wr.predicate_patterns():
+            score = levenshtein_ratio(text, rule.example_text)
+            scores.append({"predicate_name": rule.name, "similarity_score": score})
+        scores.sort(key=lambda x: x["similarity_score"], reverse=True)
+        return scores[:3]
+```
+
+### 6.5 Whitelist 版本锁 + 运行期 watchdog
+
+```python
+class WhitelistRegistry:
+    """
+    白名单不可变注册表
+    · 启动加载（一次）· 运行期只读
+    · 60s watchdog 检测篡改 → 紧急 BLOCK（§5.3）
+    """
+    def __init__(self):
+        self._allowed_funcs: frozendict | None = None
+        self._version: str | None = None
+        self._baseline_hash: str | None = None
+        self._lock = threading.Lock()
+
+    def bootstrap_load(self, yaml_path: str, signature: bytes):
+        """启动一次 · 之后任何 set 调用抛异常"""
+        if self._allowed_funcs is not None:
+            raise WhitelistImmutableError(
+                "E_L204_L202_ONLINE_WHITELIST_MUTATION: bootstrap_load already called"
+            )
+        # 签名校验（OQ-01 离线评审流程的一部分）
+        if not verify_gpg_signature(yaml_path, signature):
+            raise WhitelistTamperingError("signature invalid")
+        data = yaml.safe_load(open(yaml_path))
+        funcs = {r["rule_id"]: r for r in data["rules"] if r["rule_type"] == "function"}
+        self._allowed_funcs = frozendict(funcs)
+        self._version = data["version"]
+        self._baseline_hash = sha256_file(yaml_path)
+        emit_event("L1-04:whitelist_loaded", {
+            "whitelist_version": self._version,
+            "rule_count": len(funcs),
+            "loaded_from": yaml_path,
+            "baseline_hash": self._baseline_hash,
+        })
+
+    def current_version(self) -> str:
+        return self._version
+
+    def allowed_funcs_frozen(self) -> frozendict:
+        return self._allowed_funcs    # frozendict 本身不可变
+
+    def __setattr__(self, key, value):
+        if key in {"_allowed_funcs", "_version", "_baseline_hash"} and getattr(self, key, None) is not None:
+            raise WhitelistImmutableError(
+                f"E_L204_L202_ONLINE_WHITELIST_MUTATION: cannot reassign {key}"
+            )
+        super().__setattr__(key, value)
+
+def whitelist_watchdog(registry: WhitelistRegistry, yaml_path: str, interval_s: int = 60):
+    """60s 周期检测 · 失败立即 BLOCK"""
+    while True:
+        time.sleep(interval_s)
+        current_hash = sha256_file(yaml_path)
+        if current_hash != registry._baseline_hash:
+            # 立即 BLOCK（≤ 100ms）
+            emit_event("L1-04:whitelist_tampering_detected", {
+                "baseline_hash": registry._baseline_hash,
+                "current_hash": current_hash,
+                "detected_at": utc_now_iso(),
+            })
+            # 调用 L1-07 紧急 BLOCK
+            push_suggestion_block(
+                reason="whitelist_tampered",
+                evidence={"baseline": registry._baseline_hash, "current": current_hash},
+            )
+            # 清空 AST 缓存
+            ASTCacheManager.singleton().clear()
+            # 进程自杀（最后兜底 · 需 L1-07 收到 BLOCK 后再重启）
+            raise SystemExit("whitelist_tampered · fail-closed")
+```
+
+### 6.6 并发控制
+
+| 路径 | 并发度 | 机制 |
+|---|---|---|
+| `compile_batch` 内部多 clause 并行 | `max_concurrent_compilers=4` | `concurrent.futures.ThreadPoolExecutor` |
+| 并发 eval 调用 | `max_concurrent_evaluators=50` | `threading.Semaphore` + 超时抛 `E_L204_L202_CONCURRENT_EVAL_CAP` |
+| AST cache 读写 | 无限制（读多写少）| `threading.Lock` 细粒度 · CPython GIL 保证 dict 原子性 |
+| Repository save | 单 project 串行（FIFO）| `project_id → threading.Lock` 字典（§7.4）|
+| Whitelist load | 启动一次 | `threading.Event` 初始化栅栏 |
+
+**竞态验证**：`test_concurrent_eval_50_threads.py`（mutation testing）—— 50 线程同时 eval 不同 expr，验证 no data race · 无 cache poison · 无 counter 丢失。
+
+---
 
 ---
 
