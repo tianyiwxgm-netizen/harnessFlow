@@ -750,31 +750,1212 @@ broadcast_ready_response:
 
 ## §4 接口依赖（被谁调 · 调谁）
 
-<!-- FILL §4 · 上游调用方：哪些 L1 / L2 调本 L2 的哪些方法；下游依赖：本 L2 调哪些外部接口（IC-XX 或内部 L2-XX）· 依赖图 PlantUML -->
+### 4.1 上游调用方（谁调本 L2）
+
+| 调用方 | 方法 | 通道 | 频率 | SLO |
+|---|---|---|---|---|
+| L1-01 主 loop（经 IC-03）| `generate_blueprint(request)` | 同步（提交） + 异步（构造）| 每 S3 进入 1 次 | Accept P95 ≤ 50ms / 构造 P95 ≤ 2min |
+| L2-02 DoD 表达式编译器 | `get_blueprint(query, mode=full)` | 同步 · 读内存 / 文件 | blueprint_ready 消费 1 次 | P95 ≤ 100ms |
+| L2-03 测试用例生成器 | `get_blueprint(query, mode=full)` | 同步 | blueprint_ready 消费 1 次 | P95 ≤ 100ms |
+| L2-04 质量 Gate 编译器 | `get_blueprint(query, mode=full)` | 同步 | blueprint_ready 消费 1 次 | P95 ≤ 100ms |
+| L2-04 质量 Gate 编译器 | `validate_coverage(blueprint_id)` | 同步 | 编译 gates 时 1 次 | P95 ≤ 50ms |
+| L2-05 S4 执行驱动器 | `get_blueprint(query, mode=wp_slice)` | 同步 | 每 WP 取下一时 1 次 | P95 ≤ 50ms |
+| L2-06 S5 Verifier 编排器 | `get_blueprint(query, mode=full)` | 同步 · 组装工作包 | 每次 S5 进入 1 次 | P95 ≤ 100ms |
+
+### 4.2 下游依赖（本 L2 调谁）
+
+#### 4.2.1 L1-04 内部 IC-L2
+
+| IC-L2 | 对端 | 触发条件 | 锚点 |
+|---|---|---|---|
+| **IC-L2-01** `blueprint_ready` 广播 | L2-02 / L2-03 / L2-04 | 状态机 READY → PUBLISHED | prd §6 IC-L2-01 |
+
+**IC-L2-01 字段级 payload**（由本 L2 产出 · 作为广播契约供下游消费）：
+
+```yaml
+blueprint_ready_event:
+  type: object
+  required:
+    - event_id
+    - event_type
+    - project_id
+    - blueprint_id
+    - version
+    - master_test_plan_path
+    - ac_matrix_path
+    - publisher
+    - ts
+  properties:
+    event_id: {type: string, format: "evt-{uuid-v7}"}
+    event_type: {type: string, const: "L1-04:blueprint_ready"}
+    project_id: {type: string, description: PM-14}
+    blueprint_id: {type: string}
+    version: {type: integer}
+    master_test_plan_path: {type: string, format: "projects/{pid}/tdd/master-test-plan.md"}
+    ac_matrix_path: {type: string, format: "projects/{pid}/tdd/ac-matrix.yaml"}
+    coverage_target_summary:
+      type: object
+      description: "摘要字段供下游快速判断 (line, branch, ac=1.0)"
+    publisher: {type: string, const: "L1-04:L2-01"}
+    ts: {type: string, format: ISO-8601-utc}
+    hash: {type: string, description: "L1-09 填 · hash chain 位置"}
+```
+
+#### 4.2.2 跨 BC IC（锚定 ic-contracts.md）
+
+| IC | 对端 BC | 触发 | 锚点 |
+|---|---|---|---|
+| IC-03 enter_quality_loop | BC-01 L1-01 | 接收（上游）| [ic-contracts §3.3](../../integration/ic-contracts.md) |
+| IC-06 kb_read（可选）| BC-06 L1-06 | 查 test_pyramid recipe | [ic-contracts §3.6](../../integration/ic-contracts.md) |
+| IC-09 append_event | BC-09 L1-09 | 状态转换 + 广播事件 | [ic-contracts §3.9](../../integration/ic-contracts.md) |
+| IC-16 push_stage_gate_card（间接 · 经 L1-02）| BC-10 L1-10 | S3 Gate 凭证提交 | [ic-contracts §3.16](../../integration/ic-contracts.md) |
+
+#### 4.2.3 文件系统依赖（非 IC · 基础设施）
+
+| 路径 | 方向 | 用途 |
+|---|---|---|
+| `projects/<pid>/four-pieces/*.md` | 读 | 4 件套（需求 / 目标 / AC / 质量标准）|
+| `projects/<pid>/four-pieces/ac-manifest.yaml` | 读 | AC 条款 schema 化索引 |
+| `projects/<pid>/wbs/topology.yaml` | 读 | WBS 拓扑 |
+| `projects/<pid>/tdd/master-test-plan.md` | 写 | 本 L2 产出的产品级文档 |
+| `projects/<pid>/tdd/blueprint.yaml` | 写 | 聚合 YAML 化快照（Repository save）|
+| `projects/<pid>/tdd/ac-matrix.yaml` | 写 | AC 矩阵持久化 |
+| `projects/<pid>/tdd/test-env-blueprint.yaml` | 写 | 测试环境规格 |
+
+### 4.3 依赖图（PlantUML）
+
+```plantuml
+@startuml
+title L1-04/L2-01 TDD 蓝图生成器 · 依赖关系图
+skinparam componentStyle rectangle
+
+package "BC-04 L1-04 内部" as L104 {
+  component "L2-01 TDD 蓝图生成器\n(本 L2 · Domain Service + Factory)" as L201
+  component "L2-02 DoD 表达式编译器" as L202
+  component "L2-03 测试用例生成器" as L203
+  component "L2-04 质量 Gate 编译器" as L204
+  component "L2-05 S4 执行驱动器" as L205
+  component "L2-06 S5 Verifier 编排器" as L206
+}
+
+package "跨 BC" as BCX {
+  component "BC-01 L1-01 主 loop" as L101
+  component "BC-02 L1-02 生命周期\n(4 件套 + AC 清单)" as L102
+  component "BC-03 L1-03 WBS 调度\n(WBS 拓扑)" as L103
+  component "BC-06 L1-06 3 层 KB\n(test_pyramid recipe)" as L106
+  component "BC-09 L1-09 事件总线 + 审计" as L109
+  component "BC-10 L1-10 UI\n(S3 Gate 卡)" as L110
+}
+
+L101 --> L201 : IC-03 enter_quality_loop{phase=S3}
+L102 ..> L201 : 读 4 件套（file）
+L103 ..> L201 : 读 WBS topology.yaml
+L106 ..> L201 : IC-06 kb_read (可选)
+
+L201 ..> L202 : IC-L2-01 blueprint_ready 广播
+L201 ..> L203 : IC-L2-01 blueprint_ready 广播
+L201 ..> L204 : IC-L2-01 blueprint_ready 广播
+
+L202 --> L201 : get_blueprint(mode=full)
+L203 --> L201 : get_blueprint(mode=full)
+L204 --> L201 : get_blueprint(mode=full)
+L204 --> L201 : validate_coverage()
+L205 --> L201 : get_blueprint(mode=wp_slice)
+L206 --> L201 : get_blueprint(mode=full)
+
+L201 --> L109 : IC-09 append_event\n(blueprint_started/created/ready/frozen)
+L201 ..> L110 : IC-16 (间接 · 经 L1-02 汇总 S3 Gate 卡)
+@enduml
+```
+
+### 4.4 五件产物依赖边（S3 阶段）
+
+```plantuml
+@startuml
+title L1-04/L2-01 五件产物依赖（L2-01 为根）
+left to right direction
+
+component "TDDBlueprint\n(L2-01 · Aggregate Root · 产物 1)" as L201
+component "DoDExpressionSet\n(L2-02 · 产物 2)" as L202
+component "TestSuite\n(L2-03 · 产物 3)" as L203
+component "QualityGateConfig\n(L2-04 · 产物 4)" as L204A
+component "AcceptanceChecklist\n(L2-04 · 产物 5)" as L204B
+component "S3 Stage Gate\n(BF-S3-05 · L1-02 主持)" as GATE
+
+L201 -right-> L202 : ac_matrix
+L201 -right-> L203 : test_pyramid + ac_matrix
+L201 -right-> L204A : coverage_target + test_env_blueprint
+L201 -right-> L204B : ac_matrix
+
+L201 --> GATE : 凭证 1 · master-test-plan.md
+L202 --> GATE : 凭证 2 · dod-expressions.yaml
+L203 --> GATE : 凭证 3 · tests/generated/*.py (all red)
+L204A --> GATE : 凭证 4 · quality-gates.yaml
+L204B --> GATE : 凭证 5 · acceptance-checklist.md
+
+note bottom of GATE
+  S3 Gate 硬约束 (prd §8.4 #1):
+  **5 件凭证必须全齐才能过 Gate**
+  任一凭证缺失 → Gate 失败 → 返工至应负责 L2
+end note
+
+@enduml
+```
+
+### 4.5 关键依赖特性
+
+1. **L1-01 为唯一广播触发源**：L2-02/03/04 被动订阅 `blueprint_ready` 事件后主动 pull（`get_blueprint`）—— push/pull 混合模式（同 L2-06 §1.6 D-05a 原理）。
+2. **纯函数 Factory + 文件 IO 分离**：所有文件读集中在 `InputLoader`（见 §6）· Factory 不直接碰文件系统 · 保证可单元测试。
+3. **L2-01 是 FAIL-L2 回退的唯一重入点**：无论 L2-02/03/04 哪个产出失败，L2-07 → L1-01 都会重发 `IC-03 phase=S3` 给本 L2（不会直接重发给 L2-02/03/04）· L2-01 负责协调 `previous_blueprint_id` 和 `retry_focus`。
+4. **L1-09 耦合度高（Partnership）**：每次状态机转换必 `IC-09 append_event`（6 事件类型在 §2.7）· L1-09 不可达时本 L2 不允许转状态（保证审计链完整性）。
 
 ---
 
 ## §5 P0/P1 时序图（PlantUML ≥ 2 张）
 
-<!-- FILL §5 · 本 L2 的 P0 场景时序图（≥ 2 张 · PlantUML）· 可引用 L0/sequence-diagrams-index.md 的对应 P0/P1 链路 · 聚焦本 L2 内部流程 -->
+### 5.1 P0 主干 · S3 进入 → 构造 → 广播 → 并行下游起跑
+
+**场景**：L1-01 接到 L1-02 的"S2 Gate Go"事件 → 决策 phase=S3 → 经 IC-03 触发 L1-04 → 本 L2 为唯一入口 → 6 阶段 Factory → save 聚合 → 广播 blueprint_ready → L2-02/03/04 并行起跑。
+
+```plantuml
+@startuml
+title L1-04/L2-01 · P0 主干 S3 蓝图构造 + blueprint_ready 并行广播
+autonumber
+participant "L1-01 主 loop" as L101
+participant "L1-04 L2 Router" as L104R
+participant "L2-01 TDDBlueprintFactory" as L201F
+participant "InputLoader\n(唯一 IO sink)" as LOADER
+participant "TDDBlueprintRepository" as REPO
+participant "L1-09 事件总线" as L109
+participant "L2-02 DoD 编译器" as L202
+participant "L2-03 用例生成器" as L203
+participant "L2-04 质量 Gate 编译器" as L204
+participant "L1-10 UI" as L110
+
+L101 -> L104R : IC-03 enter_quality_loop{phase=S3, project_id, command_id}
+L104R -> L201F : generate_blueprint(request)
+activate L201F
+L201F -> L201F : 幂等 cache 查 (project_id + source_refs_hash)
+alt cache miss
+  L201F -> LOADER : load_all(four_pieces_refs, wbs_refs, ac_clauses_refs)
+  activate LOADER
+  LOADER -> LOADER : 并行读 4 件套 + WBS + AC manifest
+  LOADER -> LOADER : sha256 校验（对比 request.four_pieces_hash）
+  LOADER --> L201F : {four_pieces, wbs, ac_clauses} (纯数据结构)
+  deactivate LOADER
+
+  L201F -> L201F : stage_1 · parse_ac(ac_clauses) → parsed_acs
+  note right of L201F : D-L201-02 三级管线\n模板→spaCy→LLM fallback
+  L201F -> L201F : stage_2 · derive_pyramid(parsed_acs, wbs) → TestPyramid
+  note right of L201F : D-L201-03 默认 70/20/10\n+ WBS 权重调整
+  L201F -> L201F : stage_3 · build_matrix(parsed_acs, pyramid) → ACMatrix
+  L201F -> L201F : stage_4 · compute_coverage(acmatrix) → CoverageTarget\n(ac=1.0 硬锁)
+  L201F -> L201F : stage_5 · assemble_env(wbs, matrix) → TestEnvBlueprint
+  L201F -> L201F : stage_6 · pack_blueprint(...) → TDDBlueprint@DRAFT
+
+  L201F -> L201F : validate_coverage(blueprint) (内部状态机触发)
+  alt valid=true
+    L201F -> L201F : state DRAFT → VALIDATING → READY
+    L201F -> REPO : save(blueprint)
+    activate REPO
+    REPO -> L109 : IC-09 append_event L1-04:blueprint_created
+    L109 --> REPO : {event_id, sequence, hash}
+    REPO --> L201F : SaveResult(blueprint_id, version=1)
+    deactivate REPO
+    L201F -> L201F : state READY → PUBLISHED
+    L201F -> L109 : IC-09 append_event L1-04:blueprint_ready\n(payload 见 §4.2.1)
+    L109 -> L202 : fanout blueprint_ready
+    L109 -> L203 : fanout blueprint_ready
+    L109 -> L204 : fanout blueprint_ready
+  else valid=false (AC 覆盖率 < 1.0)
+    L201F -> L109 : IC-09 append_event L1-04:blueprint_validation_failed
+    L201F -> L201F : state DRAFT → DRAFT (保留 · 等澄清)
+    L201F -> L104R : raise E_L204_L201_BLUEPRINT_AC_MISSING
+    note right of L201F : 推 IC-13 INFO 给 L1-07\n要求 L1-02 补 AC 澄清
+  end
+else cache hit
+  L201F --> L104R : response{status=CACHED, blueprint_id}
+end
+
+L104R --> L101 : response{blueprint_id, status=ACCEPTED, ts_accepted}
+deactivate L201F
+
+par 并行消费 blueprint_ready
+  L202 -> L201F : get_blueprint(mode=full)
+  L201F --> L202 : blueprint_data
+  L202 -> L202 : 编 dod-expressions.yaml
+and
+  L203 -> L201F : get_blueprint(mode=full)
+  L201F --> L203 : blueprint_data
+  L203 -> L203 : 生成 tests/generated/*.py (all red)
+and
+  L204 -> L201F : get_blueprint(mode=full)
+  L201F --> L204 : blueprint_data
+  L204 -> L204 : 编 quality-gates.yaml + acceptance-checklist.md
+end
+
+note over L202, L204 : 三个下游并行产出 · 全齐后 L1-02 推 S3 Gate 卡到 L1-10
+L110 <- L110 : (经 L1-02 间接) IC-16 push S3 Gate 卡 (5 件凭证)
+@enduml
+```
+
+**关键保证**：
+- **唯一入口**：L1-01 只经 IC-03 派发到 L104R，L104R 内部只调 L201F（L2-02/03/04 不得直调）。
+- **纯函数 Factory**：stage_1..6 全部在 Factory 内部，无外部 IO；所有数据源前置到 `InputLoader` 一次性读入。
+- **幂等 cache**：同 `(project_id, source_refs_hash)` 二次提交返回 CACHED，避免 L1-01 重发导致重复构造。
+- **AC 100% 硬校**：valid=false 时**不**广播 blueprint_ready，直接发 validation_failed 事件 + 推 INFO 澄清；下游不会被错误蓝图污染。
+- **Partnership 审计**：创建 / 发布 / 冻结三次状态转换必经 IC-09 落盘；L1-09 不可达时本 L2 拒绝推进状态机。
+
+### 5.2 P1 异常 · AC 覆盖率校验失败 → 澄清回路
+
+**场景**：4 件套中某条 AC 过于模糊 / 缺"验收条件描述" → Factory stage_3 的 build_matrix 失败 → 状态机 DRAFT → VALIDATING → DRAFT（回退）→ 推 INFO 澄清给 L1-07 转 L1-02 → 用户补 AC 后重入本 L2。
+
+```plantuml
+@startuml
+title L1-04/L2-01 · P1 AC 覆盖率校验失败 + 澄清回路
+autonumber
+participant "L1-01 主 loop" as L101
+participant "L2-01 Factory" as L201F
+participant "L1-07 Supervisor" as L107
+participant "L1-02 生命周期" as L102
+participant "L1-10 UI" as L110
+participant "用户" as USER
+
+L101 -> L201F : IC-03 enter_quality_loop{phase=S3, project_id}
+L201F -> L201F : stage_1~3 执行中 · 发现 AC-17 无法映射任何用例槽
+L201F -> L201F : validate_coverage() → valid=false, missing_ac_ids=[AC-17]
+L201F -> L201F : state DRAFT → VALIDATING → DRAFT (回退)
+L201F -> L201F : 不执行 save (blueprint 未就绪)
+L201F -> L107 : IC-13 push_suggestion{\n  level=INFO,\n  reason=dod_unmappable,\n  missing_ac_ids=[AC-17],\n  project_id\n}
+L201F --> L101 : raise E_L204_L201_BLUEPRINT_AC_MISSING
+L101 -> L101 : 决策：挂起 S3 · 等 AC 澄清
+
+L107 -> L102 : INFO 转发 · 请求 L1-02 澄清 AC-17
+L102 -> L110 : IC-16 push_clarification_card{\n  ac_id=AC-17,\n  original_text,\n  suggested_questions\n}
+L110 -> USER : 展示澄清卡片
+USER -> L110 : 补 AC-17 "验收条件" 文字
+L110 -> L102 : IC-17 user_intervene{clarify, ac_id=AC-17, new_text}
+L102 -> L102 : 更新 ac-list.md · 重算 four_pieces_hash
+L102 -> L101 : 事件 `L1-02:four_pieces_updated`
+L101 -> L101 : 决策：重发 IC-03 phase=S3（previous_blueprint_id 引用老 DRAFT）
+L101 -> L201F : IC-03 enter_quality_loop{phase=S3, previous_blueprint_id, retry_focus=["ac_matrix"]}
+L201F -> L201F : 幂等 cache 判断 new hash → cache miss
+L201F -> L201F : 重跑 stage_1~6 (全量)
+L201F -> L201F : validate_coverage → valid=true
+L201F -> L201F : state DRAFT → VALIDATING → READY → PUBLISHED
+note right of L201F : version = old_version + 1\n老 DRAFT 保留（历史视图）
+L201F -> L101 : response{blueprint_id(new), version=2, status=ACCEPTED}
+@enduml
+```
+
+**关键保证**：
+- **非破坏性澄清**：AC 不全时**不**强行生成蓝图（prd §8.5 禁 1），而是状态机回退 + 推 INFO。
+- **版本增量**：用户澄清后重入不是修改旧聚合，而是 version += 1 产新聚合（保留历史 diff 视图供 FAIL-L2 分析）。
+- **多次澄清保护**：prd §10.F 规定"连续 3 次澄清仍失败 → 升级为 FAIL-L3 语义回 S2"；L2-01 自身维护同 project 下 AC-X 的连续澄清次数（计数器落 `projects/<pid>/tdd/clarification-counter.yaml`），≥ 3 经 IC-13 推 WARN 给 L1-07 建议升级。
+
+### 5.3 P1 异常 · FAIL-L2 回退重建
+
+**场景**：S5 Verifier 判 FAIL-L2（蓝图缺某分层用例槽）→ L2-07 路由到 S3 → L1-01 重发 IC-03 → 本 L2 以 `previous_blueprint_id` 做**增量补缺**（而非全量重建 · 性能优化）。
+
+```plantuml
+@startuml
+title L1-04/L2-01 · P1 FAIL-L2 回退重建（增量补缺）
+autonumber
+participant "L2-06 Verifier" as L206
+participant "L1-07 Supervisor" as L107
+participant "L2-07 回退路由器" as L207
+participant "L1-01 主 loop" as L101
+participant "L2-01 Factory" as L201F
+participant "L1-09 审计" as L109
+
+L206 -> L107 : verifier_report_ready
+L107 -> L107 : 判 verdict = FAIL-L2 (integration 层用例覆盖漏)
+L107 -> L207 : IC-14 push_rollback_route{verdict=FAIL-L2, retry_focus=["integration_layer"]}
+L207 -> L101 : IC-01 request_state_transition{target=S3, focus=[integration]}
+L101 -> L101 : 决策 phase=S3 (FAIL-L2 重入)
+L101 -> L201F : IC-03 enter_quality_loop{\n  phase=S3,\n  previous_blueprint_id=bp-old,\n  retry_focus=["test_pyramid","integration_layer"],\n  project_id\n}
+L201F -> L201F : 查 previous_blueprint_id 存在
+L201F -> L201F : 增量策略判断：只重跑 stage_2 (pyramid) + stage_3 (matrix)
+note right of L201F : stage_1 (parse_ac) 跳过\n(AC 未变 · 命中缓存)\nstage_4~6 基于新 matrix 重算
+L201F -> L201F : 重跑 stage_2/3，其他阶段从旧聚合继承
+L201F -> L201F : state DRAFT → VALIDATING → READY → PUBLISHED
+L201F -> L109 : IC-09 append_event L1-04:blueprint_reopened\n{old_blueprint_id, new_blueprint_id, reopen_reason=FAIL-L2}
+L201F -> L101 : response{blueprint_id(new), version=old+1}
+note right of L201F : 老 bp-old 保留\n(L2-06 diff 视图用)
+@enduml
+```
+
+**关键保证**：
+- **增量优化**：FAIL-L2 retry_focus 指定只重跑相关 stage，其他从旧聚合继承（见 §6.5）· 耗时可从 3 分钟降到 30 秒级。
+- **旧版本保留**：`blueprint_reopened` 事件不删 bp-old，L2-06 可调 `get_blueprint(version=old)` 做 diff 分析。
+- **PM-14 一致性**：previous_blueprint_id 必须与 project_id 匹配（否则 `E_L204_L201_BLUEPRINT_VERSION_CROSS_PROJECT`）。
+
+### 5.4 时序要点
+
+- **唯一 IO sink**：InputLoader 是 Factory 的唯一 IO 入口（同 L2-02 决策引擎 `ContextAssembler` 原则）· 保证 Factory stage_1..6 可纯函数化测试。
+- **状态机严格推进**：每次状态转换必经 IC-09 落盘（同步 fsync）· L1-09 不可达就停留在当前状态 · 不会出现"转了状态但没审计"的不一致。
+- **并行广播 fanout**：IC-09 的 publish-subscribe fanout 由 L1-09 的 event_dispatcher 实现（见 IC-09 契约 §3.9）· 本 L2 只发一次事件，不 N 次轮询下游。
 
 ---
 
 ## §6 内部核心算法（伪代码）
 
-<!-- FILL §6 · 本 L2 的核心算法伪代码（Python-like 风格）· 关键 syscall / 数据结构操作 / 并发控制 -->
+> 约定：Python-like 风格 · 单下划线 `_xxx` 表内部函数 · Factory 纯函数化 · IO 隔离在 InputLoader/Repository · 所有 ID 生成为时间戳+uuid7。
+
+### 6.1 顶层入口：`generate_blueprint`（Orchestrator）
+
+```python
+class TDDBlueprintGenerator:
+    """
+    Application Service · 编排 InputLoader + Factory + Repository + EventBus 四件事。
+    本类不含任何业务规则计算（全部在 Factory），本类只做：
+      1. 读取项目快照（InputLoader）
+      2. 组装聚合（Factory · 纯函数）
+      3. 持久化（Repository）
+      4. 推进状态机 + 发事件（本类）
+    """
+
+    def __init__(self,
+                 input_loader: InputLoader,          # IC-06 kb_read 封装
+                 factory: TDDBlueprintFactory,      # 纯函数 · §6.2
+                 repo: TDDBlueprintRepository,      # 持久化 · §7
+                 event_bus: EventBus,               # IC-09 append_event 封装
+                 config: BlueprintConfig):          # §10 参数
+        self.input_loader = input_loader
+        self.factory = factory
+        self.repo = repo
+        self.event_bus = event_bus
+        self.config = config
+
+    def generate(self, request: GenerateBlueprintRequest) -> BlueprintId:
+        # --- Step 1: 幂等校验（IC-03 idempotency_key 语义） ---
+        existing = self.repo.find_by_idempotency_key(
+            project_id=request.project_id,
+            key=request.idempotency_key,
+        )
+        if existing is not None:
+            return existing.id          # 幂等命中 · 直接回既有 id
+
+        # --- Step 2: 冲突检测（同 project 不能有两个非 FROZEN blueprint） ---
+        active = self.repo.find_active_by_project(request.project_id)
+        if active is not None and active.state != 'FROZEN':
+            # 非 retry 场景拒绝；retry 场景走 5.3 FAIL-L2 回退重建（不走本方法）
+            if not request.is_retry:
+                raise DomainError('E_L204_L201_BLUEPRINT_STATE_CONFLICT',
+                                  existing_blueprint_id=active.id,
+                                  existing_state=active.state)
+
+        # --- Step 3: 创建 DRAFT 聚合 + 落盘（状态机起点） ---
+        blueprint_id = _gen_bp_id(request.project_id)
+        draft = TDDBlueprint.new_draft(
+            id=blueprint_id,
+            project_id=request.project_id,
+            requirement_fingerprint=request.requirement_fingerprint,
+            idempotency_key=request.idempotency_key,
+        )
+        self.repo.save(draft)                                   # 同步 fsync
+        self._append_state_event(draft, prev=None)              # IC-09
+
+        # --- Step 4: VALIDATING · 加载上游 + 纯函数构造 ---
+        try:
+            draft.transition_to('VALIDATING')
+            self.repo.save(draft)
+            self._append_state_event(draft, prev='DRAFT')
+
+            context = self.input_loader.load_all(request.project_id)   # 唯一 IO sink
+            built = self.factory.build(
+                draft=draft,
+                context=context,
+                config=self.config,
+            )                                                    # pure function
+            self.repo.save(built)
+
+        except ACParseError as e:
+            # AC 解析失败 · 转 AWAITING_CLARIFY（见 5.2）· 本方法返回错误
+            draft.mark_awaiting_clarify(failed_ac_ids=e.ac_ids,
+                                        reason=e.message)
+            self.repo.save(draft)
+            self._append_state_event(draft, prev='VALIDATING',
+                                     outcome='AWAITING_CLARIFY')
+            raise DomainError('E_L204_L201_BLUEPRINT_AC_MISSING',
+                              failed_ac=e.ac_ids)
+        except CoverageError as e:
+            draft.mark_failed(reason=e.message)
+            self.repo.save(draft)
+            self._append_state_event(draft, prev='VALIDATING',
+                                     outcome='FAILED')
+            raise DomainError('E_L204_L201_BLUEPRINT_COVERAGE_BELOW_THRESHOLD',
+                              coverage=e.coverage)
+
+        # --- Step 5: READY · 覆盖率校验通过 ---
+        built.transition_to('READY')
+        self.repo.save(built)
+        self._append_state_event(built, prev='VALIDATING')
+
+        # --- Step 6: PUBLISHED · 广播 blueprint_ready（异步，见 §6.6） ---
+        self._broadcast_async(built)
+        # 注：广播在后台线程执行，本方法不阻塞 · PUBLISHED 状态由广播回调推进
+        return built.id
+```
+
+### 6.2 Factory 主控 · 6 Stage 流水线（纯函数）
+
+```python
+class TDDBlueprintFactory:
+    """
+    DDD Factory · 纯函数 · 不做任何 IO。
+    输入 = draft + context（InputLoader 的快照）+ config
+    输出 = 完整填充的 TDDBlueprint 聚合（尚未持久化）
+
+    6 stage 设计对齐 L2-02 决策引擎 ContextAssembler 的"洋葱壳"思路：
+      S1 parse_ac        —— AC 条目解析（NLP 三级流水线，见 §6.3）
+      S2 derive_pyramid  —— 测试金字塔层比推导
+      S3 build_matrix    —— AC ↔ 分层用例槽位构建
+      S4 compute_coverage—— AC 覆盖率 + 测试级冗余率计算
+      S5 assemble_env    —— TestEnvBlueprint 装配（mock profile + 夹具）
+      S6 pack_blueprint  —— 整聚合打包 + 不变量校验
+    """
+
+    def build(self,
+              draft: TDDBlueprint,
+              context: BlueprintContext,
+              config: BlueprintConfig) -> TDDBlueprint:
+        ac_items      = self._stage_1_parse_ac(context, config)
+        pyramid       = self._stage_2_derive_pyramid(ac_items, context, config)
+        matrix        = self._stage_3_build_matrix(ac_items, pyramid, config)
+        coverage      = self._stage_4_compute_coverage(matrix, ac_items, config)
+        env_blueprint = self._stage_5_assemble_env(ac_items, matrix, context, config)
+        return        self._stage_6_pack_blueprint(
+                          draft, ac_items, pyramid, matrix,
+                          coverage, env_blueprint, config,
+                      )
+```
+
+### 6.3 S1 · `_stage_1_parse_ac`（AC 解析三级流水线）
+
+```python
+def _stage_1_parse_ac(self,
+                      context: BlueprintContext,
+                      config: BlueprintConfig) -> list[ACItem]:
+    """
+    AC 解析三级流水线（quality over speed · 顺序回退）：
+      Tier 1  —— 模板匹配（Gherkin "Given/When/Then" · AGG "assert" 宏）
+                 命中直接结构化 · O(n) 正则 · 覆盖 ~60% 标准 AC
+      Tier 2  —— spaCy 依存句法 lemmatizer + 动词-宾语对
+                 抽取 "subject / action / expected" 三元组
+                 覆盖 ~35% 非标准描述（中英文混合 · 自然语言）
+      Tier 3  —— DeepSeek LLM fallback（prompt 见 config.ac_parse_prompt）
+                 仅当 Tier 1+2 无法结构化时触发（限 max_llm_calls_per_run）
+                 覆盖 ~5% 极端自然语言 / 跨句逻辑 AC
+
+    失败策略：三级都不能结构化的 AC 进 failed_ac_ids 列表，
+             raise ACParseError（由 Orchestrator 转 AWAITING_CLARIFY）。
+    """
+    raw_ac_text  = context.requirement_doc.ac_section      # 从 kb_read 取
+    raw_items    = _split_ac_candidates(raw_ac_text)       # 按编号/空行切分
+    parsed       : list[ACItem] = []
+    failed_ids   : list[str]    = []
+
+    for idx, raw in enumerate(raw_items):
+        ac_id = f'AC-{idx+1:03d}'
+
+        # Tier 1 · 模板匹配
+        tier1 = _try_template_match(raw, templates=config.ac_templates)
+        if tier1.matched:
+            parsed.append(ACItem(
+                id=ac_id, raw=raw,
+                structured=tier1.structured,
+                parse_tier=1, confidence=1.0,
+            ))
+            continue
+
+        # Tier 2 · spaCy 依存
+        tier2 = _try_spacy_parse(raw, nlp=self.spacy_nlp)
+        if tier2.confidence >= config.nlp_min_confidence:
+            parsed.append(ACItem(
+                id=ac_id, raw=raw,
+                structured=tier2.structured,
+                parse_tier=2, confidence=tier2.confidence,
+            ))
+            continue
+
+        # Tier 3 · LLM fallback
+        if _llm_budget_remaining(config, parsed) > 0:
+            tier3 = _try_llm_parse(raw, client=self.llm_client,
+                                   prompt=config.ac_parse_prompt)
+            if tier3.ok:
+                parsed.append(ACItem(
+                    id=ac_id, raw=raw,
+                    structured=tier3.structured,
+                    parse_tier=3, confidence=tier3.confidence,
+                ))
+                continue
+
+        failed_ids.append(ac_id)
+
+    if failed_ids:
+        raise ACParseError(
+            ac_ids=failed_ids,
+            message=f'{len(failed_ids)} AC items not structurable by 3-tier pipeline',
+        )
+    return parsed
+```
+
+### 6.4 S2~S4 · 金字塔推导 + 矩阵构建 + 覆盖率计算
+
+```python
+def _stage_2_derive_pyramid(self,
+                            ac_items: list[ACItem],
+                            context: BlueprintContext,
+                            config: BlueprintConfig) -> TestPyramidRatio:
+    """
+    测试金字塔层比推导：
+      - 默认值：config.pyramid_ratio_default = (unit=0.7, integration=0.2, e2e=0.1)
+      - 根据 AC 类型倾斜：
+          * 纯数据操作/算法 AC → unit 权重 +0.1
+          * 跨模块协作 AC     → integration 权重 +0.1
+          * 用户可见交互 AC   → e2e 权重 +0.05
+      - 约束：任一层比不得 < 0.05 且 >  0.85（防极端）
+      - 归一化：最终 sum(ratios) == 1.0（±1e-6）
+    """
+    u, i, e = config.pyramid_ratio_default
+    for ac in ac_items:
+        kind = _classify_ac_kind(ac)          # 返回 {'data','collab','ui','mixed'}
+        if kind == 'data':       u += 0.02
+        elif kind == 'collab':   i += 0.02
+        elif kind == 'ui':       e += 0.01
+    u, i, e = _clamp_and_normalize(u, i, e,
+                                   lo=config.pyramid_min,
+                                   hi=config.pyramid_max)
+    return TestPyramidRatio(unit=u, integration=i, e2e=e)
+
+
+def _stage_3_build_matrix(self,
+                          ac_items: list[ACItem],
+                          pyramid: TestPyramidRatio,
+                          config: BlueprintConfig) -> ACMatrix:
+    """
+    AC 矩阵：每条 AC 分配 {unit_slots, integration_slots, e2e_slots} 三槽位。
+    规则：
+      - 最少槽位：unit ≥ 1（任何 AC 必须有 unit 覆盖，硬规则）
+      - 按 pyramid 比例+AC kind 分配 integration / e2e
+      - 单 AC 总槽位上限 config.max_test_cases_per_ac（默认 8）
+      - 输出 dict 结构，key=ac_id，value=ACMatrixRow
+
+    不变量：
+      - ∀ac ∈ ac_items · row[ac.id].unit_slots ≥ 1
+      - ∑ slots over all ac ≤ config.max_test_cases_total_cap
+    """
+    matrix: dict[str, ACMatrixRow] = {}
+    total_budget = config.max_test_cases_total_cap
+    used         = 0
+
+    for ac in ac_items:
+        kind = _classify_ac_kind(ac)
+        u_slots = max(1, round(pyramid.unit        * _kind_weight(kind, 'unit')))
+        i_slots =        round(pyramid.integration * _kind_weight(kind, 'integration'))
+        e_slots =        round(pyramid.e2e         * _kind_weight(kind, 'e2e'))
+
+        total = u_slots + i_slots + e_slots
+        if total > config.max_test_cases_per_ac:
+            u_slots, i_slots, e_slots = _shrink_to_cap(
+                u_slots, i_slots, e_slots, cap=config.max_test_cases_per_ac)
+
+        if used + u_slots + i_slots + e_slots > total_budget:
+            # 全局预算耗尽 · 剩余 AC 降至 (1, 0, 0)
+            u_slots, i_slots, e_slots = 1, 0, 0
+
+        matrix[ac.id] = ACMatrixRow(
+            ac_id=ac.id,
+            unit_slots=u_slots,
+            integration_slots=i_slots,
+            e2e_slots=e_slots,
+        )
+        used += u_slots + i_slots + e_slots
+
+    assert all(row.unit_slots >= 1 for row in matrix.values()), \
+        'invariant broken: every AC must have ≥ 1 unit slot'
+    return ACMatrix(rows=matrix, total_slots=used)
+
+
+def _stage_4_compute_coverage(self,
+                              matrix: ACMatrix,
+                              ac_items: list[ACItem],
+                              config: BlueprintConfig) -> CoverageSnapshot:
+    """
+    AC 覆盖率 · 硬性 1.0；不达标直接 raise CoverageError。
+    同时计算测试级冗余率 redundancy_ratio（信息：重复槽位 / 总槽位）供 L2-04 参考。
+    """
+    covered_ac     = sum(1 for row in matrix.rows.values()
+                          if row.unit_slots + row.integration_slots + row.e2e_slots > 0)
+    ac_coverage    = covered_ac / len(ac_items)
+
+    # 冗余率 = 单 AC 多个 slot 超过 2 的占比
+    redundant      = sum(1 for row in matrix.rows.values()
+                          if (row.unit_slots + row.integration_slots + row.e2e_slots) > 2)
+    redundancy     = redundant / len(ac_items)
+
+    if ac_coverage < 1.0:
+        raise CoverageError(
+            coverage=ac_coverage,
+            message=f'AC coverage {ac_coverage:.3f} < 1.0 (hard threshold)',
+        )
+
+    return CoverageSnapshot(
+        ac_coverage=ac_coverage,
+        redundancy_ratio=redundancy,
+        total_test_cases=matrix.total_slots,
+    )
+```
+
+### 6.5 S5~S6 · 环境装配 + 最终打包 + 不变量校验
+
+```python
+def _stage_5_assemble_env(self,
+                          ac_items: list[ACItem],
+                          matrix: ACMatrix,
+                          context: BlueprintContext,
+                          config: BlueprintConfig) -> TestEnvBlueprint:
+    """
+    TestEnvBlueprint 装配：
+      - mock_profiles：按 AC kind 选 Mock 层级（unit=stub · integration=contract · e2e=chaos）
+      - fixtures    ：四象限（normal / boundary / failure / adversarial · 见 §9.4）
+      - timeouts    ：按层级设（unit ≤ 50ms · integration ≤ 500ms · e2e ≤ 5s）
+      - isolation   ：project_id 前缀隔离（PM-14 · 见 §7）
+    """
+    mock_profiles = []
+    for ac in ac_items:
+        row = matrix.rows[ac.id]
+        if row.unit_slots > 0:
+            mock_profiles.append(MockProfile(ac_id=ac.id, tier='unit',
+                                             strategy='stub'))
+        if row.integration_slots > 0:
+            mock_profiles.append(MockProfile(ac_id=ac.id, tier='integration',
+                                             strategy='contract'))
+        if row.e2e_slots > 0:
+            mock_profiles.append(MockProfile(ac_id=ac.id, tier='e2e',
+                                             strategy='chaos'))
+
+    fixtures = _derive_fixture_quadrants(ac_items, config)   # normal/boundary/failure/adversarial
+
+    return TestEnvBlueprint(
+        mock_profiles=mock_profiles,
+        fixtures=fixtures,
+        timeouts=config.test_env_timeouts,
+        isolation_prefix=f'proj-{context.project_id}',
+    )
+
+
+def _stage_6_pack_blueprint(self,
+                            draft: TDDBlueprint,
+                            ac_items: list[ACItem],
+                            pyramid: TestPyramidRatio,
+                            matrix: ACMatrix,
+                            coverage: CoverageSnapshot,
+                            env_blueprint: TestEnvBlueprint,
+                            config: BlueprintConfig) -> TDDBlueprint:
+    """最终打包 + 聚合内 7 条不变量校验（见 §2.2 不变量列表）。"""
+    built = draft.with_all_fields(
+        ac_items=ac_items,
+        pyramid=pyramid,
+        matrix=matrix,
+        coverage=coverage,
+        env_blueprint=env_blueprint,
+        built_at=now_utc(),
+    )
+    built.assert_invariants()   # 聚合内不变量校验（失败即 raise InvariantViolation）
+    return built
+```
+
+### 6.6 广播算法 · `_broadcast_async`（异步 · 一次性 fanout）
+
+```python
+def _broadcast_async(self, blueprint: TDDBlueprint) -> None:
+    """
+    异步广播 IC-L2-01 blueprint_ready · fanout 由 L1-09 event_dispatcher 完成。
+    本方法只发一次事件 · 由 L1-09 路由到 L2-02/03/04/06。
+
+    失败回退：
+      - IC-09 不可达 → 重试 3 次（指数退避 · 2^n · base=100ms）
+      - 连续失败 → 转 FAILED 状态 · 上报 Supervisor（on_hard_halt 路径）
+    """
+    def _run():
+        try:
+            event = _build_blueprint_ready_event(blueprint)
+            self.event_bus.publish(
+                event_type='blueprint_ready',
+                payload=event,
+                retry_policy=ExponentialBackoff(max_retries=3, base_ms=100),
+            )
+            # 回调：确认发出后推进 PUBLISHED
+            blueprint.transition_to('PUBLISHED')
+            self.repo.save(blueprint)
+            self._append_state_event(blueprint, prev='READY')
+        except PublishError as e:
+            blueprint.mark_failed(reason=f'broadcast failed after retry: {e}')
+            self.repo.save(blueprint)
+            self._notify_supervisor(blueprint, e)            # IC-13 on_hard_halt
+
+    self._executor.submit(_run)                              # ThreadPoolExecutor · 限并发
+```
+
+### 6.7 FAIL-L2 增量重建算法（对应 §5.3）
+
+```python
+def rebuild_from_failure(self,
+                         previous_id: BlueprintId,
+                         retry_focus: RetryFocus) -> BlueprintId:
+    """
+    FAIL-L2 增量重建：只重跑 retry_focus 指定的 stage · 其他继承旧 blueprint。
+    优化目标：把 3 分钟的"从零构造"压到 30 秒的"增量修复"。
+
+    retry_focus 枚举：
+      - 'ac_parse'     —— 只重跑 S1（AC 文本改了但 PRD 其他部分没变）
+      - 'pyramid'      —— 只重跑 S2-S4（金字塔比率策略改了）
+      - 'env'          —— 只重跑 S5（Mock profile 策略改了）
+      - 'all'          —— 全链路重跑（PRD 大改）
+
+    不变量：
+      - 旧 blueprint 必须 FREEZE · 新 blueprint 从旧 state 继承 project_id
+      - 新 previous_blueprint_id 字段指向旧 · 形成版本链（可追溯）
+    """
+    old = self.repo.load(previous_id)
+    assert old.state in ('FROZEN', 'FAILED'), \
+        'E_L204_L201_REBUILD_FROM_NON_TERMINAL'
+    assert old.project_id == retry_focus.project_id, \
+        'E_L204_L201_BLUEPRINT_VERSION_CROSS_PROJECT'
+
+    new_id = _gen_bp_id(old.project_id)
+    draft  = TDDBlueprint.new_draft(
+        id=new_id,
+        project_id=old.project_id,
+        previous_blueprint_id=old.id,
+        requirement_fingerprint=retry_focus.new_fingerprint,
+        idempotency_key=retry_focus.idempotency_key,
+    )
+    self.repo.save(draft)
+
+    # 继承策略（增量 stage 跳过）
+    context = self.input_loader.load_all(old.project_id)
+    built = self.factory.rebuild(
+        draft=draft,
+        old_blueprint=old,
+        retry_focus=retry_focus,
+        context=context,
+        config=self.config,
+    )
+    self.repo.save(built)
+    built.transition_to('READY')
+    self._append_state_event(built, prev='VALIDATING',
+                             meta={'rebuilt_from': old.id})
+    self._broadcast_async(built)
+    return new_id
+```
+
+### 6.8 并发控制 · 锁策略
+
+- **粒度**：以 `project_id` 为锁键（PM-14 语义）· 同一 project 内的 generate / rebuild / broadcast 串行化。
+- **实现**：Redis 分布式锁（`SETNX + PEXPIRE` · TTL 60s · 心跳续租 30s · 见 §10 `lock_ttl_seconds` / `lock_heartbeat_interval`）。
+- **广播阶段去锁**：广播 fanout 阶段释放主锁（仅持有 blueprint row-level 锁），防止下游消费卡住上游写。
+- **死锁预防**：锁申请顺序严格按 `project_id < blueprint_id < ac_id` 字典序（跨 L2 全局约定）。
+- **可观测**：锁获取/释放/超时三类事件经 IC-09 落 `lock_audit.jsonl`（L1-09 审计链）。
+
+### 6.9 syscall / IO 清单
+
+| syscall / IO 原语 | 出现位置 | 同步语义 | 失败策略 |
+|---|---|---|---|
+| `Repository.save()`（fsync） | 每次状态转换后 | 同步 fsync | `E_L204_L201_PERSIST_FSYNC_FAIL` · 回退状态不转换 |
+| `InputLoader.load_all()`（IC-06） | S0 唯一 IO sink | 同步 RPC | retry 3 次 · 失败 → `E_L204_L201_KB_READ_FAIL` |
+| `EventBus.publish()`（IC-09） | 状态转换 + 广播 | 异步 | 重试指数退避 · 连续失败 → FAILED |
+| `SpacyNLP.parse()` | S1 tier 2 | 同步 in-process | 超时 3s → 降级 tier 3 |
+| `DeepSeekClient.complete()` | S1 tier 3 | 异步 HTTP | 超时 10s · 预算耗尽 → `E_L204_L201_LLM_BUDGET_EXHAUSTED` |
+| `Redis.lock()` | generate / rebuild 入口 | 阻塞 ≤ 5s | 超时 → `E_L204_L201_LOCK_TIMEOUT` |
+| `ThreadPoolExecutor.submit()` | 广播 | 非阻塞 | 队列满 → 退回同步 fallback |
 
 ---
 
 ## §7 底层数据表 / schema 设计（字段级 YAML）
 
-<!-- FILL §7 · 本 L2 持久化的数据结构字段级 YAML schema · 物理存储路径（按 PM-14 分片 `projects/<pid>/...`）· 索引结构 -->
+> 落盘策略：YAML 文件 + jsonl 追加 · 所有路径按 PM-14 根字段分片 `projects/<project_id>/tdd/...`。
+> 不走 DB（BC-04 本 L2 内部，下游 L2-02/03/04 通过 IC-06 kb_read 读取 YAML · 保持 PM-08 单一事实源）。
+
+### 7.1 主表 · `blueprint.yaml`（聚合根落盘）
+
+**物理路径**：`projects/<project_id>/tdd/blueprint/<blueprint_id>.yaml`
+
+```yaml
+# blueprint.yaml · 主聚合 · 版本化 · 追加不覆盖
+schema_version: 1                     # 固定 1 · 未来变更时升级
+blueprint:
+  id:                                 # BlueprintId VO · 见 §2.4
+    type: string
+    pattern: '^bp-[0-9]{13}-[0-9a-f]{16}$'    # bp-<ms>-<uuid7-tail>
+    required: true
+    example: 'bp-1730000000000-a1b2c3d4e5f67890'
+  project_id:                         # PM-14 根字段 · 第一字段
+    type: string
+    pattern: '^[a-z0-9_-]{1,64}$'
+    required: true
+    example: 'proj-alpha'
+  previous_blueprint_id:              # 版本链（FAIL-L2 重建时指向旧版）
+    type: string
+    nullable: true
+    pattern: '^bp-[0-9]{13}-[0-9a-f]{16}$'
+  requirement_fingerprint:            # PRD 指纹 · 用于变更检测
+    type: object
+    fields:
+      prd_content_sha256: {type: string, pattern: '^[0-9a-f]{64}$', required: true}
+      prd_version:        {type: string, required: true}
+      snapshot_at:        {type: string, format: iso8601, required: true}
+  idempotency_key:                    # 幂等键 · 同 project + key → 复用
+    type: string
+    max_length: 128
+    required: true
+  state:                              # 状态机（见 §8）
+    type: enum
+    values: ['DRAFT', 'VALIDATING', 'AWAITING_CLARIFY', 'READY',
+             'PUBLISHED', 'FAILED', 'FROZEN']
+    required: true
+  ac_items:                           # AC 条目数组 · 见 7.2
+    type: array
+    item_schema: ACItem
+    min_items: 1
+    required: true
+  pyramid:                            # 金字塔层比
+    type: object
+    fields:
+      unit:        {type: number, min: 0.05, max: 0.85, required: true}
+      integration: {type: number, min: 0.05, max: 0.85, required: true}
+      e2e:         {type: number, min: 0.05, max: 0.85, required: true}
+    invariant: 'unit + integration + e2e == 1.0 ± 1e-6'
+  matrix:                             # AC 矩阵 · 见 7.3
+    type: object
+    fields:
+      rows:        {type: map<string, ACMatrixRow>, required: true}
+      total_slots: {type: integer, min: 0, required: true}
+  coverage:                           # 覆盖率快照
+    type: object
+    fields:
+      ac_coverage:       {type: number, min: 1.0, max: 1.0, required: true}
+      redundancy_ratio:  {type: number, min: 0.0, max: 1.0, required: true}
+      total_test_cases:  {type: integer, min: 1, required: true}
+  env_blueprint:                      # 测试环境蓝图 · 见 7.4
+    type: object
+    fields:
+      mock_profiles:    {type: array<MockProfile>, required: true}
+      fixtures:         {type: array<Fixture>,      required: true}
+      timeouts:         {type: map<string, integer>, required: true}
+      isolation_prefix: {type: string,              required: true}
+  failed_ac_ids:                      # AC 解析失败列表（AWAITING_CLARIFY 时有值）
+    type: array<string>
+    nullable: true
+  created_at:
+    type: string
+    format: iso8601
+    required: true
+  built_at:                           # 构造完成时间（VALIDATING → READY 转换时刻）
+    type: string
+    format: iso8601
+    nullable: true
+  published_at:                       # 广播出去的时刻
+    type: string
+    format: iso8601
+    nullable: true
+```
+
+### 7.2 内嵌表 · `ACItem`（AC 条目 VO）
+
+```yaml
+ACItem:
+  id:                                 # AC-001 / AC-002 · 序号
+    type: string
+    pattern: '^AC-[0-9]{3}$'
+    required: true
+  raw:                                # 原始 AC 文本（未结构化）
+    type: string
+    max_length: 2000
+    required: true
+  structured:                         # 三元组（subject / action / expected）
+    type: object
+    fields:
+      subject:  {type: string, required: true}
+      action:   {type: string, required: true}
+      expected: {type: string, required: true}
+  parse_tier:                         # 命中第几级解析（1=template / 2=spaCy / 3=LLM）
+    type: enum
+    values: [1, 2, 3]
+    required: true
+  confidence:                         # 解析置信度（LLM 特别重要）
+    type: number
+    min: 0.0
+    max: 1.0
+    required: true
+  kind:                               # AC 分类 · 影响金字塔分配
+    type: enum
+    values: ['data', 'collab', 'ui', 'mixed']
+    required: true
+```
+
+### 7.3 内嵌表 · `ACMatrixRow`（AC ↔ 分层槽位）
+
+```yaml
+ACMatrixRow:
+  ac_id:            {type: string, pattern: '^AC-[0-9]{3}$', required: true}
+  unit_slots:       {type: integer, min: 1,  max: 8, required: true}
+  integration_slots:{type: integer, min: 0,  max: 4, required: true}
+  e2e_slots:        {type: integer, min: 0,  max: 2, required: true}
+  # 不变量：unit_slots ≥ 1（任何 AC 必须有 unit 覆盖）
+```
+
+### 7.4 内嵌表 · `TestEnvBlueprint` 的 3 个子类型
+
+```yaml
+MockProfile:
+  ac_id:     {type: string, pattern: '^AC-[0-9]{3}$', required: true}
+  tier:      {type: enum, values: ['unit', 'integration', 'e2e'], required: true}
+  strategy:  {type: enum, values: ['stub', 'contract', 'chaos'],  required: true}
+  target_l2: {type: string, nullable: true}      # 被 mock 的目标 L2（若适用）
+
+Fixture:
+  id:       {type: string, pattern: '^FX-[0-9]{3}$', required: true}
+  quadrant: {type: enum, values: ['normal', 'boundary', 'failure', 'adversarial'], required: true}
+  ac_ids:   {type: array<string>, min_items: 1, required: true}
+  payload:  {type: object, required: true}       # 具体夹具数据（随 AC 而定）
+
+Timeouts:
+  unit_ms:        {type: integer, default: 50,    max: 200, required: true}
+  integration_ms: {type: integer, default: 500,   max: 2000, required: true}
+  e2e_ms:         {type: integer, default: 5000,  max: 30000, required: true}
+```
+
+### 7.5 索引表 · `blueprint-index.jsonl`（快速查询）
+
+**物理路径**：`projects/<project_id>/tdd/blueprint-index.jsonl`
+
+```yaml
+# jsonl · 每行一条记录 · 追加写 · 用于 O(n) 扫描查询
+record:
+  blueprint_id:       {type: string, required: true}
+  project_id:         {type: string, required: true}
+  state:              {type: string, required: true}
+  idempotency_key:    {type: string, required: true}
+  requirement_fingerprint_sha256: {type: string, required: true}
+  created_at:         {type: string, required: true}
+  is_active:          {type: boolean, required: true}    # 便于 find_active_by_project
+  version:            {type: integer, required: true}    # 递增序号
+
+index_queries:
+  - by_idempotency_key: 'grep "idempotency_key":"<key>" → find_by_idempotency_key（O(n) 但 n ≤ 1000/project）'
+  - by_state:           'grep "state":"READY" → find_active_by_project'
+  - by_version_chain:   '按 previous_blueprint_id 回溯 · 形成版本链'
+```
+
+### 7.6 事件追加表 · `blueprint-events.jsonl`（L1-09 接入）
+
+**物理路径**：`projects/<project_id>/tdd/blueprint-events.jsonl`
+
+```yaml
+# 所有状态转换 + 广播事件（经 IC-09 落盘 · 哈希链由 L1-09 维护）
+BlueprintEvent:
+  event_id:       {type: string, pattern: '^evt-[0-9]{13}-[0-9a-f]{16}$', required: true}
+  event_type:     {type: enum,   values: ['created', 'state_transition',
+                                          'ac_parse_failed', 'ac_coverage_failed',
+                                          'ready', 'broadcast_sent', 'broadcast_failed',
+                                          'rebuilt', 'frozen'], required: true}
+  blueprint_id:   {type: string, required: true}
+  project_id:     {type: string, required: true}      # PM-14 根字段
+  prev_state:     {type: string, nullable: true}
+  new_state:      {type: string, nullable: true}
+  payload:        {type: object, required: false}     # event_type 相关载荷
+  occurred_at:    {type: string, format: iso8601, required: true}
+  hash_prev:      {type: string, pattern: '^[0-9a-f]{64}$', required: true}
+  hash_self:      {type: string, pattern: '^[0-9a-f]{64}$', required: true}
+```
+
+### 7.7 物理目录结构（PM-14 分片总览）
+
+```
+projects/
+└── <project_id>/                         # PM-14 根分片
+    └── tdd/
+        ├── blueprint/
+        │   ├── bp-1730000000000-aaa.yaml   # 每个 blueprint 一个文件
+        │   ├── bp-1730000100000-bbb.yaml
+        │   └── bp-1730000200000-ccc.yaml
+        ├── blueprint-index.jsonl           # 索引表
+        ├── blueprint-events.jsonl          # 事件链（L1-09 哈希链）
+        └── lock_audit.jsonl                # 分布式锁审计（见 §6.8）
+```
+
+**跨 project 隔离保证**：
+- 任何 read/write 必须以 `projects/<project_id>/` 开头 · 代码侧 `_resolve_path()` 强制校验 · 越界直接 `E_L204_L201_PM14_PATH_VIOLATION`。
+- 备份按 project 目录整打包 · 单项目恢复不影响其他项目。
+
+### 7.8 容量估算
+
+| 数据 | 单条体积 | 10K AC/project | 1K project 全系统 |
+|---|---|---|---|
+| blueprint.yaml 聚合 | ~ 20 KB | ~ 20 MB（每版本 20KB × 1K 版本） | ~ 20 GB |
+| blueprint-index.jsonl | ~ 200 B | ~ 200 KB / project | ~ 200 MB |
+| blueprint-events.jsonl | ~ 500 B | ~ 5 MB（10K 事件 × 500B） | ~ 5 GB |
+| 合计 | — | ~ 25 MB / project | ~ 25 GB |
+
+**保留策略**：
+- `FROZEN` 状态的 blueprint.yaml 永久保留（支持审计回溯）。
+- `blueprint-events.jsonl` 按月分文件（`-2026-04.jsonl`）· 12 个月滚动归档冷存储。
+- `lock_audit.jsonl` 按周分文件 · 保留 3 个月。
 
 ---
 
 ## §8 状态机（如适用 · PlantUML + 转换表）
 
-<!-- FILL §8 · 本 L2 内部状态机 PlantUML @startuml ... @enduml (state) + 状态转换表（触发 / guard / action） · 若本 L2 无状态则标明"本 L2 为无状态服务" -->
+### 8.1 状态总览（7 态）
+
+本 L2 的核心聚合 `TDDBlueprint` 是**有状态**的，共 7 个状态（对应 §7.1 的 `state` 枚举）：
+
+| # | 状态 | 语义 | 是否终态 |
+|---|---|---|---|
+| 1 | `DRAFT` | 刚创建 · 未加载上游快照 | 非终态 |
+| 2 | `VALIDATING` | 正在跑 Factory 6 stage（§6.2） | 非终态 |
+| 3 | `AWAITING_CLARIFY` | AC 解析失败 · 等澄清（见 §5.2） | 非终态 · 可被外部推进 |
+| 4 | `READY` | 构造完成 · 不变量校验通过 · 尚未广播 | 非终态 |
+| 5 | `PUBLISHED` | 已广播 blueprint_ready · 可被下游订阅 | 非终态 · 可 FROZEN |
+| 6 | `FAILED` | 构造失败（覆盖率不达标 / 广播失败 / 不变量破坏） | 终态（可触发 FAIL-L2 重建） |
+| 7 | `FROZEN` | S3 阶段结束 · 聚合冻结 · 只读 | 终态 |
+
+### 8.2 PlantUML 状态图
+
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam state {
+    BackgroundColor<<draft>>     #E3F2FD
+    BackgroundColor<<validating>>#FFF3E0
+    BackgroundColor<<awaiting>>  #FFEBEE
+    BackgroundColor<<ready>>     #E8F5E9
+    BackgroundColor<<published>> #C8E6C9
+    BackgroundColor<<failed>>    #FFCDD2
+    BackgroundColor<<frozen>>    #ECEFF1
+}
+
+[*] --> DRAFT : generate_blueprint()\nIC-03 phase=S3 入
+
+state "DRAFT" as DRAFT <<draft>>
+DRAFT : 聚合根创建
+DRAFT : id / project_id / idempotency_key 已定
+DRAFT : ac_items / matrix / env_blueprint 空
+
+state "VALIDATING" as VALIDATING <<validating>>
+VALIDATING : Factory 6 stage 运行中
+VALIDATING : InputLoader.load_all() 加载上游快照
+VALIDATING : S1 parse_ac → S6 pack_blueprint
+
+state "AWAITING_CLARIFY" as AWAITING <<awaiting>>
+AWAITING : AC 三级解析失败
+AWAITING : failed_ac_ids 非空
+AWAITING : 等外部提交澄清（IC-03 clarify）
+
+state "READY" as READY <<ready>>
+READY : 6 stage 全部通过
+READY : coverage.ac_coverage = 1.0
+READY : 不变量已校验
+READY : 尚未广播
+
+state "PUBLISHED" as PUBLISHED <<published>>
+PUBLISHED : IC-L2-01 blueprint_ready 已发
+PUBLISHED : 下游 L2-02/03/04/06 可订阅
+PUBLISHED : published_at 已填
+
+state "FAILED" as FAILED <<failed>>
+FAILED : 构造 / 广播失败
+FAILED : failure_reason 已记
+FAILED : 可被 FAIL-L2 触发重建
+
+state "FROZEN" as FROZEN <<frozen>>
+FROZEN : S3 结束 · 聚合冻结
+FROZEN : 只读 · 不接受修改
+FROZEN : 后续变更必须走版本链
+
+DRAFT      --> VALIDATING       : load_upstream_ok
+DRAFT      --> FAILED           : input_loader_fail\n/ e.g. IC-06 不可达
+
+VALIDATING --> AWAITING         : ac_parse_fail\n(ACParseError)
+VALIDATING --> READY            : factory_ok\n& coverage == 1.0
+VALIDATING --> FAILED           : coverage_below_1.0\n/ invariant_violation
+
+AWAITING   --> VALIDATING       : clarification_received\n(IC-03 clarify_ac)
+AWAITING   --> FAILED           : clarify_timeout\n(> config.clarify_timeout_hours)
+
+READY      --> PUBLISHED        : broadcast_ok\n(IC-L2-01 发出)
+READY      --> FAILED           : broadcast_retry_exhausted\n(3 次指数退避仍失败)
+
+PUBLISHED  --> FROZEN           : s3_ended\n(Supervisor 推进 S4)
+PUBLISHED  --> FAILED           : invariant_broken_post\n(极端场景)
+
+FAILED     --> [*]              : supervisor_abandon
+FROZEN     --> [*]              : retention_archived
+
+note right of VALIDATING
+  <b>唯一 IO sink</b>:
+  InputLoader.load_all()
+  在进入此态时同步执行
+end note
+
+note right of READY
+  <b>状态不变量</b>:
+  coverage.ac_coverage == 1.0
+  ∀ row · unit_slots ≥ 1
+  pyramid 归一化 ± 1e-6
+end note
+
+note bottom of FAILED
+  <b>回退路径</b>:
+  L2-06 Supervisor 可触发
+  rebuild_from_failure()
+  → 新 DRAFT（版本链指向旧）
+end note
+
+@enduml
+```
+
+### 8.3 状态转换表（trigger · guard · action · 错误码）
+
+| 当前态 | 触发事件 | Guard（前置条件） | Action（状态转换动作） | 目标态 | 失败错误码 |
+|---|---|---|---|---|---|
+| `-` | `generate_blueprint(req)` | `find_by_idempotency_key=None` · `find_active=None or is_retry=true` | `Repository.save(DRAFT)` · `append_event(created)` | `DRAFT` | `E_L204_L201_BLUEPRINT_STATE_CONFLICT` |
+| `DRAFT` | `start_validation()` | 幂等键唯一 | `transition_to(VALIDATING)` · `append_event(state_transition)` · `InputLoader.load_all()` | `VALIDATING` | `E_L204_L201_KB_READ_FAIL` |
+| `DRAFT` | IC-06 调用失败 | 超过 3 次重试 | `mark_failed(reason='kb_read_fail')` | `FAILED` | `E_L204_L201_KB_READ_FAIL` |
+| `VALIDATING` | `_stage_1_parse_ac` 抛 `ACParseError` | `failed_ac_ids ≠ []` | `mark_awaiting_clarify(failed_ac_ids)` · `append_event(ac_parse_failed)` | `AWAITING_CLARIFY` | `E_L204_L201_BLUEPRINT_AC_MISSING` |
+| `VALIDATING` | `_stage_4_compute_coverage` 抛 `CoverageError` | `ac_coverage < 1.0` | `mark_failed(reason='coverage')` | `FAILED` | `E_L204_L201_BLUEPRINT_COVERAGE_BELOW_THRESHOLD` |
+| `VALIDATING` | `_stage_6_pack_blueprint` 不变量破坏 | 7 不变量任一破坏 | `mark_failed(reason='invariant_violation')` | `FAILED` | `E_L204_L201_BLUEPRINT_INVARIANT_VIOLATION` |
+| `VALIDATING` | Factory 全部成功 | `coverage == 1.0` · 不变量通过 | `transition_to(READY)` · `append_event(ready)` | `READY` | — |
+| `AWAITING_CLARIFY` | `submit_clarification(ac_id, text)` | project_id 匹配 · ac_id ∈ failed_ac_ids | 把澄清文本合并入 PRD 快照 · `transition_to(VALIDATING)` · 重跑 Factory | `VALIDATING` | `E_L204_L201_CLARIFY_UNKNOWN_AC` |
+| `AWAITING_CLARIFY` | 超时（`clarify_timeout_hours`） | `now - entered_at > threshold` | `mark_failed(reason='clarify_timeout')` | `FAILED` | `E_L204_L201_CLARIFY_TIMEOUT` |
+| `READY` | `broadcast_ready()` 成功 | IC-09 publish 返回 200 | `transition_to(PUBLISHED)` · `append_event(broadcast_sent)` · 写 `published_at` | `PUBLISHED` | — |
+| `READY` | 广播重试耗尽 | 3 次指数退避失败 | `mark_failed(reason='broadcast')` · `notify_supervisor()` | `FAILED` | `E_L204_L201_BROADCAST_RETRY_EXHAUSTED` |
+| `PUBLISHED` | `freeze(s3_ended)` | Supervisor 发 S4 进入信号 | `transition_to(FROZEN)` · `append_event(frozen)` · 标记只读 | `FROZEN` | — |
+| `PUBLISHED` | 后置不变量破坏（极端） | 外部篡改检出 | `mark_failed(reason='post_invariant')` · `notify_supervisor()` | `FAILED` | `E_L204_L201_POST_INVARIANT_BROKEN` |
+| `FAILED` | `rebuild_from_failure(old_id, focus)` | old.state ∈ {FAILED, FROZEN} · `retry_focus` 合法 | 创建新 DRAFT（previous_blueprint_id=old.id）· 增量重跑 | `DRAFT` | `E_L204_L201_REBUILD_FROM_NON_TERMINAL` |
+| `FAILED` | `supervisor_abandon()` | L2-06 确认放弃 | 记入审计 · 终态归档 | `[*]` | — |
+| `FROZEN` | `retention_archived()` | 超过保留期 | 冷存储归档 | `[*]` | — |
+
+### 8.4 并发安全约束
+
+- **锁粒度**：状态转换以 `(project_id, blueprint_id)` 为锁键（Redis 分布式锁 · TTL 60s · 见 §6.8）。
+- **原子性**：`transition_to(new_state)` 必须在**同一事务内**完成「保存聚合 + 追加事件」，任一失败全回滚（状态不转换）。
+- **防重复转换**：`transition_to()` 内部做 `current_state == expected_prev_state` 断言，失败 → `E_L204_L201_STATE_TRANSITION_INVALID`。
+- **CAS 语义**：Repository 的 `save()` 带 `expected_version` 参数（乐观锁），版本号冲突 → `E_L204_L201_VERSION_CONFLICT` · 调用方决定重试。
+
+### 8.5 状态可观测性
+
+每次 `transition_to()` 必经 IC-09 追加一条 `state_transition` 事件（见 §7.6 `blueprint-events.jsonl`）· 含：
+- `prev_state` / `new_state`
+- `trigger`（触发方法名 · e.g. `_stage_4_compute_coverage`）
+- `outcome`（ok / fail · 失败时带 error_code）
+- `duration_ms`（转换耗时 · 用于 §12 性能分析）
+
+这为 L2-05 `DecisionAuditRecorder` 提供了完整的状态轨迹回溯能力（PM-08 单一事实源 · PM-18 审计闭环）。
 
 ---
 
