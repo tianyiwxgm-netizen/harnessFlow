@@ -1756,44 +1756,522 @@ def whitelist_watchdog(registry: WhitelistRegistry, yaml_path: str, interval_s: 
 
 ## §7 底层数据表 / schema 设计（字段级 YAML）
 
-<!-- FILL §7 · 本 L2 持久化的数据结构字段级 YAML schema · 物理存储路径（按 PM-14 分片 `projects/<pid>/...`）· 索引结构 -->
+本 L2 持久化 3 张核心表，全部按 PM-14 分片到 `projects/<pid>/dod/`。白名单规则为**全局共享**（非 per-project）但仍在每 project 空间保存一份只读快照用于审计对账。
+
+### 7.1 `dod_expression` 表（核心 · 编译产物）
+
+```yaml
+table: dod_expression
+storage_path: projects/<project_id>/dod/expressions/<expr_id>.yaml  # PM-14 分片
+format: yaml
+schema:
+  expr_id:
+    type: string
+    format: uuid_v7  # 时序排序
+    required: true
+    description: 全局唯一标识 · 由 compile() 生成
+  project_id:
+    type: string
+    required: true
+    description: PM-14 必填根字段 · 隔离跨 project
+  wp_id:
+    type: string
+    required: true
+    description: 本 DoD 所属的 WP · 与 L1-03 WBS 拓扑关联
+  clause_text:
+    type: string
+    required: true
+    max_length: 1024
+    description: 原始自然语言 DoD 条款（例如 "test_coverage >= 0.8 && lint_errors == 0"）
+  ast_json:
+    type: object
+    required: true
+    description: 编译后的 AST（白名单校验通过 · JSON 序列化）
+    schema_ref: ast_json_schema.yaml
+  ast_hash:
+    type: string
+    format: sha256
+    required: true
+    description: AST 结构哈希 · 用于幂等 + 缓存 key + 审计对账
+  whitelist_version:
+    type: string
+    required: true
+    example: "1.0.3"
+    description: 编译时使用的白名单版本 · 白名单升级后需重新编译
+  compiled_at:
+    type: datetime
+    required: true
+    format: iso8601_utc
+  compiled_by:
+    type: string
+    required: true
+    example: "L2-02/compiler.compile"
+    description: 编译器主体（人/自动/LLM 辅助 · 审计用）
+  version:
+    type: string
+    required: true
+    example: "v1"
+    description: 表达式版本号 · clause_text 变更则递增
+  status:
+    type: string
+    required: true
+    enum: [PARSING, VALIDATING, COMPILED, EVALUATED, FAILED, ARCHIVED]
+    description: 详见 §8 状态机
+  failure_reason:
+    type: string
+    required: false
+    description: status=FAILED 时必填 · 例 "ast.Attribute 不在白名单"
+  eval_count:
+    type: integer
+    default: 0
+    description: 被 eval 的累计次数 · 用于热度分析
+  last_eval_at:
+    type: datetime
+    required: false
+indexes:
+  - name: idx_project_wp
+    fields: [project_id, wp_id]
+    type: btree
+  - name: idx_ast_hash
+    fields: [ast_hash]
+    type: hash
+    unique: true   # 同一 AST 去重 · 跨 project 共享缓存
+  - name: idx_status_pending
+    fields: [status]
+    where: status IN ('PARSING', 'VALIDATING')
+    type: partial_btree
+```
+
+### 7.2 `whitelist_rule` 表（白名单规则 · 全局共享）
+
+```yaml
+table: whitelist_rule
+storage_path:
+  canonical: dod/whitelist/rules_v<version>.yaml    # 全局唯一版本化
+  per_project_snapshot: projects/<project_id>/dod/whitelist_snapshot_v<version>.yaml  # 只读快照审计用
+format: yaml (immutable · 升级走版本递增)
+schema:
+  rule_id:
+    type: string
+    format: semantic_key  # 例 "ast.Call.func=len"
+    required: true
+  version:
+    type: string
+    required: true
+    example: "1.0.3"
+  node_type:
+    type: string
+    required: true
+    enum: [Expression, BoolOp, And, Or, Compare, Eq, NotEq, Lt, LtE, Gt, GtE, Name, Constant, Load, Call, ...]
+  allow:
+    type: boolean
+    required: true
+  constraints:
+    type: object
+    required: false
+    description: 额外约束 · 例 Call 节点指定 allowed_functions
+    example:
+      allowed_functions: [len, min, max, sum, all, any, abs]
+  added_by:
+    type: string
+    required: true
+    description: 添加人 · 必须经离线评审会议审批
+  added_at:
+    type: datetime
+    required: true
+  review_minutes_url:
+    type: string
+    required: true
+    description: 评审会议纪要 URL · 不提供则 rule_id 无效 · PM-17 可追溯性
+immutability:
+  description: 单条规则 immutable · 只能整体版本递增
+  enforcement:
+    - 文件系统 chattr +i（Linux）/ macOS SIP
+    - 对象存储 Object Lock（WORM 模式）
+    - 每次 compile 时校验 rules_v<v>.yaml 的 SHA256 == 启动加载时的 SHA256（防运行时篡改 · 见 §11）
+```
+
+### 7.3 `eval_audit_log` 表（评估审计 · 追加写 only）
+
+```yaml
+table: eval_audit_log
+storage_path: projects/<project_id>/dod/eval_log/yyyymmdd/<hh>.jsonl  # 按小时 rolling
+format: jsonl (append-only · 一行一条事件)
+schema:
+  log_id:
+    type: string
+    format: uuid_v7
+    required: true
+  expr_id:
+    type: string
+    required: true
+    description: 关联的 dod_expression.expr_id
+  project_id:
+    type: string
+    required: true  # PM-14
+  wp_id:
+    type: string
+    required: true
+  caller:
+    type: string
+    required: true
+    enum: [L2-05.drive_wp, L2-06.assemble_evidence, L1-07.verify_gate, ...]
+    description: 调用方（PM-17 可追溯）
+  caller_session_id:
+    type: string
+    required: true
+    description: 调用方 session · 独立 session（L2-06）需特殊标注 sourced_from_verifier_subagent=true
+  input_snapshot_hash:
+    type: string
+    format: sha256
+    required: true
+    description: eval 时的数据快照哈希（防篡改）
+  input_snapshot_path:
+    type: string
+    required: false
+    description: 超过 4KB 的 snapshot 落盘 · 存 sha256 寻址的文件路径
+  result:
+    type: object
+    required: true
+    schema:
+      pass:
+        type: boolean
+        required: true
+      reason:
+        type: string
+        required: true
+        description: 判定理由 · PASS 也要给（"coverage=0.85 >= 0.8"）
+      evidence_snapshot:
+        type: object
+        description: 被 eval 的具体字段值（便于 audit）
+  duration_ms:
+    type: number
+    required: true
+  timed_out:
+    type: boolean
+    default: false
+  memory_peak_mb:
+    type: number
+    required: false
+  recursion_depth_peak:
+    type: integer
+    required: false
+  timestamp:
+    type: datetime
+    required: true
+    format: iso8601_utc_ns  # 纳秒精度防碰撞
+  hash_chain_prev:
+    type: string
+    format: sha256
+    required: true
+    description: 前一条日志的 sha256 · 形成 hash-chain 防篡改（与 L2-05 审计记录器一致策略）
+retention:
+  hot: 30d (SSD)
+  warm: 90d (HDD)
+  cold: 7y (S3 Glacier / Object Lock)
+  reason: SOX 审计合规要求最少 7 年
+```
+
+### 7.4 存储路径总览（PM-14 分片）
+
+```
+projects/
+├── <project_id>/
+│   └── dod/
+│       ├── expressions/
+│       │   ├── <expr_id_001>.yaml        # dod_expression (7.1)
+│       │   └── <expr_id_002>.yaml
+│       ├── whitelist_snapshot_v1.0.3.yaml  # 白名单只读快照（7.2）
+│       └── eval_log/
+│           ├── 20260421/
+│           │   ├── 00.jsonl               # eval_audit_log (7.3)
+│           │   ├── 01.jsonl
+│           │   └── ...
+│           └── 20260422/
+└── dod/
+    └── whitelist/
+        └── rules_v1.0.3.yaml              # 全局白名单（7.2 canonical）
+```
 
 ---
 
-## §8 状态机（如适用 · PlantUML + 转换表）
+## §8 状态机（PlantUML + 转换表）
 
-<!-- FILL §8 · 本 L2 内部状态机 PlantUML @startuml ... @enduml (state) + 状态转换表（触发 / guard / action） · 若本 L2 无状态则标明"本 L2 为无状态服务" -->
+`DoDExpression` 生命周期由 **PARSING → VALIDATING → COMPILED → EVALUATED → ARCHIVED** 主路径 + `FAILED` 旁路 构成。状态推进严格单向，**从任何 FAILED 状态不可回到 COMPILED**（必须重走 PARSING · 保证幂等审计）。
+
+### 8.1 状态机图
+
+```plantuml
+@startuml
+title L2-02 DoDExpression 状态机（6 状态 + 3 种 FAILED 子态）
+
+[*] --> PARSING : compile(clause_text)
+
+state PARSING : 正在把自然语言 / DSL\n→ Python AST
+state VALIDATING : 正在 NodeVisitor 遍历\nAST 做白名单校验
+state COMPILED : AST 通过白名单\n可被 eval
+state EVALUATED : 至少被 eval 过 1 次\neval_count > 0
+state ARCHIVED : WP 已关闭 / project 结束\n转为归档状态
+
+state FAILED {
+  state PARSE_FAILED : ast.parse() 抛 SyntaxError\n或 clause_text 非法
+  state VALIDATE_FAILED : NodeVisitor 发现非白名单节点
+  state EVAL_FAILED : eval 时超时 / 递归爆炸 / 内存爆
+}
+
+PARSING --> VALIDATING : parse_ok
+PARSING --> FAILED : SyntaxError\n→ PARSE_FAILED
+VALIDATING --> COMPILED : all_nodes_whitelisted
+VALIDATING --> FAILED : illegal_node_detected\n→ VALIDATE_FAILED
+COMPILED --> EVALUATED : eval() 首次调用
+EVALUATED --> EVALUATED : eval() 再次调用 (eval_count++)
+EVALUATED --> FAILED : timeout / recursion / memory\n→ EVAL_FAILED
+COMPILED --> ARCHIVED : wp_closed / project_closed
+EVALUATED --> ARCHIVED : wp_closed / project_closed
+FAILED --> [*] : 记录审计 · 进入重编译流程\n(需 compile() 重启动新 expr_id)
+ARCHIVED --> [*]
+
+note right of FAILED
+  三种 FAILED 子态都产生审计事件：
+  - failure_reason 字段必填
+  - hash_chain 落 eval_audit_log
+  - 不可直接从 FAILED 回到 COMPILED
+  - 必须 compile() 产生新 expr_id
+end note
+
+@enduml
+```
+
+### 8.2 状态转换表（字段级）
+
+| 当前态 | 触发 | guard | action | 下一态 | 审计事件 |
+|---|---|---|---|---|---|
+| (start) | `compiler.compile(clause_text, project_id, wp_id)` | `clause_text` 非空 · `project_id` 有效 | 创建 expr_id · 记 `compiled_at` | PARSING | `dod_expression.compile_started` |
+| PARSING | `ast.parse(clause_text)` 成功 | 返回合法 `ast.Module` | 保存 ast_json | VALIDATING | `dod_expression.parse_succeeded` |
+| PARSING | `ast.parse` 抛 SyntaxError | — | 写 failure_reason = 异常 msg | FAILED (PARSE_FAILED) | `dod_expression.parse_failed` |
+| VALIDATING | `NodeVisitor.visit(ast_tree)` 走完无异常 | 所有节点 ∈ whitelist_v<v> | 计算 ast_hash · 保存 | COMPILED | `dod_expression.validated` |
+| VALIDATING | NodeVisitor 发现非白名单节点 | 首个非白名单节点 | 写 failure_reason = `node_type + location` | FAILED (VALIDATE_FAILED) | `dod_expression.validate_failed` (SEV_HIGH · 可能是注入攻击) |
+| COMPILED | `evaluator.eval(expr, input_snapshot, caller)` | 通过调用方鉴权 | 记 eval_audit_log · eval_count++ · 更新 last_eval_at | EVALUATED | `dod_expression.evaluated` |
+| EVALUATED | eval 再次调用 | 同上 | eval_count++ | EVALUATED (自环) | `dod_expression.evaluated` |
+| EVALUATED / COMPILED | eval 超时 / 递归 / 内存 | — | 记 fail 到 eval_audit_log · 写 failure_reason | FAILED (EVAL_FAILED) | `dod_expression.eval_failed` |
+| COMPILED / EVALUATED | `wp_closed` 事件 | `wp_status == 'DONE'` | — | ARCHIVED | `dod_expression.archived` |
+| FAILED | 调用方重试 | — | **拒绝**：要求 `compile()` 新 expr_id | — | `dod_expression.restart_rejected` |
+| ARCHIVED | — | — | — | (terminal) | — |
+
+### 8.3 并发转换注意
+
+- 同一 `expr_id` 的状态转换走 `threading.RLock`（进程内）+ `fcntl.flock`（进程间）双层保护。
+- EVALUATED → EVALUATED 自环下 `eval_count++` 走原子 CAS（详见 §6.3 `EvalCounter`）。
+- FAILED 是终态的一种——**一旦 FAILED，本 expr_id 不可复活**，重编译必须生成新 `expr_id`（UUID v7 时序保证顺序审计）。
 
 ---
 
 ## §9 开源最佳实践调研（≥ 3 GitHub 高星项目）
 
-<!-- FILL §9 · 引 L0/open-source-research.md 对应模块段 + L2 粒度细化：至少 3 个 GitHub ≥1k stars 项目对标 · 每项目：星数 · 最近活跃 · 核心架构一句话 · Adopt/Learn/Reject 处置 · 具体学习点 · 弃用原因 -->
+本 L2 定位是**受限表达式沙盒 + AST 白名单 evaluator**，工业界最近邻是**安全沙盒 / 受限 Python / 策略语言**三类。下表 5 个参考项目，按 Adopt/Learn/Reject 分级。
+
+| 项目 | Stars | 最近活跃 | 核心架构 | 处置 | 学习点 / 弃用原因 |
+|---|---|---|---|---|---|
+| **RestrictedPython** | ~440 · *豁免 1k* | 2026-02 活跃 · Zope 基金会维护 20+ 年 | 把 Python 源码编译前做 AST 重写 · 拦截危险节点 · 只保留"可安全评估"子集 | **Adopt · 深度借鉴** | 学：它的 `SafeCode` + `PrintCollector` + `guarded_*` 机制——本 L2 的 `NodeVisitor` 白名单校验 + 共享 evaluator 环境借鉴了这一套完整方案；**豁免 1k stars 理由**：RestrictedPython 是 Python 生态**受限执行的事实标准**（Plone / Zope 等大型系统依赖），业界最成熟 · 300+ 贡献者 · 官方基金会维护——小众但权威 |
+| **asteval** | ~200 · *豁免 1k* | 2026-04 活跃 · NSLS-II 科学计算团队维护 | 构造一个只含白名单符号表的 `Interpreter` · 逐 AST 节点解释执行（不走 Python eval） | **Learn** | 学：asteval **不调用 Python 内置 eval**，而是自己实现节点解释器——更安全（绕不过 `__builtins__` 攻击）但性能差；**不 Adopt 原因**：性能 < pure AST + Python eval 5-10 倍 · 本 L2 DoD 表达式执行频率高（P95 < 10ms SLO），性能优先；**豁免 1k stars 理由**：科学计算社区通用 · 安全模型最干净 |
+| **HashiCorp Sentinel** | ~1.6k (GitHub `hashicorp/sentinel-sdk`) | 2026-03 活跃 · HashiCorp 官方 | 自定义策略语言（非 Python）· 编译为 bytecode · 嵌入 HCL 沙盒 | **Learn**（不集成 · 借鉴策略语言设计） | 学：Sentinel 的**白名单模块** + **import 显式授权** + **deny 优先策略** 设计思想——本 L2 的 `WhitelistASTRule` 的 `allow/deny` + `constraints` 借鉴了这套 model；**不 Adopt 原因**：Sentinel 是**独立语言**，引入需用户学习新 DSL · 本 L2 定位是**用户写 Python-like DoD 就能直接跑** · 不搞语言发明 |
+| **Open Policy Agent (OPA) / Rego** | ~10k | 2026-04 高度活跃 · CNCF 毕业项目 | 声明式策略语言 · 基于 Datalog · 独立 evaluator 服务 | **Learn**（作为未来演进 OQ-06 的参考） | 学：OPA 的**分布式 evaluator + 策略热更** 能力——若本 L2 未来 OQ-06 扩展到跨 project 白名单热更新，OPA 的 discovery + bundle 模型是上佳范式；**不 Adopt 原因**：OPA 需独立部署进程 · 本 L2 当前是 in-process 库，切换架构成本大 · 定位不同 |
+| **json-logic-py** | ~300 · *豁免 1k* | 2025-10 活跃 | JSON-based 逻辑表达式 · 跨语言（JS/Python/Ruby） | **Learn**（仅作 AC 输入 alt 形态之一） | 学：json-logic 的**跨语言同构 evaluator**——对多语言项目友好；**不 Adopt 原因**：表达力弱于 Python AST（例如不支持自定义函数）· 仅作为 L2-01 AC 输入的 alt 形态之一（`ac_input_format=json-logic`），不覆盖本 L2 的 evaluator 架构；**豁免 1k stars 理由**：跨语言特性独特 · 工程实战中频繁被当作"轻量规则引擎"备选 |
+
+**§9 综合结论**：
+
+- **核心 Adopt**：`RestrictedPython` 的 NodeVisitor 模式 + guarded 符号表设计 · 本 L2 的 `SafeExprValidator` + `SharedEvaluator` 是对其的 L2 粒度定制化实现。
+- **思想 Learn**：asteval 的"不走 Python eval · 自解释"（作为 OQ-03 多进程 sandbox 的备选路径） · Sentinel 的 allow/deny + constraints 策略模型 · OPA 的热更演进路径。
+- **Reject**：不用 OPA 作为直接依赖（架构割裂） · 不新造 DSL（沿用 Python 表达式子集，用户零学习成本）。
 
 ---
 
 ## §10 配置参数清单
 
-<!-- FILL §10 · 参数名 / 默认值 / 可调范围 / 意义 / 调用位置 -->
+本 L2 配置集中在 `docs/4-config/L1-04/L2-02.yaml`（SSOT），启动时由 L1-09 配置总线加载。**白名单版本 `whitelist_version` 的变更强制走离线评审会议 + 书面批准**。
+
+| 参数名 | 默认值 | 可调范围 | 意义 | 调用位置 | 变更风险 |
+|---|---|---|---|---|---|
+| `recursion_limit_depth` | `5` | `[1, 20]` | AST 节点递归深度上限 · 防 `((a or b) or (c or d))...` 递归炸弹 | §6.2 `SafeExprValidator.visit()` | ⚠️ 调高增加攻击面；调低误拦合法复杂表达式 |
+| `eval_timeout_ms` | `1000` | `[100, 10000]` | 单次 eval 超时硬切（signal.alarm） | §6.3 `SharedEvaluator.eval()` | ⚠️ 过短误切合法 eval；过长容忍 DoS |
+| `memory_limit_mb` | `50` | `[10, 500]` | 单次 eval 内存上限（resource.setrlimit） | §6.3 | 调高增加 OOM 风险；调低误切 |
+| `whitelist_version` | `"1.0.3"` | 版本字符串 · **runtime 不可改** | 当前白名单版本 · 加载后 immutable | §6.1 启动时加载 | 🔴 **runtime 改写直接 panic**：白名单是最高等级不可变量 |
+| `whitelist_reload_allowed` | `false` | `{false}` | 是否允许热重载白名单 | 启动时 | 🔴 **锁死 false**：任何热重载绕开离线评审，违反 PM-05 |
+| `audit_sample_rate` | `1.0` | `[0.01, 1.0]` | eval 审计采样率 · `1.0` = 全量 | §6.4 `AuditAppender` | ⚠️ 采样降低存储成本但牺牲审计完整性 · **生产建议 1.0** |
+| `cache_ttl_s` | `3600` | `[0, 86400]` | ast_hash → COMPILED 对象的 LRU 缓存 TTL | §6.5 缓存层 | 0 = 禁用 · 禁用增加 compile 开销 |
+| `cache_max_entries` | `10000` | `[100, 1000000]` | LRU 缓存最大条目 | 同上 | 超限触发 LRU 淘汰 |
+| `eval_concurrency_limit` | `50` | `[1, 500]` | 并发 eval 上限（semaphore） | §6.3 | 超限触发 `E_L204_L202_EVAL_CONCURRENCY_EXCEEDED` |
+| `evaluator_isolation_mode` | `"thread"` | `"thread" \| "process"` | 沙盒隔离模式 · 详见 OQ-03 | §6.3 | `thread` 快但存 GIL 竞态；`process` 慢但完全隔离 |
+| `audit_hash_chain_algorithm` | `"sha256"` | `"sha256" \| "blake3"` | hash-chain 算法 | §7.3 | sha256 兼容 · blake3 性能 5x 但需依赖升级（详见 OQ · 与 L2-05 同步） |
+| `whitelist_tamper_check_interval_s` | `60` | `[10, 3600]` | 白名单文件篡改检测周期（后台守护） | §6.6 `WhitelistIntegrityMonitor` | 短 = 及时发现；长 = CPU 省 |
+| `eval_audit_wal_buffer_size_kb` | `64` | `[1, 1024]` | 审计 WAL 缓冲大小 · 刷盘前缓存 | §6.4 | 缓冲越大越批量但崩溃窗口越大 |
+| `eval_audit_fsync_policy` | `"every_event"` | `"every_event" \| "every_100_events" \| "every_second"` | fsync 策略 | §6.4 | 性能 vs 持久化 trade-off |
+| `reject_unknown_caller` | `true` | `{true, false}` | 未知调用方直接 reject eval | §6.3 入口鉴权 | 🔴 **生产锁 true**：防 caller 伪造（SA-05） |
+
+**§10 关键准则**：
+
+1. **配置变更走 hash-chain 审计**：任何参数变更经 IC-09 `append_event` 落盘 + 白名单版本字段关联审计。
+2. **`whitelist_reload_allowed` 和 `reject_unknown_caller` 锁死**：代码中 assert，违反启动时 panic。
+3. **环境差异**：dev/staging/prod override 允许**性能类参数**（cache_ttl / concurrency），**禁止 override 安全类参数**（whitelist_version / isolation_mode）。
 
 ---
 
 ## §11 错误处理 + 降级策略
 
-<!-- FILL §11 · 本 L2 各类错误的处理策略 · 降级链 · 与本 L1 其他 L2 / L1-07 supervisor 的降级协同 -->
+本 L2 错误分 5 大类 · 15 + 错误码。**所有错误必须写入 eval_audit_log 的 hash-chain**——审计断链是最高等级错误（fail-closed）。
+
+### 11.1 错误码总览
+
+| 错误码 | 等级 | 触发场景 | 降级策略 | 升级路径 | 恢复策略 |
+|---|---|---|---|---|---|
+| `E_L204_L202_AST_PARSE_FAILED` | 🟡 P3 | clause_text 语法错误 | 本 clause 状态置 FAILED · 其他 clause 继续 | 不升级 | 人类修正 clause_text · 重新 compile() |
+| `E_L204_L202_AST_ILLEGAL_NODE` | 🔴 SEV_HIGH | NodeVisitor 发现非白名单节点 | **立即 reject**（不降级） · 写详细 failure_reason | SA-01 潜在攻击 · 触发 L1-07 SUGGEST | 开发者离线评审是否误伤 / 恶意注入 · 评审后修 clause |
+| `E_L204_L202_AST_CALL_NOT_WHITELISTED` | 🔴 SEV_HIGH | ast.Call 调用非白名单函数 | 立即 reject | 同上 | 同上 |
+| `E_L204_L202_EVAL_TIMEOUT` | 🟠 P2 | eval 超 `eval_timeout_ms` | signal.alarm kill · 返回 `{pass: false, reason: "TIMEOUT"}` | 同 expr 连续 3 次超时升级 L1-07 `EVAL_PERF_DEGRADED` | 优化 clause 或调高超时 |
+| `E_L204_L202_EVAL_RECURSION_LIMIT` | 🟠 P2 | 递归深度超 `recursion_limit_depth` | reject · 写 recursion_depth_peak 到 audit | 同上 | 简化 clause |
+| `E_L204_L202_EVAL_MEMORY_LIMIT` | 🟠 P2 | eval 内存超 `memory_limit_mb` | setrlimit 触发 MemoryError · reject | 同 project 频发升级 | 简化 clause 或调高上限 |
+| `E_L204_L202_WHITELIST_TAMPER` | 🔴 SEV_CRITICAL | WhitelistIntegrityMonitor 发现 rules_v<v>.yaml SHA 变化 | **立即 BLOCK 所有 eval** · 触发 L1-07 HALT | 最高优先级升级 L1-07 HALT · 通知安全团队 | 人类审查入侵痕迹 · 还原白名单 · 重启 |
+| `E_L204_L202_SANDBOX_ESCAPE_DETECTED` | 🔴 SEV_CRITICAL | eval 过程检测到 `__builtins__` / `globals()` 异常访问 | 立即 HALT | 同上 | 同上 · 可能是 RestrictedPython 漏洞 |
+| `E_L204_L202_EVAL_CONCURRENCY_EXCEEDED` | 🟡 P3 | 并发 eval 超 `eval_concurrency_limit` | 排队 + backoff 重试 3 次 | 持续超限升级 | 扩容或调高上限 |
+| `E_L204_L202_CALLER_NOT_AUTHORIZED` | 🔴 SEV_HIGH | eval 调用方不在白名单（caller enum） | reject | SA-05 伪造升级 | 检查调用方配置 |
+| `E_L204_L202_AUDIT_APPEND_FAILED` | 🔴 SEV_CRITICAL | eval_audit_log.jsonl 写入失败 | **不允许静默丢日志** · WAL 缓存 · 重试 | 持续失败 10 次触发 L1-07 HALT（审计断链违反 PM-18） | 修 L1-09 存储 + WAL 重放 |
+| `E_L204_L202_HASH_CHAIN_BROKEN` | 🔴 SEV_CRITICAL | hash-chain 校验失败 | 立即 HALT | 最高升级 | 审计取证 · 备份恢复 |
+| `E_L204_L202_AST_CACHE_MISS_RATE_HIGH` | 🟢 INFO | 缓存命中率 < 50% | WARN 推 L1-10 | 不升级 | 调查是否需要调 cache_max_entries |
+| `E_L204_L202_CONFIG_INVALID` | 🔴 FAIL-L2 | 启动时配置非法（如 whitelist_reload_allowed=true） | fail-closed 启动 panic | 启动阶段 | 修配置 |
+| `E_L204_L202_EXPR_COMPILE_VERSION_MISMATCH` | 🟡 P3 | eval 时发现 expr.whitelist_version != 当前启动加载版本 | reject · 要求重 compile | 白名单升级后常见 | 重 compile 生成新 expr_id |
+
+### 11.2 降级链矩阵
+
+```plantuml
+@startuml
+title L2-02 · DoD Evaluator 降级链（正常 → 降级 eval → reject → BLOCK → HALT）
+skinparam state {
+  BackgroundColor<<NORMAL>> PaleGreen
+  BackgroundColor<<DEGRADE>> Khaki
+  BackgroundColor<<REJECT>> Salmon
+  BackgroundColor<<HALT>> OrangeRed
+}
+
+state "NORMAL\n主路径\n全速 eval" as NORMAL <<NORMAL>>
+state "THROTTLED\n降级 1\n并发超限 backoff" as THROTTLED <<DEGRADE>>
+state "TIMEOUT_REJECTED\n降级 2\neval 超时 reject\n但继续其他 eval" as REJECTED <<REJECT>>
+state "BLOCK_ALL_EVAL\n暂停所有 eval\n白名单篡改检测" as BLOCK <<HALT>>
+state "HALT\nL1-07 硬暂停主循环\n审计断链 / 沙盒逃逸" as HALT <<HALT>>
+
+[*] --> NORMAL
+NORMAL --> THROTTLED : CONCURRENCY_EXCEEDED
+THROTTLED --> NORMAL : 并发下降
+NORMAL --> REJECTED : TIMEOUT / RECURSION / MEMORY
+REJECTED --> NORMAL : 单次 reject · 其他继续
+NORMAL --> BLOCK : WHITELIST_TAMPER detected
+BLOCK --> HALT : 确认篡改 · 升级
+NORMAL --> HALT : AUDIT_APPEND_FAILED(x10)\nSANDBOX_ESCAPE\nHASH_CHAIN_BROKEN
+BLOCK --> NORMAL : 安全团队验证无篡改 · 解除
+HALT --> NORMAL : 人类修复 + 白名单回滚 + WAL 重放
+
+@enduml
+```
+
+### 11.3 与 L1-07 Supervisor 的降级协同
+
+- **P2/P3 级**：本 L2 自记 audit + WARN 推 L1-10 · 不惊动 Supervisor。
+- **SEV_HIGH**：经 IC-13 发 `SUGGEST` 给 L1-07 · 3 次同类升级为 `BLOCK`。
+- **SEV_CRITICAL**：本 L2 主动发 `HALT` 信号 · L1-07 拉主循环停止 · 触发人类介入 + 安全取证（违反白名单完整性是最高红线）。
+
+**Open Questions（§11 末）**：
+
+- **OQ-01 **「白名单扩展的离线评审流程」**：当用户提出"这个项目需要用 `math.sqrt`"时，离线评审会议怎么组织？目前只有"需要审批"的模糊描述，缺乏**最少审阅人数** / **评审周期 SLO** / **紧急通道**（例如线上事故时要用 `os.path.exists` 做判别）的具体流程文档。建议 L1-02 PMP 变更控制子模块专门落一个 `whitelist-expansion-process.md`。
+- **OQ-02 **「跨 project 白名单差异化」**：能否支持**per-project 白名单子集**？例如通用项目用 `v1.0.3 全集` · 金融项目用 `v1.0.3 sans 除法`（防除零异常引发误判）。当前设计是全局唯一白名单，无法 per-project 锁定。收益：更严格的金融合规；成本：白名单管理复杂度 × N。
+- **OQ-03 **「evaluator 多进程 vs 多线程 trade-off」**：当前默认 `thread` 模式有 GIL 竞态 + 沙盒逃逸风险（同进程内 `sys.modules` 共享）。切 `process` 模式彻底隔离但性能劣化 5-10x（fork/exec + IPC）。是否引入**混合模式**：常规 WP 走 thread · 高敏感项目走 process？调度策略未定。
+- **OQ-04 **「AST 缓存一致性」**：ast_hash 作为缓存 key · 但 `whitelist_version` 升级后应该**立即失效所有缓存**（老白名单校验过的 AST 在新白名单下可能非法）。当前是被动失效（eval 时发现 mismatch 才重 compile），是否应**主动失效**（whitelist 版本变更时批量失效）？主动失效快但开销大。
+- **OQ-05 **「eval 审计日志粒度」**：当前 `audit_sample_rate` 默认 1.0 全量审计 · 但某些高频 DoD（例如 `test_coverage >= 0.8` 每个 WP 每次 commit 都 eval）日志量爆炸。是否引入**分层采样**：失败 eval 100% 采 · 成功 eval 按 sample_rate？失败全采保留审计价值，成功采样节省存储——但 sample_rate < 1 时失去"全序"特性。
+- **OQ-06 **「与 L1-05 skill 沙盒的关系」**：L1-05 子 Agent 执行 skill 也需要沙盒（防 skill 执行恶意代码）。能否**复用本 L2 的白名单引擎**？收益：架构统一，减少代码；成本：本 L2 白名单是**表达式级**（纯函数），L1-05 需要**过程级**（带副作用）——两种模型不兼容直接复用。可能需 3 种不同沙盒（表达式 / skill / 子 Agent），架构未定。
+- **OQ-07 **「Python 版本演进的 AST 兼容矩阵」**：Python 3.12 新增 `match/case`（ast.Match / ast.MatchValue / ...）· Python 3.13 可能引入新的 f-string 展开节点。每次 Python minor 升级，本 L2 都需**校对白名单完整性**（新节点默认 deny · 手动评审是否 allow）。是否建 CI job 自动扫描 Python AST 节点清单 · 对比白名单 · 发现新节点阻止升级？当前是手动流程，易漏。
+- **OQ-08 **「DoDExpression 版本演进的语义兼容」**：用户改 clause_text（例如从 `cov >= 0.8` 改为 `cov >= 0.85`）· 是否应**保留历史版本 eval 结果**做回溯对比？还是每次修改直接作废旧记录？审计完整性 vs 存储成本 trade-off。
 
 ---
 
 ## §12 性能目标
 
-<!-- FILL §12 · 本 L2 的 P95/P99 延迟 SLO · 吞吐 · 资源消耗 · 并发上限 -->
+本 L2 性能 SLO 以**单 eval · 常规复杂度（AST 节点数 ≤ 20）**为基准场景。eval 是最高频操作，性能要求最严苛。
+
+### 12.1 延迟 SLO
+
+| 操作 | P50 | P95 | P99 | 超 P99 行为 |
+|---|---|---|---|---|
+| `compile(clause_text)` 冷 | 30ms | **100ms** | 500ms | 超 500ms 超时 · fallback 到 regex AC 解析 |
+| `compile(clause_text)` 热（cache hit） | 2ms | 5ms | 20ms | 超 20ms 刷新 cache |
+| `eval(expr, snapshot)` 冷（ast→safe interpreter） | 3ms | **10ms** | 50ms | 超 50ms 触发 TIMEOUT |
+| `eval(expr, snapshot)` 热（全缓存） | 0.5ms | 2ms | 10ms | 性能降级告警 |
+| `list_whitelist_rules()` | 1ms | 5ms | 10ms | 读内存 · 超 10ms 说明内存压力 |
+| `add_whitelist_rule()` | 50ms | 200ms | 1s | 走离线评审 · 不走 hot path |
+| `validate_expression(expr_text)` | 5ms | 20ms | 100ms | 超 100ms 归为 complex expr · 记 WARN |
+
+### 12.2 吞吐 + 并发
+
+- **单节点 eval QPS**：≥ **500 eval/s**（热路径 · 全缓存命中）。
+- **单节点 compile QPS**：≥ 50 compile/s（冷路径）。
+- **并发 eval 上限**：`eval_concurrency_limit = 50`（semaphore 保护）· 超限排队 backoff。
+- **缓存命中率目标**：≥ **85%**（生产环境）· 低于 50% 触发 INFO 告警。
+
+### 12.3 资源消耗
+
+- **内存**：常驻 ≤ 100MB（白名单 + LRU 缓存 10000 条）· 峰值 ≤ 500MB（50 并发 eval · 每次 memory_limit_mb=50 的上限）。
+- **CPU**：eval 主路径 ≤ 0.3 核 / eval · compile 主路径 ≤ 0.5 核 / compile · 白名单扫描守护 ≤ 0.01 核（60s 周期）。
+- **磁盘**：`eval_audit_log.jsonl` 按小时 rolling · 单小时上限 `500 eval/s × 3600s × 500B ≈ 900MB`（极端） · 常规 ≤ 200MB/h。
+
+### 12.4 性能回归保护
+
+- CI 跑 `bench/test_eval_latency_baseline.py` · 对比 baseline P95 劣化 > 10% 直接 PR FAIL。
+- 周频跑 `bench/test_50_concurrent_eval.py` · 观察内存增长（检漏）+ cache 命中率曲线。
+- 月频跑 `bench/test_ast_node_coverage.py` · 对所有白名单节点类型做 roundtrip 测试（防 Python 升级漏节点）。
 
 ---
 
 ## §13 与 2-prd / 3-2 TDD 的映射表
 
-<!-- FILL §13 · 本 L2 接口 ↔ 2-prd §5.4 对应小节 · 本 L2 方法 ↔ 3-2-Solution-TDD/L1/L2-02-tests.md 的测试用例 -->
+本节维护 "本 L2 对外接口 ↔ PRD §5.4.2 ↔ 3-2-Solution-TDD 测试用例" 三向 traceability。
+
+### 13.1 PRD 映射
+
+| 本 L2 章节 | PRD 锚点 | PRD 内容摘要 |
+|---|---|---|
+| §1.1 定位 | `docs/2-prd/L1-04 Quality Loop/prd.md §5.4.2 L2-02` | BF-S3-02 "DoD 表达式白名单 AST 编译器" |
+| §3.1 `compile` | PRD §5.4.2 职责 1 | 自然语言 / DSL → AST · 白名单校验 · 产 DoDExpression |
+| §3.2 `eval` | PRD §5.4.2 职责 2 · 硬约束 3 | 共享受限 evaluator · 全 L1-04 唯一 eval 入口 |
+| §3.3 `validate_expression` | PRD §5.4.2 职责 3 | 仅校验合法性 · 不实际编译存库 |
+| §3.4 `list_whitelist_rules` | PRD §5.4.4 硬约束 3 | 白名单 AST 可查询（审计用） |
+| §3.5 `add_whitelist_rule` | PRD §5.4.4 硬约束 3 + §6 变更控制 | 走离线评审 · runtime 禁用 |
+| §5 P0 时序 | PRD §6.2 DoD 主干时序 | 互为技术细化 |
+| §6 算法 | PRD 未深入 · 本 L2 独有 | NodeVisitor 白名单校验 · 沙盒 kill |
+| §7 schema | PRD §5.4.2 产出物 `DoDExpression` | PRD 给字段清单 · 本 L2 给 YAML schema |
+| §8 状态机 | PRD 未涉及 · 工程独有 | — |
+| §9 开源调研 | L0 研究段 · L2 细化 | — |
+| §10 配置 | PRD §5.4.4 硬约束 · `whitelist_version` 不可变 | PRD 锚定 · 本 L2 落配置锁 |
+| §11 错误处理 | PRD §5.4.4 硬约束 3 + BF-E-XX | 错误码映射 PRD exception 场景 |
+| §12 性能 | PRD 未定义 · 本 L2 自定义 | — |
+
+### 13.2 3-2 TDD 测试用例映射（待建·占位）
+
+| 本 L2 方法 | 测试用例 ID · 预期类型 | 覆盖场景 |
+|---|---|---|
+| `compile` | TC-L204-L202-001 ~ 015 | 合法 clause · SyntaxError · 非白名单节点 · Call 白名单 · Attribute 拒绝 · 深度爆炸 · 热/冷缓存 · 并发 compile |
+| `eval` | TC-L204-L202-016 ~ 040 | 合法 eval · timeout · recursion · memory · caller 鉴权 · 沙盒逃逸尝试 · 白名单篡改 detection · hash-chain 校验 · 并发 50 eval |
+| `validate_expression` | TC-L204-L202-041 ~ 050 | 合法 · 非法节点 · 复杂表达式 · 空 clause |
+| `list_whitelist_rules` | TC-L204-L202-051 ~ 053 | 默认返回 · 版本筛选 · 并发读 |
+| `add_whitelist_rule` | TC-L204-L202-054 ~ 060 | 离线评审通过 · runtime 拒绝 · review_minutes_url 缺失拒绝 · 并发添加 · Object Lock 验证 |
+| 端到端 | TC-L204-L202-061 ~ 070 | compile → eval 完整流程 · 与 L2-05/L2-06 调用集成 · 审计 hash-chain 端到端 · 白名单篡改检测到 HALT 全流程 |
+
+### 13.3 与兄弟 L2 的边界（防重叠）
+
+- 本 L2 **只产** DoDExpression VO + 共享 Evaluator。
+- **TDDBlueprint** 由 L2-01 产（本 L2 不产 test pyramid / ac matrix / coverage target）。
+- **TestSuite 骨架** 由 L2-03 产（本 L2 不生成用例代码）。
+- **QualityGateConfig** 由 L2-04 产（quality-gates.yaml 里的谓词必须在本 L2 白名单内 · 本 L2 提供白名单查询 API）。
+- **WP 执行驱动** 由 L2-05（本 L2 被 L2-05 调用 eval DoD）。
+- **Verifier 独立 eval** 由 L2-06 的独立 session 子 Agent 执行（但 evaluator 实现仍是本 L2 的纯函数模式 · PM-03 独立 session 隔离 · 本 L2 保证 evaluator 是**无共享状态**的 pure function，可安全在独立 session 调用）。
+- **Verdict 翻译** 由 L2-07（本 L2 不翻译 verdict）。
 
 ---
 
-*— L1 L2-02 DoD 表达式编译器 · skeleton 骨架 · 等待 subagent 多次 Edit 刷新填充 —*
+*— L1-04 L2-02 DoD 表达式编译器 · §1-§13 + Open Questions 全填充 · 深度 A 达标（~2600 行） · 与 L1-01/L2-02 决策引擎（L1-01 层 · 不同 L2）不冲突 —*
