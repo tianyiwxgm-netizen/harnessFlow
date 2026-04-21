@@ -1999,52 +1999,145 @@ def bootstrap_recovery(self):
 
 ## §9 Mock 策略
 
-### §9.1 Mock 模式激活
+### §9.1 三级 Mock 模式设计
+
+Tick 调度器承担"时间驱动"与"事件发射"双职责，测试替身需根据测试目标分层：
+
+| 模式 | 适用测试 | Mock 深度 | 时钟模型 | 外部 IC |
+|---|---|---|---|---|
+| **unit（单元）** | pytest 单元测试，纯逻辑断言 | 全替身，零 IO | VirtualClock（`advance(ms)` 手动推进） | 全 stub |
+| **contract（契约）** | Consumer-Driven Contract Test（CDC）| schema 保留，响应从录制回放 | VirtualClock，但时间戳从录制恢复 | Pact mock，校验 payload |
+| **chaos（混沌）** | 故障注入 / 混沌工程 | 主流程真实，边界注入故障 | 真实时钟 | 真实 IC + 故障注入层 |
+
+**模式激活环境变量**：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `L2_01_MOCK=true` | false | 激活 Tick 调度器 Mock 模式 |
-| `L2_01_MOCK_TICK_INTERVAL_MS` | 100 | Mock 模式下 tick 间隔（毫秒）|
-| `L2_01_MOCK_WATCHDOG_DISABLED` | false | 禁用看门狗超时（避免测试干扰）|
+| `L2_01_MOCK_MODE` | `off` | `unit` / `contract` / `chaos` / `off` 四档 |
+| `L2_01_VIRTUAL_CLOCK` | false | 启用 VirtualClock，不读 `time.monotonic()` |
+| `L2_01_MOCK_TICK_INTERVAL_MS` | 100 | unit 模式下 tick 基准间隔 |
+| `L2_01_MOCK_RECORD_PATH` | — | contract 模式：录制/回放 YAML 路径 |
+| `L2_01_MOCK_WATCHDOG_DISABLED` | false | chaos 模式：禁用看门狗测竞态 |
+| `L2_01_MOCK_SEED` | 42 | chaos 模式随机种子，保证可复现 |
+| `L2_01_MOCK_CHAOS_TICK_DROP_RATE` | 0.0 | chaos 模式：随机丢弃 tick 比例 `[0.0, 1.0]` |
+| `L2_01_MOCK_CHAOS_WATCHDOG_TRIGGER_RATE` | 0.0 | chaos 模式：强制触发看门狗比例 |
 
-### §9.2 MockTickScheduler 接口
+### §9.2 VirtualClock（虚拟时钟）
+
+消除 wall-clock 依赖，单元测试秒级 → 毫秒级提速：
+
+```python
+class VirtualClock:
+    """
+    Tick 调度器单元测试虚拟时钟。用 advance(ms) 手动推进，
+    消除 sleep / wall-clock 依赖，测试执行 < 1ms。
+    """
+    def __init__(self, start_epoch_ms: int = 0):
+        self._now_ms: int = start_epoch_ms
+        self._scheduled: list[tuple[int, callable]] = []  # min-heap by at_ms
+
+    def now_ms(self) -> int:
+        return self._now_ms
+
+    def advance(self, delta_ms: int) -> list[callable]:
+        """推进时间并返回此窗口内应触发的回调（按调度顺序）"""
+        self._now_ms += delta_ms
+        triggered, remaining = [], []
+        for at_ms, cb in sorted(self._scheduled):
+            (triggered if at_ms <= self._now_ms else remaining).append((at_ms, cb))
+        self._scheduled = remaining
+        return [cb for _, cb in triggered]
+
+    def schedule_at(self, at_ms: int, callback: callable):
+        self._scheduled.append((at_ms, callback))
+```
+
+### §9.3 MockTickScheduler 多模式接口
 
 ```python
 class MockTickScheduler:
     """
-    Tick 调度器测试替身。注入 tick 序列，不依赖系统时钟。
+    Tick 调度器测试替身。支持三种注入模式：
+      1. tick_sequence：预定义 tick 序列（unit 默认）
+      2. record：录制真实 tick 序列到 YAML（contract）
+      3. replay：从 YAML 回放录制的序列（contract / 回归）
+      4. chaos：按 seed + rate 随机注入故障
     """
-    def __init__(self, tick_sequence: list[dict]):
-        self._queue: list[dict] = tick_sequence.copy()
+    def __init__(
+        self,
+        mode: str = "unit",
+        tick_sequence: list[dict] | None = None,
+        record_path: str | None = None,
+        virtual_clock: VirtualClock | None = None,
+        chaos_config: dict | None = None,
+    ):
+        self._mode = mode
+        self._queue: list[dict] = list(tick_sequence or [])
         self._fired: list[dict] = []
+        self._clock = virtual_clock or VirtualClock()
+        self._record_sink: list[dict] = []
+        self._record_path = record_path
+        self._chaos = chaos_config or {}
+        self._rng = random.Random(self._chaos.get("seed", 42))
+        if mode == "replay" and record_path:
+            self._queue = self._load_record(record_path)
 
     def next_tick(self) -> dict | None:
         if not self._queue:
             return None
         tick = self._queue.pop(0)
+        tick["fired_at_ms"] = self._clock.now_ms()
+        if self._mode == "chaos" and self._rng.random() < self._chaos.get("tick_drop_rate", 0.0):
+            return None  # 注入丢弃
         self._fired.append(tick)
+        if self._mode == "record":
+            self._record_sink.append(tick)
         return tick
+
+    def inject_halt(self, reason: str = "test_halt"):
+        self._queue.insert(0, {"type": "HALT", "reason": reason, "project_id": "mock-pid"})
+
+    def inject_watchdog_timeout(self):
+        """chaos 模式：模拟看门狗超时"""
+        self._queue.insert(0, {"type": "WATCHDOG_TIMEOUT", "source": "chaos_injection"})
+
+    def flush_record(self):
+        if self._record_path:
+            with open(self._record_path, "w") as f:
+                yaml.safe_dump({"ticks": self._record_sink}, f)
 
     def fired_ticks(self) -> list[dict]:
         return list(self._fired)
-
-    def inject_halt(self):
-        self._queue.insert(0, {"type": "HALT", "project_id": "mock-pid"})
 ```
 
-### §9.3 IC Stub 策略
+### §9.4 IC Stub 契约测试矩阵
 
-| IC 方法 | Stub 行为 |
-|---|---|
-| `IC-L2-01.trigger_tick` | 立即返回预设 `tick_id`，不等待调度器 |
-| `IC-L2-01.cancel_tick` | 返回 `{status: "CANCELLED"}` |
-| `IC-L2-01.query_tick_status` | 返回预设状态（默认 `DONE`）|
-| Watchdog 超时 | 永不触发（`L2_01_MOCK_WATCHDOG_DISABLED=true`）|
+Consumer-Driven Contract Test（CDC）防止跨 L1 接口漂移：
 
-### §9.4 Fixture 示例
+| IC 方法 | unit Stub | contract Stub（Pact CDC）| chaos 注入 |
+|---|---|---|---|
+| `IC-L2-01.trigger_tick` | 即时返回预设 `tick_id` | 校验入参 schema，返回录制响应 | 10% 概率返回 `E_TICK_DISPATCH_FAIL` |
+| `IC-L2-01.cancel_tick` | 返回 `{status: "CANCELLED"}` | 校验 tick_id 存在性 | 5% 概率超时 120s |
+| `IC-L2-01.query_tick_status` | 返回 `DONE` | 校验 tick_id UUID 格式 | 随机返回 `PENDING/RUNNING/DONE` |
+| `IC-01` 发布 tick_fired | 静默 | 记录 payload 并校验 schema | 10% 概率事件发布失败 |
+| Watchdog 超时 | 永不触发（disabled）| 按录制时间回放 | 按 rate 主动注入 |
+
+**契约校验点（CDC）**：
+- Consumer 发送 `IC-01.publish(tick_fired)` 的 payload schema 必须匹配 Provider（Event Bus）预期
+- Consumer 预期 `IC-13.query_supervisor_commands` 响应 schema 匹配 Provider 录制
+- 任一不匹配 → CI 阻断，防止部署时接口漂移
+
+### §9.5 Fixture 四象限策略
+
+| 象限 | Fixture 文件 | 用途 |
+|---|---|---|
+| **Normal（正常）** | `fixtures/l2_01/normal_tick_seq.yaml` | 3 priority × 2 source 的笛卡尔组合 |
+| **Boundary（边界）** | `fixtures/l2_01/boundary_interval.yaml` | tick_interval 50ms（下界）/ 3600000ms（上界）|
+| **Failure（失败）** | `fixtures/l2_01/watchdog_timeout.yaml` | 看门狗触发 + tick 延迟 + dispatcher 崩溃 |
+| **Adversarial（对抗）** | `fixtures/l2_01/malicious_pid.yaml` | `../../etc/passwd` / `$(rm -rf)` / overlong id |
 
 ```yaml
-# tests/fixtures/l2_01_tick_sequence.yaml
+# fixtures/l2_01/normal_tick_seq.yaml
 ticks:
   - project_id: "proj-test-001"
     tick_id: "tick-001"
@@ -2060,44 +2153,185 @@ ticks:
     reason: "test_teardown"
 ```
 
-### §9.5 使用示例
+### §9.6 使用示例（三层覆盖）
 
 ```python
-# tests/test_tick_scheduler.py
-from tests.mocks import MockTickScheduler
+# tests/unit/test_tick_scheduler_unit.py
+from tests.mocks import MockTickScheduler, VirtualClock
 from tests.fixtures import load_fixture
 
 def test_tick_priority_ordering():
-    seq = load_fixture("l2_01_tick_sequence.yaml")["ticks"]
-    mock = MockTickScheduler(tick_sequence=seq)
+    """unit 模式：虚拟时钟 + 预设序列"""
+    clock = VirtualClock()
+    seq = load_fixture("l2_01/normal_tick_seq.yaml")["ticks"]
+    mock = MockTickScheduler(mode="unit", tick_sequence=seq, virtual_clock=clock)
 
     first = mock.next_tick()
     assert first["priority"] == 2  # 优先级高先出
+    assert first["fired_at_ms"] == 0  # 虚拟时钟起点
 
+    clock.advance(100)
     second = mock.next_tick()
-    assert second["priority"] == 1
+    assert second["fired_at_ms"] == 100
+
+# tests/contract/test_tick_scheduler_cdc.py
+def test_ic_01_publish_tick_fired_schema():
+    """contract 模式：CDC 验证 IC-01 payload schema"""
+    mock = MockTickScheduler(mode="replay", record_path="fixtures/cdc/tick_fired.yaml")
+    tick = mock.next_tick()
+    from pact_mock.events import assert_ic_01_schema
+    assert_ic_01_schema(tick)  # Pact 自动校验
+
+# tests/chaos/test_tick_scheduler_chaos.py
+def test_watchdog_recovery_under_injection():
+    """chaos 模式：注入看门狗超时，验证恢复"""
+    mock = MockTickScheduler(mode="chaos",
+                             chaos_config={"seed": 42, "tick_drop_rate": 0.1})
+    mock.inject_watchdog_timeout()
+    mock.inject_halt(reason="cascading_failure_test")
+    # 断言系统 3s 内进入 HALTED
 ```
 
 ---
 
-## §11 安全审计点
+## §11 安全审计点（STRIDE 对齐 + 防御纵深）
 
-| # | 风险点 | 威胁类型 | 缓解措施 |
-|---|---|---|---|
-| SA-01 | tick_interval 设为 0 或负值 | DoS（无限 tick 风暴） | 下界校验：`tick_interval_ms >= 50`，违反 → `E_TICK_INTERVAL_UNDERFLOW` |
-| SA-02 | project_id 注入（含路径遍历字符 `../`） | 路径遍历 / 数据污染 | 正则白名单：`^[a-zA-Z0-9_-]{1,64}$`，违反 → `E_TICK_PROJ_INVALID` |
-| SA-03 | hard_halt 命令来源未验证 | 权限绕过（未授权强制停止） | hard_halt 仅接受来自 L2-03 或 Supervisor IC-15 的调用，其他来源 → `E_TICK_HALT_UNAUTHORIZED` |
-| SA-04 | watchdog 超时阈值被外部修改 | 配置篡改（绕过看门狗保护） | watchdog_timeout_ms 仅在启动时从配置读取，运行时不接受动态修改 |
-| SA-05 | tick 优先级字段整数溢出 | 调度混乱 | priority 范围限制 `[0, 10]`，超出 → `E_TICK_PRIORITY_INVALID` |
+### §11.1 威胁建模表（STRIDE 六大类覆盖）
 
-**安全审计频率：** 每次 major release 前必须重审 SA-03（权限边界）和 SA-04（看门狗配置固化）。
+STRIDE 为 Microsoft 威胁建模标准：**S**poofing / **T**ampering / **R**epudiation / **I**nfo Disclosure / **D**oS / **E**levation of Privilege。Tick 调度器的威胁面主要在 DoS、Tampering、Elevation：
+
+| # | STRIDE | CIA | 风险点 | Prevent（预防）| Detect（检测）| Respond（响应）| Test Case |
+|---|---|---|---|---|---|---|---|
+| SA-01 | D | Availability | `tick_interval_ms = 0` / 负值 → 无限 tick 风暴 | 下界校验 `>= 50ms`（config loader 强校验）| Prometheus `tick_rate > 20/s/proj` 告警 | 拒启动，`E_TICK_INTERVAL_UNDERFLOW` | `test_reject_zero_interval` / `test_reject_negative_interval` |
+| SA-02 | S+T | Integrity | `project_id` 含 `../` 路径遍历 | 正则白名单 `^[a-zA-Z0-9_-]{1,64}$`（入口+DB 约束双保险）| Log 扫描 regex 告警 | 拒绝 tick，`E_TICK_PROJ_INVALID`，告警给 Supervisor | `test_reject_traversal_payload` / `test_reject_injection_symbols` |
+| SA-03 | E | Integrity | `hard_halt` 来源伪造（非 L2-03 / Supervisor）| 调用方必带 `caller_role`（`L2-03` / `SUP-IC15` 二选一）| 审计 hard_halt 调用，`caller_role` 异常告警 | `E_TICK_HALT_UNAUTHORIZED`，拒执行 | `test_hard_halt_from_unknown_caller` |
+| SA-04 | T | Integrity | `watchdog_timeout_ms` 运行时被外部修改 | 配置启动时只读加载，setter 抛异常 | 配置哈希每分钟校验 | 重启进程 + 告警 | `test_watchdog_config_immutable` |
+| SA-05 | D | Availability | priority 整数溢出（`priority = 2^63`）| 类型 `int8` + 范围 `[0, 10]`，越界截断 | schema 校验阶段拦截 | `E_TICK_PRIORITY_INVALID` | `test_reject_overflow_priority` |
+| SA-06 | R | Auditability | Tick 发射日志可被删除 | Append-only + WORM 存储（S3 Object Lock）| SHA-256 hash-chain 每小时校验 | 告警 + 从备份恢复 | `test_tick_log_hash_chain_unbroken` |
+| SA-07 | I | Confidentiality | Tick payload 含 API key / token 被日志泄露 | Schema 白名单 + 字段脱敏（`***`）+ IC-09 payload 过滤 | DLP 日志扫描 | 立即脱敏 + 回溯影响 | `test_payload_secret_redaction` |
+| SA-08 | D | Availability | 高频 tick → dispatcher 队列饱和 | 每 `project_id` 最大并发 tick = 10，超出 backpressure | Prometheus `tick_queue_depth` 告警 | `E_TICK_QUEUE_SATURATED`；BLOCK 优先通道保留 | `test_backpressure_under_flood` |
+| SA-09 | E | Integrity | chaos API 被生产环境误调用 | chaos API 仅 `env=test` 注册 route，prod 禁用 | 部署时自动检查 route 表 | 拒绝调用 + 告警 | `test_chaos_api_not_registered_in_prod` |
+| SA-10 | T | Integrity | VirtualClock 生产环境被启用导致时间伪造 | 启动时检测 `env=prod` → 禁止 `L2_01_VIRTUAL_CLOCK=true` | 启动日志告警，配置不一致即 fail-fast | 进程不启动 | `test_virtual_clock_forbidden_in_prod` |
+
+### §11.2 防御纵深（Defense in Depth）分层
+
+| 层 | 防御措施 | 关联 SA |
+|---|---|---|
+| **L1 输入校验** | JSON Schema + 正则白名单 + 字段长度限制 | SA-02, SA-05, SA-07 |
+| **L2 业务约束** | 下界校验 / 优先级范围 / 并发限流 | SA-01, SA-08 |
+| **L3 授权校验** | `caller_role` + Supervisor 双重确认 | SA-03 |
+| **L4 配置固化** | 启动时只读加载 + 哈希周期校验 | SA-04, SA-10 |
+| **L5 审计不可篡改** | Append-only + hash-chain + WORM | SA-06 |
+| **L6 环境隔离** | chaos API 仅 test env；VirtualClock 仅 test env | SA-09, SA-10 |
+
+### §11.3 审计频率与责任人
+
+- **SA-03, SA-09, SA-10**：每次 major release 前必重审（Supervisor 角色）
+- **SA-04**：每月 dump 配置哈希对比基线（SRE）
+- **SA-06, SA-07**：每周 CI 跑 hash-chain replay（CI 自动）
+- **SA-08**：Prometheus 持续监控，P99 `tick_queue_depth` 告警（Oncall）
 
 ---
 
 ## Open Questions
 
-| # | 问题 | 影响范围 | 期望决策时间 |
-|---|---|---|---|
-| OQ-01 | Watchdog 是否应同时监控 L2-02 决策引擎的响应延迟，而不仅是 tick 发射间隔？若是，L2-02 P99 超限是否直接触发 watchdog_reset？ | L2-01/L2-02 边界 | M3 前 |
-| OQ-02 | tick_interval_ms 是否应支持按 project 动态调整（紧急项目缩短间隔）？还是全局统一？动态调整会引入调度不公平风险。 | 调度公平性 | M4 前 |
-| OQ-03 | 当系统恢复时（PAUSED → EXECUTING），积压的 tick 是否批量补发（可能导致 tick 风暴），还是仅发当前时刻的单个 tick？ | 恢复语义 | M2 验证 |
+### OQ-01 · Watchdog 监控边界
+
+**问题**：Watchdog 当前仅监控 tick 发射间隔（`expected_fire_at_ms vs actual_fire_at_ms`）。是否应同时监控 L2-02 决策引擎的响应延迟？若 L2-02 P99 > 500ms 是否直接触发 `watchdog_reset`？
+
+**方案选项**：
+- **A. 严格边界**：Watchdog 只管 tick 发射，L2-02 延迟由 L2-02 自己的 SLA 机制处理（decoupled）
+- **B. 端到端监控**：Watchdog 涵盖 tick→decision 端到端，超时 reset（但 L2-02 问题可能被误归因为 L2-01 故障）
+- **C. 分级告警**：Watchdog 只管发射；end-to-end latency 另起 metric，由 Supervisor 决定是否 reset
+
+**决策维度**：耦合度（A 低 / B 高 / C 中）、误报率（B 最高）、诊断可观测性（C 最佳）
+
+**关联 IC**：IC-01（Event Bus 延迟可见性）、IC-13（Supervisor 监控通道）、IC-L2-02
+
+**期望决策时间**：M3 前（影响 L2-02 tech-design 的 SLA 定义）
+
+---
+
+### OQ-02 · Per-Project Tick 调度策略
+
+**问题**：`tick_interval_ms` 当前全局统一。某些"紧急项目"（生产事故响应）希望更短间隔（e.g. 200ms）。是否支持按 project 动态调整？
+
+**方案选项**：
+- **A. 全局固定**：所有 project 共享一个 interval（简单、公平）
+- **B. Project 级配置**：每 project 独立 interval，启动时从 project config 读（中等复杂，需配额防滥用）
+- **C. 动态优先级**：interval 全局固定，但调度顺序按 `project.urgency_score` 排序（最灵活）
+
+**决策维度**：调度公平性（A 最强）、业务响应性（B/C 更强）、实现复杂度（A<B<C）
+
+**关联 IC**：IC-14（Project 配置加载）、IC-13（Supervisor 干预）
+
+**期望决策时间**：M4 前（影响 L1-01 architecture 的配额模型）
+
+---
+
+### OQ-03 · 恢复时的 Tick 补发策略
+
+**问题**：系统从 PAUSED → EXECUTING 恢复时，积压的 tick（数分钟累积）应批量补发还是仅发当前时刻的单个 tick？
+
+**方案选项**：
+- **A. 批量补发**：所有积压瞬时入队（可能 tick 风暴压垮 L2-02）
+- **B. 丢弃积压**：只发当前时刻 tick，历史积压永久丢失（可能错过关键状态）
+- **C. 限速补发**：按 `tick_interval_ms × 2` 加倍速率补发（折中但恢复时间变长）
+- **D. 状态回归**：根据当前状态机查询"应有多少 tick"，只补发必要的（最精确但复杂）
+
+**决策维度**：恢复正确性（D 最强）、资源稳定性（B/C 更稳）、实现复杂度（A<B<C<D）
+
+**关联 IC**：IC-01（历史事件查询）、IC-L2-03（状态机 snapshot）
+
+**期望决策时间**：M2 验证（直接影响端到端正确性测试）
+
+---
+
+### OQ-04 · Tick 序列化与崩溃恢复
+
+**问题**：当 L2-01 进程崩溃，未完成的 tick 状态（已发射但未确认）如何恢复？当前设计依赖 L1-09 崩溃安全层，但 L2-01 自己是否需要本地 WAL？
+
+**方案选项**：
+- **A. 完全信任 L1-09**：L2-01 无状态，崩溃后从 IC-09 事件流重建（耦合高，恢复慢）
+- **B. 本地 WAL**：L2-01 写本地 journal，重启时先 replay 本地（快速恢复但需解决双写一致性）
+- **C. 混合模式**：L2-01 只在本地保存 `pending_ticks`，DONE 后立即删除（折中）
+
+**决策维度**：恢复时间（B<C<A）、一致性风险（B 最高）、运维复杂度（A<C<B）
+
+**关联 IC**：IC-09（事件流）、L1-09 崩溃安全层
+
+**期望决策时间**：M3 前（直接影响 L1-09 WAL 设计）
+
+---
+
+### OQ-05 · Virtual Clock 生产启用边界
+
+**问题**：生产环境是否允许切换到 Virtual Clock 模式（如做"时间回溯"debug）？如允许，边界条件如何？
+
+**方案选项**：
+- **A. 仅测试可用**：生产严禁启用（配置加载时检测 `env != prod` 才允许）— 最安全
+- **B. 受限生产调试**：可临时切换，但仅限 Supervisor 授权，且写入审计记录
+- **C. 生产实时**：支持"慢放 / 快放"，但仅对单个 project 生效（隔离其他）
+
+**决策维度**：Debug 能力（C>B>A）、时间伪造风险（C 最高）、审计完整性（B 最好）
+
+**关联 IC**：IC-13（Supervisor 授权）、IC-L2-05（审计记录）
+
+**期望决策时间**：M4 前（不紧急但需预留 API hook）
+
+---
+
+### OQ-06 · Tick 合并 vs 去重
+
+**问题**：当同一 `project_id` 在极短窗口（< 10ms）内收到多个 tick 请求，应合并（取最高优先级）还是去重（只保留第一个）？
+
+**方案选项**：
+- **A. 合并**：按 `max(priority)` 合并，保留最强触发（可能掩盖低优先级问题）
+- **B. 去重**：只保留第一个，后续直接丢弃（简单、可预测）
+- **C. 队列化**：全部保留，按 priority 排序执行（精确但队列压力大）
+
+**决策维度**：语义精确性（C 最强）、资源开销（A<B<C）、下游影响（L2-02 重复决策）
+
+**关联 IC**：IC-L2-02（决策引擎幂等性）、IC-09（审计去重）
+
+**期望决策时间**：M3 前（影响 L2-02 幂等设计）

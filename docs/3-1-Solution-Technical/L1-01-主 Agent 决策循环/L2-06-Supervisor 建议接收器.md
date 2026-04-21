@@ -2101,94 +2101,442 @@ l2_06.evict.count (queue_type=warn|sugg)
 
 ## §9 Mock 策略
 
-### §9.1 Mock 模式激活
+### §9.1 三级 Mock 模式设计
+
+Supervisor 接收器是"主循环 ↔ L1-07 监督层"的信任边界。测试替身需覆盖：
+
+| 模式 | 适用测试 | Mock 深度 | 信号/时钟行为 |
+|---|---|---|---|
+| **unit（单元）** | pytest 单元，确定性信号序列 | 全替身，不连真实 L1-07 | 信号队列预加载；threading.Event 同步 |
+| **contract（契约）** | CDC + IC-13/14/15 schema 校验 | 真实签名校验 + schema 校验 | 从 fixture 加载，保留验证 |
+| **chaos（混沌）** | BLOCK 抢占 / 队列溢出 / Supervisor 崩溃 | 主流程真实 + 注入故障 | 真实 threading.Event + 故障注入 |
+
+**模式激活环境变量**：
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `L2_06_MOCK=true` | false | 激活 Supervisor 接收器 Mock 模式 |
+| `L2_06_MOCK_MODE` | `off` | `unit` / `contract` / `chaos` / `off` |
 | `L2_06_MOCK_SIGNAL_QUEUE` | — | 预加载信号队列 fixture 路径 |
-| `L2_06_MOCK_BLOCK_DURATION_MS` | 50 | Mock BLOCK 命令持续时长 |
+| `L2_06_MOCK_BLOCK_DURATION_MS` | 50 | unit 模式：BLOCK 命令持续时长 |
+| `L2_06_MOCK_WHITELIST` | `sup-001,sup-002` | contract 模式：Supervisor 白名单 |
+| `L2_06_MOCK_BLOCK_SLO_MS` | 100 | BLOCK SLO（D-03 硬指标）|
+| `L2_06_MOCK_QUEUE_OVERFLOW_RATE` | 0.0 | chaos：队列溢出比例 |
+| `L2_06_MOCK_SUPERVISOR_DOWN_RATE` | 0.0 | chaos：L1-07 假死比例 |
+| `L2_06_MOCK_REPLAY_RATE` | 0.0 | chaos：重复 signal_id 比例（测 dedup）|
+| `L2_06_MOCK_SEED` | 42 | chaos 随机 seed（可复现）|
 
 ### §9.2 MockSupervisorReceiver 接口
 
 ```python
 class MockSupervisorReceiver:
     """
-    Supervisor 信号接收器测试替身。预加载信号队列，不连接真实 L1-07。
+    Supervisor 信号接收器测试替身。三种模式：
+      1. signal_queue（unit）：预加载信号序列
+      2. whitelist + fixture（contract）：签名 + schema 校验
+      3. chaos_config（chaos）：注入队列溢出 / Supervisor 假死 / replay
     """
-    def __init__(self, signal_queue: list[dict] | None = None):
-        self._queue: list[dict] = signal_queue or []
+    def __init__(
+        self,
+        mode: str = "unit",
+        signal_queue: list[dict] | None = None,
+        whitelist: set[str] | None = None,
+        chaos_config: dict | None = None,
+    ):
+        self._mode = mode
+        self._queue: list[dict] = list(signal_queue or [])
         self._processed: list[dict] = []
-        self._block_event = threading.Event()
+        self._seen_signal_ids: set[str] = set()  # dedup（SA-02）
+        # 双通道：threading（同步调用方）+ asyncio（异步 coroutine 调用方）
+        self._block_event_thread = threading.Event()
+        self._block_event_async = asyncio.Event()
+        self._whitelist = whitelist or {"sup-001", "sup-002"}
+        self._chaos = chaos_config or {}
+        self._rng = random.Random(self._chaos.get("seed", 42))
+        self._block_start_ms: int | None = None
+        self._queue_max_depth = 100
 
     def receive_next_signal(self) -> dict | None:
+        # chaos 模式：注入 Supervisor 假死
+        if self._mode == "chaos" and self._rng.random() < self._chaos.get("supervisor_down_rate", 0.0):
+            raise SupervisorUnavailableError("L1-07 assumed down (chaos injection)")
+
+        # chaos 模式：队列溢出检查
+        if len(self._queue) >= self._queue_max_depth:
+            # 仅 BLOCK 走优先通道
+            next_signal = next((s for s in self._queue if s.get("command") == "BLOCK"), None)
+            if not next_signal:
+                raise QueueOverflowError("E_SUP_QUEUE_FULL")
+
         if not self._queue:
             return None
         signal = self._queue.pop(0)
+
+        # contract 模式：白名单 + schema 校验
+        if self._mode == "contract":
+            self._validate_signal(signal)
+
+        # SA-02 dedup：signal_id 去重
+        sig_id = signal.get("signal_id")
+        if sig_id and sig_id in self._seen_signal_ids:
+            raise DuplicateSignalError(f"E_SUP_SIGNAL_DUPLICATE {sig_id}")
+        if sig_id:
+            self._seen_signal_ids.add(sig_id)
+
+        # chaos 模式：注入 replay（重复 signal_id）
+        if self._mode == "chaos" and self._rng.random() < self._chaos.get("replay_rate", 0.0):
+            self._queue.insert(0, dict(signal))  # 重放同一信号
+
         self._processed.append(signal)
+
+        # BLOCK 抢占（D-03 SLO: ≤100ms）
         if signal.get("command") == "BLOCK":
-            self._block_event.set()
+            self._block_event_thread.set()
+            self._block_event_async.set()
+            self._block_start_ms = int(time.monotonic() * 1000)
+            duration = min(signal.get("duration_ms", 50), 600_000)  # SA-04 上限
+            threading.Timer(duration / 1000, self.clear_block).start()
+        elif signal.get("command") == "RESUME":
+            self.clear_block()
+
         return signal
 
     def inject_signal(self, signal: dict):
+        # 队列深度校验（SA-05）
+        if len(self._queue) >= self._queue_max_depth and signal.get("command") != "BLOCK":
+            raise QueueOverflowError("E_SUP_QUEUE_FULL (non-BLOCK rejected)")
         self._queue.append(signal)
 
     def is_blocking(self) -> bool:
-        return self._block_event.is_set()
+        return self._block_event_thread.is_set()
+
+    async def wait_for_block_async(self, timeout_ms: int = 100) -> bool:
+        """D-03: BLOCK SLO ≤100ms 验证"""
+        try:
+            await asyncio.wait_for(self._block_event_async.wait(), timeout=timeout_ms / 1000)
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     def clear_block(self):
-        self._block_event.clear()
+        self._block_event_thread.clear()
+        self._block_event_async.clear()
+        self._block_start_ms = None
+
+    def block_latency_ms(self) -> int | None:
+        """返回 BLOCK 持续时长（用于 SLO 验证）"""
+        if self._block_start_ms is None:
+            return None
+        return int(time.monotonic() * 1000) - self._block_start_ms
 
     def processed_signals(self) -> list[dict]:
         return list(self._processed)
+
+    def _validate_signal(self, signal: dict):
+        """白名单 + schema 校验（SA-01, SA-03）"""
+        sup_id = signal.get("supervisor_id")
+        if sup_id not in self._whitelist:
+            raise UnauthorizedSourceError(f"E_SUP_UNAUTHORIZED_SOURCE {sup_id}")
+        # JSON Schema 校验（禁止未知字段）
+        ALLOWED_FIELDS = {"command", "supervisor_id", "signal_id", "reason",
+                          "duration_ms", "suggestion", "level", "timestamp_ms"}
+        unknown = set(signal.keys()) - ALLOWED_FIELDS
+        if unknown:
+            raise SchemaViolationError(f"E_SUP_PAYLOAD_INVALID (unknown fields: {unknown})")
 ```
 
-### §9.3 IC Stub 策略
+### §9.3 IC Stub 契约测试矩阵
 
-| IC 方法 | Stub 行为 |
-|---|---|
-| `IC-13.receive_block_command` | 从 `_queue` 消费 BLOCK 信号 |
-| `IC-14.receive_suggestion` | 从 `_queue` 消费 SUGGEST 信号 |
-| `IC-15.receive_abort_command` | 从 `_queue` 消费 ABORT 信号 |
-| `IC-L2-08.broadcast_block` | 记录到 `_processed`，不发布到 L2-01 |
+| IC 方法 | unit Stub | contract Stub（CDC）| chaos 注入 |
+|---|---|---|---|
+| `IC-13.receive_block_command` | 从 `_queue` 消费 BLOCK，threading.Event.set | 校验 supervisor_id 白名单 + schema + signal_id 唯一 | 20% 延迟超 100ms SLO（测告警）|
+| `IC-14.receive_suggestion` | 从 `_queue` 消费 SUGGEST，追加 AdviceQueue | 校验 payload schema | 10% 丢失（测降级）|
+| `IC-15.receive_abort_command` | 从 `_queue` 消费 ABORT | 校验 dual-token（IC-14 + IC-15 同时）| 注入 token 不匹配 |
+| `IC-L2-08.broadcast_block` | 记录到 `_processed`，不发布 | 校验发布 schema + project_id 归属 | 10% 广播失败 |
+| `IC-09` audit signal | 静默 | 记录 + 校验 hash-chain | 注入乱序 |
+| Supervisor (L1-07) 可用性 | 永久可用 | 按 fixture timeline 可用 | 按 rate 注入假死 |
 
-### §9.4 Fixture 示例
+### §9.4 Fixture 四象限
+
+| 象限 | Fixture 文件 | 用途 |
+|---|---|---|
+| **Normal** | `fixtures/l2_06/normal_signals.yaml` | SUGGEST + BLOCK + RESUME 标准序列 |
+| **Boundary** | `fixtures/l2_06/block_slo_boundary.yaml` | BLOCK SLO 边界（99ms / 100ms / 101ms）|
+| **Failure** | `fixtures/l2_06/supervisor_crash.yaml` | L1-07 假死 + 队列积压恢复 |
+| **Adversarial** | `fixtures/l2_06/forged_signals.yaml` | 伪造 supervisor_id / replay / 未知字段注入 |
 
 ```yaml
-# tests/fixtures/l2_06_signal_queue.yaml
+# fixtures/l2_06/normal_signals.yaml
 project_id: "proj-test-005"
 signals:
   - command: "SUGGEST"
+    signal_id: "sig-uuid-001"
     supervisor_id: "sup-001"
     suggestion: {action: "replan", reason: "resource_shortage"}
+    timestamp_ms: 1714000000000
   - command: "BLOCK"
+    signal_id: "sig-uuid-002"
     supervisor_id: "sup-001"
     reason: "human_review_required"
     duration_ms: 5000
+    timestamp_ms: 1714000001000
   - command: "RESUME"
+    signal_id: "sig-uuid-003"
     supervisor_id: "sup-001"
+    timestamp_ms: 1714000006000
+```
+
+```yaml
+# fixtures/l2_06/forged_signals.yaml
+# 测试 SA-01/SA-02/SA-03
+project_id: "proj-test-005"
+signals:
+  - command: "BLOCK"
+    signal_id: "sig-forged-001"
+    supervisor_id: "evil-sup-999"   # 不在白名单
+    reason: "forged"
+    expected_error: "E_SUP_UNAUTHORIZED_SOURCE"
+  - command: "BLOCK"
+    signal_id: "sig-uuid-002"        # 重放之前的 signal_id
+    supervisor_id: "sup-001"
+    expected_error: "E_SUP_SIGNAL_DUPLICATE"
+  - command: "BLOCK"
+    signal_id: "sig-uuid-004"
+    supervisor_id: "sup-001"
+    malicious_field: "__proto__"     # 未知字段
+    expected_error: "E_SUP_PAYLOAD_INVALID"
+```
+
+### §9.5 使用示例（三层覆盖）
+
+```python
+# tests/unit/test_supervisor_receiver_unit.py
+def test_block_suggest_resume_sequence():
+    """unit 模式：标准信号序列"""
+    fixture = load_fixture("l2_06/normal_signals.yaml")
+    mock = MockSupervisorReceiver(mode="unit", signal_queue=fixture["signals"])
+
+    sig1 = mock.receive_next_signal()
+    assert sig1["command"] == "SUGGEST"
+    assert not mock.is_blocking()
+
+    sig2 = mock.receive_next_signal()
+    assert sig2["command"] == "BLOCK"
+    assert mock.is_blocking()
+
+    sig3 = mock.receive_next_signal()
+    assert sig3["command"] == "RESUME"
+    # RESUME 清除 block
+    mock.clear_block()
+    assert not mock.is_blocking()
+
+# tests/contract/test_whitelist_and_dedup.py
+def test_reject_forged_supervisor_id():
+    """contract 模式：白名单校验（SA-01）"""
+    fixture = load_fixture("l2_06/forged_signals.yaml")
+    mock = MockSupervisorReceiver(mode="contract",
+                                   signal_queue=fixture["signals"],
+                                   whitelist={"sup-001", "sup-002"})
+    with pytest.raises(UnauthorizedSourceError, match="E_SUP_UNAUTHORIZED_SOURCE"):
+        mock.receive_next_signal()
+
+def test_reject_signal_replay():
+    """contract 模式：signal_id 去重（SA-02）"""
+    mock = MockSupervisorReceiver(mode="contract")
+    sig = {"command": "BLOCK", "signal_id": "sig-001", "supervisor_id": "sup-001"}
+    mock.inject_signal(sig)
+    mock.inject_signal(dict(sig))  # 重放
+    mock.receive_next_signal()  # 第一次成功
+    with pytest.raises(DuplicateSignalError, match="E_SUP_SIGNAL_DUPLICATE"):
+        mock.receive_next_signal()
+
+# tests/chaos/test_block_slo_under_contention.py
+@pytest.mark.asyncio
+async def test_block_slo_under_queue_pressure():
+    """chaos 模式：队列压力下 BLOCK SLO ≤100ms（D-03 硬指标）"""
+    mock = MockSupervisorReceiver(
+        mode="chaos",
+        chaos_config={"seed": 42, "queue_overflow_rate": 0.3},
+    )
+    # 灌入 50 条 SUGGEST（队列压力）
+    for i in range(50):
+        mock.inject_signal({"command": "SUGGEST", "signal_id": f"s-{i}",
+                            "supervisor_id": "sup-001"})
+    # 注入优先级 BLOCK
+    mock.inject_signal({"command": "BLOCK", "signal_id": "urgent-block",
+                        "supervisor_id": "sup-001"})
+    # 异步等待 BLOCK 命中 SLO
+    acquired = await mock.wait_for_block_async(timeout_ms=100)
+    assert acquired, "D-03 SLO VIOLATION: BLOCK did not arrive within 100ms"
 ```
 
 ---
 
-## §11 安全审计点
+## §11 安全审计点（STRIDE + 防御纵深）
 
-| # | 风险点 | 威胁类型 | 缓解措施 |
-|---|---|---|---|
-| SA-01 | 伪造 Supervisor 信号（非法来源触发 BLOCK） | 信任边界越权 | 信号来源 `supervisor_id` 必须在白名单内（从配置加载），不在白名单 → `E_SUP_UNAUTHORIZED_SOURCE` |
-| SA-02 | 重放攻击（重复发送同一 BLOCK 命令） | DoS / 主循环永久阻塞 | 信号含 `signal_id` (UUID)，重复 signal_id → `E_SUP_SIGNAL_DUPLICATE`，丢弃并告警 |
-| SA-03 | 信号 payload 注入（含恶意字段） | 数据污染 / RCE 风险 | 信号 payload 经 JSON Schema 严格校验，未知字段 → 拒绝；禁含可执行内容 |
-| SA-04 | BLOCK 持续时间无上限（永久阻塞） | DoS（主循环饿死） | BLOCK duration_ms 上限 = 600,000ms（10分钟），超出 → 自动截断并告警 `E_SUP_BLOCK_DURATION_EXCEEDED` |
-| SA-05 | 信号队列溢出导致 backpressure 缺失 | 资源耗尽 | 队列最大深度 = 100，满队列 → 新信号 → `E_SUP_QUEUE_FULL`；BLOCK 信号有优先通道（不受深度限制）|
+### §11.1 威胁建模表（STRIDE 六大类覆盖）
 
-**安全审计频率：** SA-01（白名单管理）需每季度人工审查；SA-02（重放检测）需集成到 E2E 测试套件。
+Supervisor 接收器是"外部→主循环"的信任边界。威胁面集中在 **Spoofing**（伪造监督者）、**DoS**（BLOCK 饿死主循环）、**Elevation**（绕过白名单）：
+
+| # | STRIDE | CIA | 风险点 | Prevent | Detect | Respond | Test Case |
+|---|---|---|---|---|---|---|---|
+| SA-01 | S+E | Integrity | 伪造 Supervisor 信号（非法来源触发 BLOCK）| `supervisor_id` 白名单（config 启动加载 + mTLS 证书校验）；签名由 IC-15 header 带，非 body | 白名单外调用 100% 审计告警 | `E_SUP_UNAUTHORIZED_SOURCE`，拒绝 | `test_reject_forged_supervisor_id` / `test_reject_expired_mtls_cert` |
+| SA-02 | T | Integrity | Replay 攻击（重复发同一 BLOCK 命令）| 信号含 `signal_id`(UUID) + `timestamp_ms`；服务端去重窗口 10 分钟 | 重复 signal_id 100% 审计告警 | `E_SUP_SIGNAL_DUPLICATE`，丢弃 | `test_reject_signal_replay` / `test_reject_stale_timestamp` |
+| SA-03 | T | Integrity | 信号 payload 注入（含恶意字段 `__proto__` / 可执行内容）| JSON Schema 严格校验 + 白名单字段列表 + 字段长度限制 | Schema 校验异常 100% 告警 | `E_SUP_PAYLOAD_INVALID`，拒绝 | `test_reject_prototype_pollution` / `test_reject_unknown_fields` |
+| SA-04 | D | Availability | BLOCK 持续时间无上限（永久阻塞主循环）| BLOCK `duration_ms` 上限 600_000（10 min）；超出自动截断 | 超 5 min 的 BLOCK 告警 SRE | 自动 RESUME + `E_SUP_BLOCK_DURATION_EXCEEDED` | `test_block_duration_capped_at_10min` |
+| SA-05 | D | Availability | 信号队列溢出 → backpressure 缺失 | 队列最大深度 100；BLOCK 有优先通道（绕过深度限制）| `l2_06_queue_depth` Prometheus 告警 | `E_SUP_QUEUE_FULL`，非 BLOCK 拒绝 | `test_reject_non_block_when_queue_full` / `test_block_bypasses_queue_limit` |
+| SA-06 | D | Availability | BLOCK 高频触发（DoS：每秒 100 次 BLOCK 使主循环饿死）| Supervisor 级速率限制（每分钟最多 10 次 BLOCK per project，OQ-01 决定）| Prometheus `block_rate_per_sup` 告警 | Rate limit 生效，`E_SUP_RATE_LIMITED` | `test_block_rate_limit_enforced`（OQ-01 后）|
+| SA-07 | R | Auditability | Supervisor 信号未被审计（删除痕迹）| 所有信号写 IC-09 + hash-chain + WORM | 每小时 hash-chain replay | 告警 + 备份恢复 | `test_signal_audit_hash_chain_unbroken` |
+| SA-08 | I | Confidentiality | 信号 payload 含敏感字段（Supervisor 内部报告）被日志记录 | 字段脱敏 + 白名单字段列表 | DLP 日志扫描 | 脱敏 + 回溯影响 | `test_redact_suggestion_secrets` |
+| SA-09 | E | Availability | ABORT 命令权限过大（单 Supervisor 可终止项目）| IC-15 ABORT 需 dual-token（2 Supervisor 同时 ack）| 单 token ABORT 100% 审计告警 | `E_SUP_ABORT_REQUIRES_DUAL_TOKEN`，拒绝 | `test_abort_requires_dual_supervisor_token` |
+| SA-10 | T | Integrity | 白名单被运行时修改（非启动时加载）| 白名单启动加载到不可变集合；setter 抛异常；哈希校验每分钟 | 哈希变化 100% 告警 | 进程崩溃 + 告警 | `test_whitelist_immutable_at_runtime` |
+| SA-11 | D | Availability | L1-07 Supervisor 假死 → L2-06 无限等待信号 | 健康检查每 5s；3 次失败 → L2-06 降级（BLOCK 透传，SUGGEST 丢弃 + 告警）| `l2_06_supervisor_health_failures` 告警 | 进入降级态，告警 SRE | `test_degrade_when_supervisor_down` |
+
+### §11.2 防御纵深（Defense in Depth）分层
+
+| 层 | 防御措施 | 关联 SA |
+|---|---|---|
+| **L1 传输层** | mTLS 证书 + IC-15 签名 header | SA-01 |
+| **L2 输入校验** | JSON Schema + 字段白名单 + 长度限制 | SA-03, SA-08 |
+| **L3 幂等 / 去重** | signal_id UUID + 10 分钟 dedup 窗口 + timestamp 校验 | SA-02 |
+| **L4 授权校验** | Supervisor 白名单 + ABORT dual-token | SA-01, SA-09 |
+| **L5 资源保护** | 队列深度限 + BLOCK duration 上限 + 速率限制 | SA-04, SA-05, SA-06 |
+| **L6 审计不可篡改** | IC-09 + hash-chain + WORM | SA-07 |
+| **L7 配置固化** | 白名单启动只读 + 哈希校验 | SA-10 |
+| **L8 降级容错** | Supervisor 健康检查 + 降级态 | SA-11 |
+
+### §11.3 审计频率与责任人
+
+- **SA-01, SA-09, SA-10**：每次 major release 前必重审（Security）
+- **SA-02, SA-03**：集成到 E2E 测试套件（CI 自动）
+- **SA-04, SA-05, SA-06**：Prometheus 持续监控（Oncall）
+- **SA-07**：每小时 hash-chain replay（CI 自动）
+- **SA-08**：DLP 日志扫描（SRE 每日）
+- **SA-11**：健康检查持续告警（SRE 实时）
 
 ---
 
 ## Open Questions
 
-| # | 问题 | 影响范围 | 期望决策时间 |
-|---|---|---|---|
-| OQ-01 | BLOCK 命令是否应有速率限制（如每分钟最多 N 次）？当前设计无限制，理论上 Supervisor 可高频 BLOCK 导致主循环永久无法推进。 | DoS 防护 | M3 前 |
-| OQ-02 | SUGGEST 信号当前为非阻塞（fire-and-forget）。未来是否需要 ack 机制（L2-06 向 Supervisor 回复"建议已采纳/拒绝"）？不 ack 时 Supervisor 无法知道建议效果。 | 反馈闭环 | M4 前 |
-| OQ-03 | 当 Supervisor 本身不可用（L1-07 crash）时，L2-06 的降级策略是什么？当前设计 BLOCK 通道降级为透传（不阻塞），但 SUGGEST 丢失是否可接受需要业务确认。 | 可用性 / 降级语义 | M2 验证 |
+### OQ-01 · BLOCK 速率限制策略
+
+**问题**：BLOCK 命令当前无速率限制，理论上 Supervisor 可高频 BLOCK 导致主循环永久无法推进（SA-06）。应如何限流？
+
+**方案选项**：
+- **A. 无限制（当前）**：信任 Supervisor 不滥用，但 Supervisor 自身被攻破后无第二道防线
+- **B. 固定窗口**：每 project 每分钟最多 10 次 BLOCK（简单，但窗口切换时有尖峰）
+- **C. 令牌桶**：容量 10，补充速率 1/min（平滑，but Supervisor 正当紧急场景可能不够）
+- **D. 自适应**：基础 10/min，若 BLOCK 合理率（最终 RESUME 成功率）> 90% 则放宽，否则收紧
+
+**决策维度**：防滥用强度（D>C>B>A）、复杂度（A<B<C<D）、误杀率（A<D<C<B）
+
+**关联 IC**：IC-13（BLOCK 入口）、IC-L2-06（Supervisor 健康）
+
+**期望决策时间**：M3 前（影响 Supervisor 侧设计）
+
+---
+
+### OQ-02 · SUGGEST Ack 闭环机制
+
+**问题**：SUGGEST 信号当前 fire-and-forget。Supervisor 无法知道建议是否被主循环采纳（SA-08 反馈缺失）。是否引入 ack？
+
+**方案选项**：
+- **A. 无 ack（当前）**：Supervisor 盲发，简单但学习能力差（ML-based Supervisor 无法迭代）
+- **B. 异步 ack（事件）**：L2-06 采纳/拒绝后发 `IC-14.suggestion_ack` 事件（AdviceQueue 归宿）
+- **C. 同步 ack**：SUGGEST 响应立即返回 ack（阻塞 Supervisor，违反解耦原则）
+- **D. 采纳信号 + 拒绝静默**：仅采纳时发 ack，拒绝不发（节省流量但语义模糊）
+
+**决策维度**：学习能力（B>D>A>C）、耦合度（A<D<B<C）、实现复杂度（A<D<B<C）
+
+**关联 IC**：IC-14（新增 suggestion_ack 事件）、IC-L2-06（AdviceQueue）
+
+**期望决策时间**：M4 前（影响 Supervisor 侧 ML 训练数据链路）
+
+---
+
+### OQ-03 · L1-07 Supervisor 降级语义
+
+**问题**：当 Supervisor 本身不可用（L1-07 crash），L2-06 的降级策略？BLOCK 是"透传"（不阻塞）还是"缓存"（暂停发布 BLOCK 等 Supervisor 恢复）？SUGGEST 丢失是否可接受？
+
+**方案选项**：
+- **A. BLOCK 透传 + SUGGEST 丢弃**：业务可继续但 Supervisor 重启后看不到历史（当前设计）
+- **B. BLOCK 缓存 + SUGGEST 丢弃**：BLOCK 信号积压，Supervisor 恢复后重放（可能雪崩）
+- **C. BLOCK 透传 + SUGGEST 持久化**：SUGGEST 写本地磁盘，Supervisor 恢复后拉取（保留学习数据）
+- **D. Fail-closed**：Supervisor 不可用 → 主循环 HALTED（最保守，业务完全停摆）
+
+**决策维度**：业务连续性（A/C>B>D）、Supervisor 学习完整性（C>D>B>A）、复杂度（D<A<B<C）
+
+**关联 IC**：IC-L2-06 AdviceQueue 持久化、L1-09 崩溃安全
+
+**期望决策时间**：M2 验证（直接影响端到端可用性测试）
+
+---
+
+### OQ-04 · BLOCK 抢占 SLO 保证
+
+**问题**：D-03 要求 BLOCK 到达主循环 ≤100ms。当队列有 50+ SUGGEST 积压时，BLOCK 优先通道如何实现？threading.Event + asyncio.Event 双通道足够吗？
+
+**方案选项**：
+- **A. 单独高优 channel**：BLOCK 走独立 `asyncio.Queue`（maxsize=1），完全绕过 SUGGEST 队列（当前设计）
+- **B. 优先队列**：单 `heapq`，BLOCK priority=0, SUGGEST priority=1（实现简单但锁争抢）
+- **C. 抢占式中断**：BLOCK 到达立即 `threading.interrupt_main`（最快但破坏性）
+- **D. Redis/Kafka 独立 topic**：BLOCK 走独立消息系统（延迟低但外部依赖）
+
+**决策维度**：SLO 保证（A>C>B>D）、实现复杂度（B<A<C<D）、破坏性（C 最高）
+
+**关联 IC**：IC-13、IC-L2-08（主循环广播）
+
+**期望决策时间**：M3 前（D-03 硬指标验证）
+
+---
+
+### OQ-05 · ABORT 信号的 dual-token 来源
+
+**问题**：SA-09 要求 ABORT 需 dual-token。两个 token 从哪里来？两个不同的 Supervisor 还是同一 Supervisor 的两个不同会话？
+
+**方案选项**：
+- **A. 两个不同 Supervisor**：sup-A 和 sup-B 同时 ack（最强，但需 2 个在线 Supervisor）
+- **B. 同一 Supervisor 双通道**：同 sup-A 走 IC-14 + IC-15 双通道（弱，但可用）
+- **C. Supervisor + 人工复核**：Supervisor 信号 + 人工 Web UI 点"确认"按钮（生产环境友好）
+- **D. 可配置**：按项目 criticality 配置（生产项目用 A，测试项目用 B）
+
+**决策维度**：安全强度（A>C>D>B）、运维成本（A>C>D>B）、灵活性（D 最佳）
+
+**关联 IC**：IC-14 + IC-15 双通道、L1-07 Supervisor 多实例
+
+**期望决策时间**：M4 前（影响 Supervisor 部署拓扑）
+
+---
+
+### OQ-06 · 白名单的动态更新
+
+**问题**：SA-10 要求白名单启动时只读。但新增 Supervisor 实例（如自动 scale）需要重启整个 L1-01？
+
+**方案选项**：
+- **A. 完全静态**：新增 Supervisor 必须重启 L2-06（最安全，运维痛苦）
+- **B. 签名文件 + 周期 reload**：白名单文件由 KMS 签名，每 5 分钟校验签名后 reload（折中）
+- **C. Service Mesh 证书**：依赖 mTLS 证书自动颁发（如 SPIRE/Istio），白名单由证书 SAN 字段代替（最优但基础设施依赖）
+- **D. PDP（Policy Decision Point）**：每次信号到来时调用外部 PDP（如 OPA）判断权限（最灵活但性能差）
+
+**决策维度**：安全性（C>A>B>D）、运维灵活性（D>C>B>A）、基础设施依赖（A<B<D<C）
+
+**关联 IC**：L1-07 Supervisor 部署、L1-09 KMS/Vault 集成
+
+**期望决策时间**：M5 前（生产化前决，M2-M4 先用 A）
+
+---
+
+### OQ-07 · Signal 的 Total Ordering 保证
+
+**问题**：多个 Supervisor 并发发信号（如 sup-A 发 BLOCK，sup-B 发 RESUME 几乎同时），顺序如何保证？
+
+**方案选项**：
+- **A. 到达顺序（当前）**：按 L2-06 接收时间戳，但网络延迟可能导致"晚发早到"
+- **B. Supervisor timestamp + Lamport clock**：信号带 Lamport 逻辑时钟，L2-06 按 clock 排序（强一致但 Supervisor 需同步 clock）
+- **C. Sequencer service**：所有信号先走 Sequencer（如 Kafka 单分区），获全局序号（强一致但引入单点）
+- **D. CRDT / last-write-wins**：允许信号不一致，状态自动收敛（最终一致，但 BLOCK/RESUME 语义不适用）
+
+**决策维度**：一致性（C>B>A>D）、Supervisor 协调复杂度（A<D<B<C）、单点风险（C 最高）
+
+**关联 IC**：IC-13/14/15 序号字段、L1-07 Supervisor 集群协调
+
+**期望决策时间**：M4 前（影响多 Supervisor 部署设计）
