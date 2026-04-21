@@ -803,14 +803,6 @@ end note
 
 ---
 
----
-
-## §4 接口依赖（被谁调 · 调谁）
-
-<!-- FILL §4 · 上游调用方：哪些 L1 / L2 调本 L2 的哪些方法；下游依赖：本 L2 调哪些外部接口（IC-XX 或内部 L2-XX）· 依赖图 PlantUML -->
-
----
-
 ## §5 P0/P1 时序图（PlantUML）
 
 本节给 3 张时序图（2 P0 主干 + 1 P1 安全事件），覆盖编译主路径 · eval 主路径（含沙盒 kill） · 白名单篡改检测。
@@ -1759,14 +1751,6 @@ def whitelist_watchdog(registry: WhitelistRegistry, yaml_path: str, interval_s: 
 | Whitelist load | 启动一次 | `threading.Event` 初始化栅栏 |
 
 **竞态验证**：`test_concurrent_eval_50_threads.py`（mutation testing）—— 50 线程同时 eval 不同 expr，验证 no data race · 无 cache poison · 无 counter 丢失。
-
----
-
----
-
-## §6 内部核心算法（伪代码）
-
-<!-- FILL §6 · 本 L2 的核心算法伪代码（Python-like 风格）· 关键 syscall / 数据结构操作 / 并发控制 -->
 
 ---
 
