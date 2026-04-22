@@ -1697,11 +1697,11 @@ L3 --> [*] : 进程重启回 LOADING
 
 | OQ ID | 问题 | 触发时机 | 责任方 | Deadline |
 |:---|:---|:---|:---|:---|
-| **OQ-L201-01** | 是否引入 skill 版本 pin（P1 特性 · PRD §8.7 可选）？ | 生产上线 3 个月后评估 | architecture 组 | V2 |
+| **OQ-L201-01** | 是否引入 skill 版本 pin（P1 特性 · `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §8.7 可选）？ | 生产上线 3 个月后评估 | architecture 组 | V2 |
 | **OQ-L201-02** | `success_rate_window_n=30` 是否需按 capability 调节（高频 skill vs 低频）？ | 收集 1 月真实数据后 | runtime 组 | V1.5 |
 | **OQ-L201-03** | 账本 90 天老化是否与 L1-09 审计 retention 需要对齐（审计可能要求 > 365 天）？ | L1-09 审计策略敲定时 | 架构 + 合规 | V1.0 |
 
-**OQ-L201-01 讨论**：PRD §8.7 把"候选版本锁定"列为可选功能。V1 默认跟最新 · 简化但对稳定性敏感项目可能引入抖动（升级破坏行为）。V2 可在 `registry.yaml` 加 `pinned_version: "v2.3"` 字段 · RegistryLoader 遇 pinned 跳过升级。
+**OQ-L201-01 讨论**：`docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §8.7 把"候选版本锁定"列为可选功能。V1 默认跟最新 · 简化但对稳定性敏感项目可能引入抖动（升级破坏行为）。V2 可在 `registry.yaml` 加 `pinned_version: "v2.3"` 字段 · RegistryLoader 遇 pinned 跳过升级。
 
 **OQ-L201-02 讨论**：30 窗口对每日 ≥ 10 次调用的热 skill 合理（3 天内数据）· 但冷 skill 可能 3 月才累积满 · 成功率数值不敏感。备选：按 capability tier 动态 window（热 cap=10 · 冷 cap=50）· 但实现复杂度 + 测试用例增加。V1 保持 30 · V1.5 数据说话。
 
@@ -1711,7 +1711,7 @@ L3 --> [*] : 进程重启回 LOADING
 
 **目标路径**（待建 · 3-2 TDD 后续产出）：`docs/3-2-Solution-TDD/L1-05-Skill生态+子Agent调度/L2-01-tests.md`
 
-| TC ID | 场景 | 对应本 L2 § | 对应 2-prd §8.9 G-W-T | 对应错误码 |
+| TC ID | 场景 | 对应本 L2 § | 对应 `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §8.9 G-W-T | 对应错误码 |
 |:---|:---|:---|:---|:---|
 | TC-L201-P01 | 正常 query_candidates 返 ≥ 2 候选 + 5 维元数据 | §5.1 + §6.1 | P1 | - |
 | TC-L201-P02 | query_subagent 返 verifier 元数据（工具白名单 + 超时 + schema 指针）| §3.3 + §6.1 | P2 | - |
@@ -1747,15 +1747,15 @@ L3 --> [*] : 进程重启回 LOADING
 
 ### 13.5 本 L2 ↔ 2-prd / L1-08 architecture.md
 
-**反向指回**：若本 L2 发现 PRD §8 有歧义 · 按 spec §6.2 规则反向修 PRD · 本文档加注"PRD 需更新 · ref §X.Y"。
+**反向指回**：若本 L2 发现 `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §8 有歧义 · 按 spec §6.2 规则反向修 PRD · 本文档加注"PRD 需更新 · ref §X.Y"。
 
 | architecture.md 锚点 | 映射本 L2 内容 |
 |:---|:---|
-| §2.2 表（SkillRegistry Aggregate Root） | 本 L2 §2.1 + §2.2 |
-| §2.3 Domain Events（8 类 · `L1-05:skill_registered` 等） | 本 L2 §2.5 + §3.7 |
-| §2.6 SkillRegistryRepository | 本 L2 §2.4 + §7 |
-| §3.1 Container 图（L2-01 yaml/jsonl 介质） | 本 L2 §1.3 + §7.5 |
-| §9.1 L2-01 一句话职责 | 本 L2 §1.9 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §2.2 表（SkillRegistry Aggregate Root） | 本 L2 §2.1 + §2.2 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §2.3 Domain Events（8 类 · `L1-05:skill_registered` 等） | 本 L2 §2.5 + §3.7 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §2.6 SkillRegistryRepository | 本 L2 §2.4 + §7 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §3.1 Container 图（L2-01 yaml/jsonl 介质） | 本 L2 §1.3 + §7.5 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.1 L2-01 一句话职责 | 本 L2 §1.9 |
 | §10 性能目标 | 本 L2 §12 |
 | §11 反向架构守则 B1（L2-01 不排序）| 本 L2 §1.7 + §3.6 E11 |
 

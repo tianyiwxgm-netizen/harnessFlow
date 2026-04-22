@@ -1675,31 +1675,31 @@ L4 --> HALT : 审计链断 · L1-07 判 halt
 
 ### 13.1 本 L2 方法 / § 段 ↔ `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` 小节
 
-| 本 L2 方法 / § 段 | 2-prd §10 小节 | 类型 |
+| 本 L2 方法 / § 段 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §10 小节 | 类型 |
 |:---|:---|:---|
-| §3.2 IC-04 invoke_skill 接收 | prd §10.2 输入 + §10.8 IC 关系 | IC 接收器 |
-| §3.3 InvokeSkillResult 返回 | prd §10.2 输出 + §10.4 约束 | 响应契约 |
-| §3.4 IC-L2-03 advance_fallback | prd §10.2 "IC-L2-03 前进" + §10.6 必须职责 3 | fallback 驱动 |
-| §3.5 IC-L2-05 submit_validation | prd §10.2 "交 L2-05 校验" + §10.6 必须 2 | 校验交接 |
-| §3.6 IC-09 append_event 4 类 | prd §10.2 "调用签名事件" + §10.4 硬约束 1 | 审计出口 |
-| §3.7 14 错误码 | prd §10.5 禁止（8 条）+ §10.4 约束（7 条）| 错误语义 |
-| §5.1 P0 主链 | prd §10.9 G-W-T P1/P3 | 时序蓝图 |
-| §5.2 fallback 闭环 | prd §10.9 G-W-T P2 + I1 | fallback 蓝图 |
-| §5.3 EXHAUSTED | prd §10.9 G-W-T P5 | 耗尽蓝图 |
-| §6.1 invoke() 6 阶段 | prd §10.1 职责锚定 | 主入口算法 |
-| §6.2 ContextInjector 白名单 | prd §10.5 禁止 · §10.6 必须 6 | context 防护 |
-| §6.3 TimeoutWatcher 三级 | prd §10.4 性能约束 + §10.7 超时预告 | timeout 算法 |
-| §6.4 RetryPolicy idempotent | prd §10.4 硬约束 · PM-09 | retry 策略 |
-| §6.5 AuditSeedEmitter | prd §10.4 硬约束 1/3 · §10.6 必须 2 | 签名 emitter |
-| §6.6 ParamsHasher 脱敏 | prd §10.4 硬约束 6 · §10.7 入参脱敏 | hash + 脱敏 |
-| §7.1 SkillInvocation 聚合 | prd §10.2 输出 + 10.4 约束 | 数据模型 |
-| §7.2 InvocationSignature | prd §10.4 硬约束 3（签名 9 字段）| 签名 schema |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §3.2 IC-04 invoke_skill 接收 | prd §10.2 输入 + §10.8 IC 关系 | IC 接收器 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §3.3 InvokeSkillResult 返回 | prd §10.2 输出 + §10.4 约束 | 响应契约 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §3.4 IC-L2-03 advance_fallback | prd §10.2 "IC-L2-03 前进" + §10.6 必须职责 3 | fallback 驱动 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §3.5 IC-L2-05 submit_validation | prd §10.2 "交 L2-05 校验" + §10.6 必须 2 | 校验交接 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §3.6 IC-09 append_event 4 类 | prd §10.2 "调用签名事件" + §10.4 硬约束 1 | 审计出口 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §3.7 14 错误码 | prd §10.5 禁止（8 条）+ §10.4 约束（7 条）| 错误语义 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.1 P0 主链 | prd §10.9 G-W-T P1/P3 | 时序蓝图 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.2 fallback 闭环 | prd §10.9 G-W-T P2 + I1 | fallback 蓝图 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.3 EXHAUSTED | prd §10.9 G-W-T P5 | 耗尽蓝图 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §6.1 invoke() 6 阶段 | prd §10.1 职责锚定 | 主入口算法 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §6.2 ContextInjector 白名单 | prd §10.5 禁止 · §10.6 必须 6 | context 防护 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §6.3 TimeoutWatcher 三级 | prd §10.4 性能约束 + §10.7 超时预告 | timeout 算法 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §6.4 RetryPolicy idempotent | prd §10.4 硬约束 · PM-09 | retry 策略 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §6.5 AuditSeedEmitter | prd §10.4 硬约束 1/3 · §10.6 必须 2 | 签名 emitter |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §6.6 ParamsHasher 脱敏 | prd §10.4 硬约束 6 · §10.7 入参脱敏 | hash + 脱敏 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §7.1 SkillInvocation 聚合 | prd §10.2 输出 + 10.4 约束 | 数据模型 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §7.2 InvocationSignature | prd §10.4 硬约束 3（签名 9 字段）| 签名 schema |
 | §8 状态机（6 状态）| prd §10.9 G-W-T P1-P5 + N1-N5 | 生命周期 |
 | §10 配置参数（15 条）| prd §10.4 约束 + §10.7 可选 | 运维参数 |
 | §11 降级 4 级 | prd §10.4 硬约束 2 + §10.5 禁止 | 降级链 |
 | §12 性能目标 | prd §10.4 "< 100ms 附加" / 毫秒级 / 亚秒级 | SLO |
 
-**反向指回**：本 L2 若发现 2-prd §10 有歧义（如 retry 是否允许）· 按 spec v2.0 §6.2 规则反向修 PRD · 本文档加注"PRD 需更新 · ref §X.Y"。
+**反向指回**：本 L2 若发现 `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §10 有歧义（如 retry 是否允许）· 按 spec v2.0 §6.2 规则反向修 PRD · 本文档加注"PRD 需更新 · ref §X.Y"。
 
 ### 13.2 ADR（Architecture Decision Records · 3 条关键决策固化）
 
@@ -1768,14 +1768,14 @@ L4 --> HALT : 审计链断 · L1-07 判 halt
 
 | architecture.md 锚点 | 映射本 L2 内容 |
 |:---|:---|
-| §2.1 BC-05 Supplier 角色 | 本 L2 §2.1 定位 |
-| §2.2 SkillInvocation 聚合根 | 本 L2 §2.2 + §7.1 |
-| §2.3 SkillInvoker Application Service | 本 L2 §2.2 + §6.1 |
-| §2.5 Domain Events（skill_invoked / skill_returned / skill_fallback_triggered）| 本 L2 §2.5 + §3.6 |
-| §3.1 Component Diagram L2-03 位置 | 本 L2 §1.3 + §4.3 |
-| §4.1 P0 主链时序 | 本 L2 §5.1（细化版）|
-| §4.2 P0 fallback 时序 | 本 L2 §5.2（细化版）|
-| §9.3 DDD 原语（Application Service + Aggregate）| 本 L2 §2.2 + §2.3 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §2.1 BC-05 Supplier 角色 | 本 L2 §2.1 定位 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §2.2 SkillInvocation 聚合根 | 本 L2 §2.2 + §7.1 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §2.3 SkillInvoker Application Service | 本 L2 §2.2 + §6.1 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §2.5 Domain Events（skill_invoked / skill_returned / skill_fallback_triggered） | 本 L2 §2.5 + §3.6 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §3.1 Component Diagram L2-03 位置 | 本 L2 §1.3 + §4.3 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §4.1 P0 主链时序 | 本 L2 §5.1（细化版）|
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §4.2 P0 fallback 时序 | 本 L2 §5.2（细化版）|
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.3 DDD 原语（Application Service + Aggregate） | 本 L2 §2.2 + §2.3 |
 
 ### 13.8 本 L2 ↔ 消费方 tech-design（L1-04 消费方参考）
 

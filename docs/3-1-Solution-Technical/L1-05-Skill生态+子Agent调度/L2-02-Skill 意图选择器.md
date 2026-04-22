@@ -1468,7 +1468,7 @@ L1-07 Supervisor 在观察 S5 FAIL-L2+ 时 · 可能通过 IC-14 `push_rollback_
 | **ADR-L202-01** | 采用无状态 Domain Service | Accepted | 与 L1-01 L2-02 决策引擎同构 · 单元可测 |
 | **ADR-L202-02** | 向量相似度**仅**用于同 capability 近邻归并 · 不跨 capability | Accepted | 保护 PM-09 能力抽象层契约 |
 | **ADR-L202-03** | KB 读作为"可选旁路"（BC-05 Out-of-scope 的有限例外）| Accepted | 选择器是 BC-05 内唯一需历史经验处 · 旁路设计不破坏 BC 边界 |
-| **ADR-L202-04** | 启动时硬编码 skill 名扫描 | Accepted | PRD §9.5 禁止 1 最严硬约束唯一可靠防御 |
+| **ADR-L202-04** | 启动时硬编码 skill 名扫描 | Accepted | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.5 禁止 1 最严硬约束唯一可靠防御 |
 | **ADR-L202-05** | 失败记忆用指数衰减（24h 半衰期）而非绝对阈值 | Accepted | 避免"永久黑名单"· 让偶尔失败的 skill 有恢复机会 |
 | **ADR-L202-06** | 灰度探测默认关闭 | Accepted | 避免生产质量波动 · 需运维主动开启 |
 | **ADR-L202-07** | 解释卡自然语言部分不超 400 字符 | Accepted | UI 直出 · 事件 < 4KB |
@@ -1484,9 +1484,9 @@ L1-07 Supervisor 在观察 S5 FAIL-L2+ 时 · 可能通过 IC-14 `push_rollback_
 | **OQ-L202-04** | preferred_quality=high 时是否允许放宽 max_cost | V1 不放宽 · V2 引入 cost_elastic 字段 | §3.2 |
 | **OQ-L202-05** | KB Recipe 的 tags 命名规范（`capability:xxx`）是否强制 | 3-1-Resume Phase R4 确定 | L1-06 L2-03 KB 写 |
 
-### 13.3 2-prd §9 L2-02 ↔ 本文档小节映射
+### 13.3 `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9 L2-02 ↔ 本文档小节映射
 
-| 2-prd §9 小节 | 本文档小节 | 关键产出 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9 小节 | 本文档小节 | 关键产出 |
 |:---|:---|:---|
 | 9.1 职责 + 锚定 | §1.1 / §1.9 / §2.1 | 一句话技术定位 + BC-05 DDD 角色 |
 | 9.2 输入 / 输出 | §3.2 / §3.3 / §3.4 / §3.5 / §3.6 | 6 IC 字段级 YAML schema |
@@ -1504,21 +1504,21 @@ L1-07 Supervisor 在观察 S5 FAIL-L2+ 时 · 可能通过 IC-14 `push_rollback_
 
 | TC ID | 类型 | 对应 2-prd G-W-T | 对应本文档 | 技术要点 |
 |:---|:---|:---|:---|:---|
-| **TC-P-01** | 正向 | PRD §9.9 P1（无偏好 · 按成功率排序）| §6.4 / §5.1 | chain=[A,B,C,builtin] · 事件含 "按成功率排序" |
-| **TC-P-02** | 正向 | PRD §9.9 P2（B 连续失败 3 次 → 降权）| §6.3 / §6.4 | B 排到 A/C 之后 · failmem 扣分明显 |
-| **TC-P-03** | 正向 | PRD §9.9 P3（C unavailable）| §6.2 HardFilter | C 直接剔除（不是降权）· filtered_out 有 R_UNAVAILABLE |
-| **TC-P-04** | 正向 | PRD §9.9 P4（仅 1 available）| §6.5 BUILTIN_ONLY + §10 C18 | chain=[A, builtin_min] · warnings 非空 + WARN 事件 |
-| **TC-P-05** | 正向 | PRD §9.9 P5（IC-L2-03 前进）| §6.9 advance_fallback | next_item.attempt=2 + fallback_advanced 事件 |
-| **TC-P-06** | 正向 | PRD §9.9 P6（成功回写账本）| §6.8 / §3.6 | IC-L2-07 被调 · 下次同 capability A 成功率提升 |
+| **TC-P-01** | 正向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 P1（无偏好 · 按成功率排序）| §6.4 / §5.1 | chain=[A,B,C,builtin] · 事件含 "按成功率排序" |
+| **TC-P-02** | 正向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 P2（B 连续失败 3 次 → 降权）| §6.3 / §6.4 | B 排到 A/C 之后 · failmem 扣分明显 |
+| **TC-P-03** | 正向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 P3（C unavailable）| §6.2 HardFilter | C 直接剔除（不是降权）· filtered_out 有 R_UNAVAILABLE |
+| **TC-P-04** | 正向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 P4（仅 1 available）| §6.5 BUILTIN_ONLY + §10 C18 | chain=[A, builtin_min] · warnings 非空 + WARN 事件 |
+| **TC-P-05** | 正向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 P5（IC-L2-03 前进）| §6.9 advance_fallback | next_item.attempt=2 + fallback_advanced 事件 |
+| **TC-P-06** | 正向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 P6（成功回写账本）| §6.8 / §3.6 | IC-L2-07 被调 · 下次同 capability A 成功率提升 |
 | **TC-P-07** | 正向 | 集成 I1（端到端）| §5.1 + §5.2 | L1-01 → L2-02 → L2-03 fail → advance → prp 成功 → 双写账本 |
 | **TC-P-08** | 正向 | 集成 I2（preferred_quality=high）| §6.4 adjust_weights_by_preference | weights 动态调 · 高 success_rate 首选 |
 | **TC-P-09** | 正向 | 集成 I3（灰度探测）| §6.5 probe + §10 C3/C4 | probe_applied=true · 次优成首选 · 事件标注 |
 | **TC-P-10** | 正向 | 本文档 §6.6 | KB 旁路 + kb_boost | KB hit → boost 生效 · explanation 含 kb_hint_used=true |
-| **TC-N-01** | 负向 | PRD §9.9 N1（硬编码扫描）| §6.1 HardEdgeScan + §3.8 E_INTENT_HARD_EDGE_VIOLATION | 注入硬编码 "superpowers:writing-plans" · exit 1 |
-| **TC-N-02** | 负向 | PRD §9.9 N2（注册表全空）| §3.8 E_INTENT_CAPABILITY_UNKNOWN | capability_exhausted 事件 + 硬暂停 |
-| **TC-N-03** | 负向 | PRD §9.9 N3（候选全 unavailable）| §11.2 L3 BUILTIN_ONLY | chain=[builtin_min] + WARN + 1 length warning |
-| **TC-N-04** | 负向 | PRD §9.9 N4（越界直接调 skill）| §3.8 E_INTENT_BOUNDARY_VIOLATION | 集成测试不可达 · 单测 assert raises |
-| **TC-N-05** | 负向 | PRD §9.9 N5（capability_resolved 缺理由）| §2.3 I-L202-04 + §6.7 | 事件 schema 校验失败 · 不能 append |
+| **TC-N-01** | 负向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 N1（硬编码扫描）| §6.1 HardEdgeScan + §3.8 E_INTENT_HARD_EDGE_VIOLATION | 注入硬编码 "superpowers:writing-plans" · exit 1 |
+| **TC-N-02** | 负向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 N2（注册表全空）| §3.8 E_INTENT_CAPABILITY_UNKNOWN | capability_exhausted 事件 + 硬暂停 |
+| **TC-N-03** | 负向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 N3（候选全 unavailable）| §11.2 L3 BUILTIN_ONLY | chain=[builtin_min] + WARN + 1 length warning |
+| **TC-N-04** | 负向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 N4（越界直接调 skill）| §3.8 E_INTENT_BOUNDARY_VIOLATION | 集成测试不可达 · 单测 assert raises |
+| **TC-N-05** | 负向 | `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §9.9 N5（capability_resolved 缺理由）| §2.3 I-L202-04 + §6.7 | 事件 schema 校验失败 · 不能 append |
 | **TC-N-06** | 负向 | §3.8 E_INTENT_NO_PROJECT_ID | §3.2 入参校验 | raise IntentError · 不触发 IC-L2-01 |
 | **TC-N-07** | 负向 | §3.8 E_INTENT_FALLBACK_EXHAUSTED | §6.9 | advance 到末尾 · next_item=null · exhausted=true |
 | **TC-N-08** | 负向 | §3.8 E_INTENT_CALLER_INVALID | §3.2 caller_l1=L1-05 | 拒绝（PM-03 + 自环禁令）|

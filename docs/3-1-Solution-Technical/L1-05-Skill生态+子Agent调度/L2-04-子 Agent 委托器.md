@@ -755,15 +755,15 @@ L4 彻底放弃：返回 FAIL-L3 给调度层，标记 Skill 不可用
 
 ### §13.1 PRD → 本 L2 映射
 
-| PRD §5.5 小节 | 本 L2 章节 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.5 小节 | 本 L2 章节 |
 |---|---|
-| §5.5.1 职责定义 | §1 + §2 |
-| §5.5.2 隔离要求 | §6.2 + §11.2 (SUBAGENT_PROJECT_SCOPE_VIOLATION) |
-| §5.5.3 资源上限 | §10 + §6.3 |
-| §5.5.4 Claude Agent SDK 对接 | §9 + §6.1 |
-| §5.5.5 PM-14 隔离 | §3 首字段 + §7 路径分片 |
-| §5.5.6 TrustLedger 记录 | §6.1 Step 9 + §6.5 + IC-05 引用 |
-| §5.5.7 降级链 | §11.1 + §5.2 时序 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.5.1 职责定义 | §1 + §2 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.5.2 隔离要求 | §6.2 + §11.2 (SUBAGENT_PROJECT_SCOPE_VIOLATION) |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.5.3 资源上限 | §10 + §6.3 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.5.4 Claude Agent SDK 对接 | §9 + §6.1 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.5.5 PM-14 隔离 | §3 首字段 + §7 路径分片 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.5.6 TrustLedger 记录 | §6.1 Step 9 + §6.5 + IC-05 引用 |
+| `docs/2-prd/L1-05 Skill生态+子Agent调度/prd.md` §5.5.7 降级链 | §11.1 + §5.2 时序 |
 
 ### §13.2 ADR（Architecture Decision Records）
 
