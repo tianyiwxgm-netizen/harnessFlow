@@ -19,7 +19,7 @@ traceability:
   scope_anchor: docs/2-prd/L0/scope.md §5.4
   architecture_anchor: docs/3-1-Solution-Technical/L1-04-Quality Loop/architecture.md
 consumer:
-  - docs/3-2-Solution-TDD/L1/L2-06-tests.md（待建）
+  - docs/3-2-Solution-TDD/L1-04-Quality Loop/L2-06-tests.md（待建）
 ---
 
 # L1 L2-06 · S5 TDDExe Verifier 编排器 · Tech Design

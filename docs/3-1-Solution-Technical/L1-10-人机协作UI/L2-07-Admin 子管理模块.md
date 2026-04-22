@@ -19,7 +19,7 @@ traceability:
   scope_anchor: docs/2-prd/L0/scope.md §5.10
   architecture_anchor: docs/3-1-Solution-Technical/L1-10-人机协作UI/architecture.md
 consumer:
-  - docs/3-2-Solution-TDD/L1/L2-07-tests.md（待建）
+  - docs/3-2-Solution-TDD/L1-10-人机协作UI/L2-07-tests.md（待建）
 ---
 
 # L1 L2-07 · Admin 子管理模块 · Tech Design

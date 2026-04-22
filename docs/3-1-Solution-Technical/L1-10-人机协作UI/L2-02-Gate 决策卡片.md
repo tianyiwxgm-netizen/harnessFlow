@@ -19,7 +19,7 @@ traceability:
   scope_anchor: docs/2-prd/L0/scope.md §5.10
   architecture_anchor: docs/3-1-Solution-Technical/L1-10-人机协作UI/architecture.md
 consumer:
-  - docs/3-2-Solution-TDD/L1/L2-02-tests.md（待建）
+  - docs/3-2-Solution-TDD/L1-10-人机协作UI/L2-02-tests.md（待建）
 ---
 
 # L1 L2-02 · Gate 决策卡片 · Tech Design
@@ -1594,7 +1594,7 @@ end note
 
 ### 13.2 本 L2 方法 ↔ 3-2 TDD 测试用例映射
 
-引 `docs/3-2-Solution-TDD/L1/L2-02-tests.md`（待建），本文档承诺下列测试用例需求：
+引 `docs/3-2-Solution-TDD/L1-10-人机协作UI/L2-02-tests.md`（待建），本文档承诺下列测试用例需求：
 
 | TDD 测试 ID | 用例名称 | 覆盖本 L2 方法 | 优先级 | 对应 2-prd §9.9 Given-When-Then |
 |:---|:---|:---|:---|:---|
@@ -1649,9 +1649,9 @@ end note
 
 ### 13.5 下游消费者（consumer）
 
-- `docs/3-2-Solution-TDD/L1/L2-02-tests.md`（待建 · 15 个测试用例）
-- `docs/3-2-Solution-TDD/L1/L2-04-tests.md`（部分引用 · IC-L2-03 契约）
-- `docs/3-2-Solution-TDD/L1/L2-01-tests.md`（部分引用 · IC-L2-10 契约）
+- `docs/3-2-Solution-TDD/L1-10-人机协作UI/L2-02-tests.md`（待建 · 15 个测试用例）
+- `docs/3-2-Solution-TDD/L1-10-人机协作UI/L2-04-tests.md`（部分引用 · IC-L2-03 契约）
+- `docs/3-2-Solution-TDD/L1-10-人机协作UI/L2-01-tests.md`（部分引用 · IC-L2-10 契约）
 
 ---
 

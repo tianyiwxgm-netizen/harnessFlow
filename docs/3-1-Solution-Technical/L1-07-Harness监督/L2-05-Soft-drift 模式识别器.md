@@ -19,7 +19,7 @@ traceability:
   scope_anchor: docs/2-prd/L0/scope.md §5.7
   architecture_anchor: docs/3-1-Solution-Technical/L1-07-Harness监督/architecture.md §4.5（图 D 软红线路径）
 consumer:
-  - docs/3-2-Solution-TDD/L1/L2-05-tests.md（待建 · TC-L207-005-001~050）
+  - docs/3-2-Solution-TDD/L1-07-Harness监督/L2-05-tests.md（待建 · TC-L207-005-001~050）
 ---
 
 # L1 L2-05 · Soft-drift 模式识别器 · Tech Design
