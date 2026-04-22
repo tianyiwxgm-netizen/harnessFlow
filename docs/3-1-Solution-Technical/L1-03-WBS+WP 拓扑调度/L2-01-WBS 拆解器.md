@@ -1284,40 +1284,40 @@ modules:
 
 ### 13.1 本 L2 方法 ↔ `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md §8` 反向映射
 
-| 本 L2 方法 / § 段 | 2-prd §8 锚点 | 映射类型 |
+| 本 L2 方法 / § 段 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8 锚点 | 映射类型 |
 |---|---|---|
-| `request_wbs_decomposition`（IC-19）| prd §8.2 输入 "L1-02 S2 阶段 IC-19 调用" + §8.6 必须 "消费 4 件套 + TOGAF 产出层级化 WBS" | 处理器（dispatch + 异步）|
-| `request_incremental_decompose`（IC-L2-07）| prd §8.2 输入 "L2-05 差量拆解请求" + §8.6 必须 "支持变更 / 失败回退触发的差量拆解" | 处理器 |
-| §6.2 `_assemble_four_elements` | prd §8.4 硬约束 2 "WP 4 要素齐全" + §8.6 必须 "为每个 WP 装配 4 要素" | 核心算法 |
-| §6.2 Goal 追溯校验 | prd §8.4 硬约束 3 "WP Goal 必须可追溯回 4 件套" + §8.6 必须 "维持每 WP Goal 到 4 件套某条的可追溯引用" | I-3 落地 |
-| §6.3 粒度自检 + 递归再拆 | prd §8.4 硬约束 1 "WP 粒度 ≤ 5 天" + §8.6 必须 "对 WP 粒度做 ≤ 5 天自检并在超限时自动再拆" | I-1 落地 |
-| §6.4 `_recommend_skills` 白名单 | prd §8.4 硬约束 7 "推荐 skill 是建议不是硬绑定" + §8.6 必须 "为每个 WP 装配 4 要素 + 推荐 skill" | I-5 落地 |
-| §6.5 `_emit_artifacts` + PM-07 模板 | prd §8.4 硬约束 5 "wbs.md 必须按 PM-07 模板落盘" + §8.6 必须 "按 PM-07 模板产出 wbs.md" | I-6 落地 |
-| §6.6 差量拆解 + preserved_wp_ids | prd §8.4 硬约束 6 "差量拆解必须保留已 done 节点" + §8.6 必须 "支持变更 / 失败回退触发的差量拆解" | I-7 落地 |
-| §11 错误处理降级链 | prd §8.5 禁止 1-8 + prd §8.10 异常处理文字 | 错误语义落地 |
-| §2.7 依赖闭合 | prd §8.4 硬约束 4 "依赖只能指向同 WBS 已存在 WP" | I-4 落地 |
-| IC-L2-01 交 L2-02 装图 | prd §8.6 必须 "把拓扑数据回传给 L2-02 做 DAG 装图 + 校验" | 下游调用 |
-| IC-09 append_event 全程 | prd §8.6 必须 "把拆解过程 + 结果 + 失败原因全量走 IC-L2-08 审计落盘" + PM-08 | 审计落地 |
+| `request_wbs_decomposition`（IC-19）| `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.2 输入 "L1-02 S2 阶段 IC-19 调用" + §8.6 必须 "消费 4 件套 + TOGAF 产出层级化 WBS" | 处理器（dispatch + 异步）|
+| `request_incremental_decompose`（IC-L2-07）| `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.2 输入 "L2-05 差量拆解请求" + §8.6 必须 "支持变更 / 失败回退触发的差量拆解" | 处理器 |
+| §6.2 `_assemble_four_elements` | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.4 硬约束 2 "WP 4 要素齐全" + §8.6 必须 "为每个 WP 装配 4 要素" | 核心算法 |
+| §6.2 Goal 追溯校验 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.4 硬约束 3 "WP Goal 必须可追溯回 4 件套" + §8.6 必须 "维持每 WP Goal 到 4 件套某条的可追溯引用" | I-3 落地 |
+| §6.3 粒度自检 + 递归再拆 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.4 硬约束 1 "WP 粒度 ≤ 5 天" + §8.6 必须 "对 WP 粒度做 ≤ 5 天自检并在超限时自动再拆" | I-1 落地 |
+| §6.4 `_recommend_skills` 白名单 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.4 硬约束 7 "推荐 skill 是建议不是硬绑定" + §8.6 必须 "为每个 WP 装配 4 要素 + 推荐 skill" | I-5 落地 |
+| §6.5 `_emit_artifacts` + PM-07 模板 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.4 硬约束 5 "wbs.md 必须按 PM-07 模板落盘" + §8.6 必须 "按 PM-07 模板产出 wbs.md" | I-6 落地 |
+| §6.6 差量拆解 + preserved_wp_ids | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.4 硬约束 6 "差量拆解必须保留已 done 节点" + §8.6 必须 "支持变更 / 失败回退触发的差量拆解" | I-7 落地 |
+| §11 错误处理降级链 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.5 禁止 1-8 + `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.10 异常处理文字 | 错误语义落地 |
+| §2.7 依赖闭合 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.4 硬约束 4 "依赖只能指向同 WBS 已存在 WP" | I-4 落地 |
+| IC-L2-01 交 L2-02 装图 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.6 必须 "把拓扑数据回传给 L2-02 做 DAG 装图 + 校验" | 下游调用 |
+| IC-09 append_event 全程 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.6 必须 "把拆解过程 + 结果 + 失败原因全量走 IC-L2-08 审计落盘" + PM-08 | 审计落地 |
 
 ### 13.2 § 段 ↔ `docs/3-2-Solution-TDD/L1-03-WBS+WP 拓扑调度/L2-01-tests.md`（前向占位 · 待建 · TC ID 矩阵 ≥ 15）
 
-| # | TC ID | 覆盖 § | G-W-T 对应（prd §8.9）| 用例定性 |
+| # | TC ID | 覆盖 § | G-W-T 对应（`docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9）| 用例定性 |
 |---|---|---|---|---|
-| 1 | TC-L103-L201-P01 | §6.1 + §5.1 | prd §8.9 P1 | S2 正常全量拆解 · 4 件套 + TOGAF 齐 → wbs.md 产 + 拓扑交 L2-02 |
-| 2 | TC-L103-L201-P02 | §6.3 | prd §8.9 P2 | 某需求 20 天工作量 → 至少拆 4 个 ≤ 5 天 WP · 4 要素齐 |
-| 3 | TC-L103-L201-P03 | §6.2 | prd §8.9 P3 | WP Goal 追溯 4 件套锚点 → 成功；无追溯 → 拒 |
-| 4 | TC-L103-L201-P04 | §6.6 | prd §8.9 P4 | L2-05 IC-L2-07 差量 · wp-007 再拆 · 保留其他 DONE WP |
-| 5 | TC-L103-L201-P05 | §6.6 + §5.2 | prd §8.9 P5 | 变更请求二次 IC-19 · 识别可保留 DONE + 重算未开始 |
-| 6 | TC-L103-L201-P06 | §6.5 + §7.2 | prd §8.9 P6 | 产 wbs.md 按 PM-07 模板 · 推荐 skill 字段完整 |
-| 7 | TC-L103-L201-N01 | §6.3 + §11.1 | prd §8.9 N1 | WP 估算 8 天 → 自动再拆；仍超限 → E_104 rejected |
-| 8 | TC-L103-L201-N02 | §6.2 + §11.1 | prd §8.9 N2 | WP 缺 effort_estimate → E_103 rejected + 结构化错误 |
-| 9 | TC-L103-L201-N03 | §6.2 + §11.1 | prd §8.9 N3 | WP Goal 无 4 件套追溯 → E_106 rejected |
-| 10 | TC-L103-L201-N04 | §6.2 + §11.1 | prd §8.9 N4 | WP 依赖悬空（指向 wp-999）→ E_102 rejected |
-| 11 | TC-L103-L201-N05 | §11.1 | prd §8.9 N5 | WP 跨 project 依赖 → E_105 硬红线 rejected |
-| 12 | TC-L103-L201-N06 | §1.4 + §11.1 | prd §8.9 N6 | S4 阶段无差量触发时尝试调 → rejected + 越界审计（由 L1-02 外层拦截）|
-| 13 | TC-L103-L201-I01 | §5.1 + §4 | prd §8.9 I1 | L1-02 S2 Gate → IC-19 → L2-01 → IC-L2-01 → L2-02 装图 → 返回 wbs_topology |
-| 14 | TC-L103-L201-I02 | §5.2 + §4 | prd §8.9 I2 | 运行期失败 3 次 → L2-05 IC-L2-07 → L2-01 差量 → L2-02 合并 → L2-03 可取新子 WP |
-| 15 | TC-L103-L201-I03 | §5.2 + §6.6 | prd §8.9 I3 | L1-10 变更提交 → L1-02 变更流 → IC-19 二次 → 差量 → L2-04 重算完成率 |
+| 1 | TC-L103-L201-P01 | §6.1 + §5.1 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 P1 | S2 正常全量拆解 · 4 件套 + TOGAF 齐 → wbs.md 产 + 拓扑交 L2-02 |
+| 2 | TC-L103-L201-P02 | §6.3 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 P2 | 某需求 20 天工作量 → 至少拆 4 个 ≤ 5 天 WP · 4 要素齐 |
+| 3 | TC-L103-L201-P03 | §6.2 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 P3 | WP Goal 追溯 4 件套锚点 → 成功；无追溯 → 拒 |
+| 4 | TC-L103-L201-P04 | §6.6 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 P4 | L2-05 IC-L2-07 差量 · wp-007 再拆 · 保留其他 DONE WP |
+| 5 | TC-L103-L201-P05 | §6.6 + §5.2 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 P5 | 变更请求二次 IC-19 · 识别可保留 DONE + 重算未开始 |
+| 6 | TC-L103-L201-P06 | §6.5 + §7.2 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 P6 | 产 wbs.md 按 PM-07 模板 · 推荐 skill 字段完整 |
+| 7 | TC-L103-L201-N01 | §6.3 + §11.1 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 N1 | WP 估算 8 天 → 自动再拆；仍超限 → E_104 rejected |
+| 8 | TC-L103-L201-N02 | §6.2 + §11.1 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 N2 | WP 缺 effort_estimate → E_103 rejected + 结构化错误 |
+| 9 | TC-L103-L201-N03 | §6.2 + §11.1 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 N3 | WP Goal 无 4 件套追溯 → E_106 rejected |
+| 10 | TC-L103-L201-N04 | §6.2 + §11.1 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 N4 | WP 依赖悬空（指向 wp-999）→ E_102 rejected |
+| 11 | TC-L103-L201-N05 | §11.1 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 N5 | WP 跨 project 依赖 → E_105 硬红线 rejected |
+| 12 | TC-L103-L201-N06 | §1.4 + §11.1 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 N6 | S4 阶段无差量触发时尝试调 → rejected + 越界审计（由 L1-02 外层拦截）|
+| 13 | TC-L103-L201-I01 | §5.1 + §4 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 I1 | L1-02 S2 Gate → IC-19 → L2-01 → IC-L2-01 → L2-02 装图 → 返回 wbs_topology |
+| 14 | TC-L103-L201-I02 | §5.2 + §4 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 I2 | 运行期失败 3 次 → L2-05 IC-L2-07 → L2-01 差量 → L2-02 合并 → L2-03 可取新子 WP |
+| 15 | TC-L103-L201-I03 | §5.2 + §6.6 | `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.9 I3 | L1-10 变更提交 → L1-02 变更流 → IC-19 二次 → 差量 → L2-04 重算完成率 |
 | 16 | TC-L103-L201-B01 | §6.1 + §11.2 | §11 降级 Level 2 | LLM 连续超时 5 次 → 自动进规则模板降级 · 产 degraded=true 产物 |
 | 17 | TC-L103-L201-B02 | §6.1 + §11.2 | §11 降级 Level 5 | IC-09 连续失败 → 本 L2 拒绝产 ack + 进 DEGRADED |
 
@@ -1344,8 +1344,8 @@ modules:
 
 | OQ-ID | 问题 | 当前 workaround | 决策 deadline |
 |---|---|---|---|
-| **OQ-L103-L201-01** | 是否允许用户在 L1-10 对拆解结果做"人工微调"后再送 L2-02？（对应 prd §8.7 🔧 可选 "交互式拆分"）| 当前只支持自动拆 · 用户不满走变更管理流 | M4（用户反馈后决定）|
-| **OQ-L103-L201-02** | 跨 project 历史 KB 作为 effort 估算辅助（prd §8.7 🔧 "工时估算辅助"）是否引入？| 当前 LLM 自估 · 误差可能较大 | R5 TDD 后评估 |
+| **OQ-L103-L201-01** | 是否允许用户在 L1-10 对拆解结果做"人工微调"后再送 L2-02？（对应 `docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.7 🔧 可选 "交互式拆分"）| 当前只支持自动拆 · 用户不满走变更管理流 | M4（用户反馈后决定）|
+| **OQ-L103-L201-02** | 跨 project 历史 KB 作为 effort 估算辅助（`docs/2-prd/L1-03 WBS+WP 拓扑调度/prd.md` §8.7 🔧 "工时估算辅助"）是否引入？| 当前 LLM 自估 · 误差可能较大 | R5 TDD 后评估 |
 | **OQ-L103-L201-03** | 多 LLM 角色协同拆解（PM + Architect 两轮）是否比单 LLM 更准？对标 MetaGPT role-based（§9.1 Learn）| 当前单 LLM · 成本低但粒度 / skill 推荐质量一般 | M5 性能 + 质量测试 |
 
 ---
