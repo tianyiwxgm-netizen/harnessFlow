@@ -378,3 +378,117 @@ class TestLedgerAndQuery:
         from app.l1_05.registry.query_api import CapabilityNotFoundError
         with pytest.raises(CapabilityNotFoundError):
             api.query_candidates("write_test")
+
+
+class TestLedgerWrite:
+    """Task 01.4 · IC-L2-07 账本回写 · 只允许 L2-02 调用 · L1-09 锁保护."""
+
+    def test_ledger_writer_persists_success(self, tmp_project, lock_mock):
+        import json
+
+        from app.l1_05.registry.ledger import LedgerWriter
+
+        writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+        writer.record(
+            project_id="p1",
+            capability="write_test",
+            skill_id="builtin:write_test_min",
+            success=True,
+        )
+        lines = (tmp_project / "skills" / "registry-cache" / "ledger.jsonl").read_text().splitlines()
+        recs = [json.loads(x) for x in lines if x.strip()]
+        assert len(recs) == 1
+        assert recs[0]["success_count"] == 1
+        assert recs[0]["failure_count"] == 0
+        assert recs[0]["capability"] == "write_test"
+
+    def test_ledger_records_failure_reason(self, tmp_project, lock_mock):
+        import json
+
+        from app.l1_05.registry.ledger import LedgerWriter
+
+        writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+        writer.record(
+            project_id="p1",
+            capability="review_code",
+            skill_id="s1",
+            success=False,
+            failure_reason="timeout",
+        )
+        lines = (tmp_project / "skills" / "registry-cache" / "ledger.jsonl").read_text().splitlines()
+        recs = [json.loads(x) for x in lines if x.strip()]
+        assert recs[0]["failure_count"] == 1
+        assert recs[0]["failure_reason"] == "timeout"
+
+    def test_ledger_rejects_non_l2_02_caller(self, tmp_project, lock_mock):
+        """IC-L2-07 · 只有 L2-02 可写 · 其他 caller raise LedgerPermissionError."""
+        from app.l1_05.registry.ledger import LedgerPermissionError, LedgerWriter
+
+        writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+        with pytest.raises(LedgerPermissionError):
+            writer.record(
+                project_id="p1",
+                capability="c",
+                skill_id="s",
+                success=True,
+                caller="L2-03",
+            )
+
+    def test_ledger_rejects_empty_project_id_pm14(self, tmp_project, lock_mock):
+        from app.l1_05.registry.ledger import LedgerWriter
+
+        writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+        with pytest.raises(ValueError, match="project_id"):
+            writer.record(project_id="", capability="c", skill_id="s", success=True)
+
+    def test_ledger_concurrent_writes_all_land(self, tmp_project, lock_mock):
+        """4 threads × 20 writes each → 80 条记录 · 锁保证无丢失."""
+        import threading
+
+        from app.l1_05.registry.ledger import LedgerWriter
+
+        writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+        errs: list[BaseException] = []
+
+        def hit():
+            try:
+                for _ in range(20):
+                    writer.record(
+                        project_id="p1",
+                        capability="write_test",
+                        skill_id="s1",
+                        success=True,
+                    )
+            except BaseException as e:
+                errs.append(e)
+
+        threads = [threading.Thread(target=hit) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errs
+        lines = (tmp_project / "skills" / "registry-cache" / "ledger.jsonl").read_text().splitlines()
+        non_empty = [x for x in lines if x.strip()]
+        assert len(non_empty) == 80, f"expected 80 rows, got {len(non_empty)}"
+
+    def test_ledger_write_slo_under_50ms_p99(self, tmp_project, lock_mock):
+        """SLO: 账本回写 P99 ≤ 50ms · 100 次采样."""
+        import time
+
+        from app.l1_05.registry.ledger import LedgerWriter
+
+        writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+        durations: list[float] = []
+        for i in range(100):
+            t0 = time.perf_counter()
+            writer.record(
+                project_id="p1",
+                capability="write_test",
+                skill_id=f"s{i % 3}",
+                success=True,
+            )
+            durations.append((time.perf_counter() - t0) * 1000)
+        durations.sort()
+        p99 = durations[98]
+        assert p99 < 50.0, f"p99 write latency exceeded 50ms SLO: {p99:.2f}ms"
