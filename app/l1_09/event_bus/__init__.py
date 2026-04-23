@@ -1,6 +1,7 @@
 """L2-01 Event Bus · IC-09 公共命名空间."""
 from app.l1_09.event_bus.core import EventBus, iter_events_file
 from app.l1_09.event_bus.halt_guard import HaltGuard
+from app.l1_09.event_bus.reader import ReadHashBrokenError, read_range
 from app.l1_09.event_bus.schemas import (
     VALID_ACTORS,
     VALID_L1_PREFIXES,
@@ -23,6 +24,14 @@ from app.l1_09.event_bus.schemas import (
     Event,
     EventBusError,
     ProjectMeta,
+)
+from app.l1_09.event_bus.subscriber import (
+    Subscriber,
+    SubscriberFilter,
+    SubscriberHandle,
+    SubscriberRegistry,
+    dispatch,
+    event_matches,
 )
 
 __all__ = [
@@ -50,4 +59,13 @@ __all__ = [
     "VALID_ACTORS",
     "VALID_L1_PREFIXES",
     "VALID_STATES",
+    # WP05
+    "Subscriber",
+    "SubscriberFilter",
+    "SubscriberHandle",
+    "SubscriberRegistry",
+    "dispatch",
+    "event_matches",
+    "read_range",
+    "ReadHashBrokenError",
 ]

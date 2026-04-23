@@ -45,6 +45,7 @@ from app.l1_09.crash_safety.schemas import (
 )
 from app.l1_09.event_bus.halt_guard import HaltGuard
 from app.l1_09.event_bus.meta import load_meta, save_meta
+from app.l1_09.event_bus.reader import read_range as _read_range_module
 from app.l1_09.event_bus.schemas import (
     AppendEventResult,
     BusDiskFull,
@@ -54,6 +55,12 @@ from app.l1_09.event_bus.schemas import (
     BusWriteFailed,
     Event,
     ProjectMeta,
+)
+from app.l1_09.event_bus.subscriber import (
+    Subscriber,
+    SubscriberHandle,
+    SubscriberRegistry,
+    dispatch,
 )
 
 
@@ -76,6 +83,8 @@ class EventBus:
         self._locks_registry_lock = threading.Lock()
         # 幂等去重缓存（同进程内 · 跨进程去重依赖 event_id 文件扫描 · WP04 简化只扫 meta）
         self._idempotent_cache: dict[str, AppendEventResult] = {}
+        # 订阅注册表（WP05）
+        self._subscribers = SubscriberRegistry()
         # 状态
         if self.halt_guard.is_halted():
             self._state = BusState.HALTED
@@ -103,6 +112,60 @@ class EventBus:
 
     def _events_path(self, project_id: str) -> Path:
         return self._project_dir(project_id) / "events.jsonl"
+
+    # =========================================================
+    # 订阅者管理 · WP05
+    # =========================================================
+
+    def register_subscriber(self, subscriber: Subscriber) -> SubscriberHandle:
+        """§3.3 register_subscriber · 幂等（同 subscriber_id 覆盖）.
+
+        WP05 简化：不支持 replay_from_seq（调用方自行先 read_range 再 register）.
+        """
+        if self.halt_guard.is_halted():
+            raise BusHalted(
+                f"EventBus halted · marker: {self.halt_guard.marker_path}",
+                cause="halt_marker_present",
+            )
+        return self._subscribers.register(subscriber)
+
+    def unregister_subscriber(
+        self,
+        *,
+        subscriber_id: str,
+        registration_token: str,
+    ) -> bool:
+        """§3.6 unregister_subscriber · token 不符返 False."""
+        return self._subscribers.unregister(
+            subscriber_id=subscriber_id,
+            registration_token=registration_token,
+        )
+
+    def subscriber_count(self) -> int:
+        return len(self._subscribers)
+
+    # =========================================================
+    # 只读扫描 · WP05
+    # =========================================================
+
+    def read_range(
+        self,
+        project_id: str,
+        *,
+        from_seq: int = 0,
+        to_seq: int | None = None,
+        include_meta: bool = True,
+        verify_hash_on_read: bool = False,
+    ):
+        """§3.4 流式 iterator · 供 L2-04 checkpoint 扫描."""
+        events_path = self._events_path(project_id)
+        return _read_range_module(
+            events_path,
+            from_seq=from_seq,
+            to_seq=to_seq,
+            include_meta=include_meta,
+            verify_hash_on_read=verify_hash_on_read,
+        )
 
     def append(self, event: Event) -> AppendEventResult:
         """IC-09 唯一写入口 · append 一条事件到 `projects/<pid>/events.jsonl`.
@@ -213,7 +276,14 @@ class EventBus:
             meta.last_hash = link.curr_hash
             save_meta(project_dir, meta)
 
-            # Step 12: async emit（WP05 实现）· 本 WP 跳过
+            # Step 12: dispatch 给订阅者（fire_and_forget · 同步 · 异常吞）
+            subs = self._subscribers.snapshot()
+            broadcast_enqueued = False
+            if subs:
+                body_for_dispatch = {**line_obj}  # 含 hash · 下游消费完整 body
+                _delivered, _failures = dispatch(subs, body_for_dispatch)
+                broadcast_enqueued = True
+
             result = AppendEventResult(
                 event_id=event_id,
                 sequence=sequence,
@@ -222,7 +292,7 @@ class EventBus:
                 persisted_at=persisted_at,
                 jsonl_offset=append_result.offset,
                 file_path=str(events_path),
-                broadcast_enqueued=False,
+                broadcast_enqueued=broadcast_enqueued,
                 idempotent_replay=False,
             )
 
