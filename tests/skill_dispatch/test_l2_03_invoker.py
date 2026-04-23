@@ -232,3 +232,60 @@ class TestContextInjector:
 
         with pytest.raises(ContextInjectionError):
             inject({"project_id": "", "wp_id": "wp1"})
+
+
+class TestTimeoutManager:
+    """Task 03.3 · TimeoutManager · ±100ms 精度 · hard-cap 300s."""
+
+    def test_run_completes_within_timeout(self):
+        from app.skill_dispatch.invoker.timeout_manager import run_with_timeout
+
+        def fast():
+            return "ok"
+
+        assert run_with_timeout(fast, timeout_ms=1000) == "ok"
+
+    def test_run_raises_skill_timeout_on_overrun(self):
+        import time
+
+        from app.skill_dispatch.invoker.timeout_manager import SkillTimeout, run_with_timeout
+
+        def slow():
+            time.sleep(0.5)
+            return "never"
+
+        with pytest.raises(SkillTimeout):
+            run_with_timeout(slow, timeout_ms=100)
+
+    def test_hard_cap_clamps_huge_timeout(self):
+        """即使调用方传超巨 timeout · 也被 clamp 到 300000ms."""
+        from app.skill_dispatch.invoker.timeout_manager import HARD_CAP_MS, run_with_timeout
+
+        assert HARD_CAP_MS == 300_000
+
+    def test_timeout_precision_within_100ms(self):
+        import time
+
+        from app.skill_dispatch.invoker.timeout_manager import SkillTimeout, run_with_timeout
+
+        def very_slow():
+            time.sleep(2.0)
+
+        target_ms = 200
+        t0 = time.perf_counter()
+        with pytest.raises(SkillTimeout):
+            run_with_timeout(very_slow, timeout_ms=target_ms)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        # ±100ms 精度：实际 elapsed 应该接近 target_ms
+        assert abs(elapsed_ms - target_ms) < 100, (
+            f"timeout precision off: target={target_ms}ms actual={elapsed_ms:.1f}ms"
+        )
+
+    def test_propagates_original_exception(self):
+        from app.skill_dispatch.invoker.timeout_manager import run_with_timeout
+
+        def boom():
+            raise ValueError("skill-error")
+
+        with pytest.raises(ValueError, match="skill-error"):
+            run_with_timeout(boom, timeout_ms=1000)
