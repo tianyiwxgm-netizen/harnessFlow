@@ -137,3 +137,119 @@ class TestRegistrySchemas:
             loaded_at_ts_ns=0,
         )
         assert snap.version == "1.0"
+
+
+class TestLoaderStages1to3:
+    """Task 01.2 · RegistryLoader 启动 5 阶段中的前 3 阶段（fs scan / yaml parse / validate）."""
+
+    def test_stage1_missing_file_raises_E_REG_FILE_NOT_FOUND(self, tmp_project):
+        from app.l1_05.registry.loader import RegistryLoadError, RegistryLoader
+
+        loader = RegistryLoader(project_root=tmp_project)
+        with pytest.raises(RegistryLoadError, match="E_REG_FILE_NOT_FOUND"):
+            loader.load()
+
+    def test_stage2_parses_capability_points_from_fixtures(self, tmp_project, fixtures_dir):
+        import shutil
+
+        from app.l1_05.registry.loader import RegistryLoader
+
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
+        snap = RegistryLoader(project_root=tmp_project).load()
+        assert "write_test" in snap.capability_points
+        assert "review_code" in snap.capability_points
+        assert snap.capability_points["write_test"].schema_pointer == "schemas/skill/write_test.v1.json"
+
+    def test_stage2_parses_subagents_and_tools(self, tmp_project, fixtures_dir):
+        import shutil
+
+        from app.l1_05.registry.loader import RegistryLoader
+
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
+        snap = RegistryLoader(project_root=tmp_project).load()
+        assert "verifier" in snap.subagents
+        assert snap.subagents["verifier"].tool_whitelist == ["Read", "Glob", "Grep", "Bash"]
+        assert "Read" in snap.tools
+        assert snap.tools["Read"].kind == "atomic"
+
+    def test_stage3_reject_capability_without_schema_pointer(self, tmp_path):
+        from app.l1_05.registry.loader import RegistryLoadError, RegistryLoader
+
+        cache = tmp_path / "skills" / "registry-cache"
+        cache.mkdir(parents=True)
+        (cache / "registry.yaml").write_text(
+            "version: '1.0'\n"
+            "capability_points:\n"
+            "  x:\n"
+            "    description: d\n"
+            "    schema_pointer: ''\n"
+            "    candidates: []\n",
+            encoding="utf-8",
+        )
+        loader = RegistryLoader(project_root=tmp_path)
+        with pytest.raises(RegistryLoadError, match="E_REG_NO_SCHEMA_POINTER"):
+            loader.load()
+
+    def test_stage3_capability_with_builtin_fallback_passes(self, tmp_project, fixtures_dir):
+        """fixture 里每 capability 都有 builtin_fallback · 应 Stage 3 通过."""
+        import shutil
+
+        from app.l1_05.registry.loader import RegistryLoader
+
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
+        snap = RegistryLoader(project_root=tmp_project).load()
+        for cp in snap.capability_points.values():
+            assert any(c.is_builtin_fallback for c in cp.candidates), (
+                f"capability {cp.name} missing builtin_fallback"
+            )
+
+    def test_stage2_invalid_yaml_raises_E_REG_YAML_PARSE(self, tmp_path):
+        from app.l1_05.registry.loader import RegistryLoadError, RegistryLoader
+
+        cache = tmp_path / "skills" / "registry-cache"
+        cache.mkdir(parents=True)
+        (cache / "registry.yaml").write_text("version: 1.0\n  bad indent: :\n", encoding="utf-8")
+        loader = RegistryLoader(project_root=tmp_path)
+        with pytest.raises(RegistryLoadError, match="E_REG_YAML_PARSE"):
+            loader.load()
+
+    def test_stage3_rejects_single_candidate_without_builtin(self, tmp_path):
+        """PM-09 · 单候选 + 无 builtin → CapabilityPoint model_validator 触发 · 包装成 E_REG_VALIDATION."""
+        from app.l1_05.registry.loader import RegistryLoadError, RegistryLoader
+
+        cache = tmp_path / "skills" / "registry-cache"
+        cache.mkdir(parents=True)
+        (cache / "registry.yaml").write_text(
+            "version: '1.0'\n"
+            "capability_points:\n"
+            "  x:\n"
+            "    description: d\n"
+            "    schema_pointer: s.json\n"
+            "    candidates:\n"
+            "      - skill_id: only_one\n"
+            "        availability: true\n"
+            "        cost_usd: 0.0\n"
+            "        timeout_s: 10\n",
+            encoding="utf-8",
+        )
+        loader = RegistryLoader(project_root=tmp_path)
+        with pytest.raises(RegistryLoadError, match="E_REG_VALIDATION|at_least_2_candidates"):
+            loader.load()
+
+    def test_load_startup_within_500ms_slo(self, tmp_project, fixtures_dir):
+        """SLO · 启动加载 P99 ≤ 500ms（样例 registry 应远低于此）."""
+        import shutil
+        import time
+
+        from app.l1_05.registry.loader import RegistryLoader
+
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
+        loader = RegistryLoader(project_root=tmp_project)
+        t0 = time.perf_counter()
+        loader.load()
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert elapsed_ms < 500.0, f"startup load exceeded 500ms SLO: {elapsed_ms:.1f}ms"
