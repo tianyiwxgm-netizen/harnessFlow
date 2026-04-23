@@ -169,3 +169,134 @@ def test_paginate_pages_indices_are_sequential() -> None:
     body = "\n".join(f"l{i}" for i in range(5000)) + "\n"
     pages = paginator.paginate(body)
     assert [p.index for p in pages] == list(range(len(pages)))
+
+
+# --- Task 02.3 md_reader tests ---
+
+from pathlib import Path
+
+from app.multimodal.doc_io.md_reader import MDReader
+from app.multimodal.path_safety.whitelist import PathWhitelistValidator
+
+
+def _reader(root: Path) -> MDReader:
+    return MDReader(PathWhitelistValidator(root, "p-001", ["docs/"]))
+
+
+def _docs(root: Path) -> Path:
+    d = root / "docs"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+# Small file
+def test_reader_small_file_returns_single_page_none(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "a.md").write_text("---\ndoc_id: a\ndoc_type: t\n---\n# Hi\nline 2\n")
+    content = _reader(tmp_project_root).read("docs/a.md")
+    assert content.is_paged is False
+    assert content.pages is None
+    assert content.frontmatter["doc_id"] == "a"
+    assert content.total_lines == 2  # body lines after frontmatter stripped
+    assert "# Hi" in content.body
+
+
+def test_reader_no_frontmatter(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "plain.md").write_text("# Hello\nworld\n")
+    content = _reader(tmp_project_root).read("docs/plain.md")
+    assert content.frontmatter == {}
+    assert content.total_lines == 2
+
+
+def test_reader_returns_realpath(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "a.md").write_text("hi\n")
+    content = _reader(tmp_project_root).read("docs/a.md")
+    assert content.realpath.endswith("docs/a.md")
+
+
+# Large file · paginated
+def test_reader_large_file_paginated(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    body = "\n".join(f"line {i}" for i in range(3200)) + "\n"
+    (docs / "big.md").write_text(body)
+    content = _reader(tmp_project_root).read("docs/big.md")
+    assert content.is_paged is True
+    assert content.pages is not None
+    assert len(content.pages) == 2
+    assert content.total_lines == 3200
+
+
+def test_reader_merge_of_pages_equals_body(tmp_project_root: Path) -> None:
+    from app.multimodal.doc_io import paginator
+    docs = _docs(tmp_project_root)
+    body = "\n".join(f"l{i}" for i in range(3200)) + "\n"
+    (docs / "big.md").write_text(body)
+    content = _reader(tmp_project_root).read("docs/big.md")
+    assert content.pages is not None
+    assert paginator.merge(content.pages) == content.body
+
+
+# offset / limit
+def test_reader_offset_limit_slices_body(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "a.md").write_text("a\nb\nc\nd\ne\n")
+    content = _reader(tmp_project_root).read("docs/a.md", offset=2, limit=2)
+    assert content.body == "b\nc\n"
+    assert content.total_lines == 5     # full-file total preserved
+    assert content.pages is None
+
+
+def test_reader_offset_past_eof_returns_empty_body(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "a.md").write_text("a\nb\n")
+    content = _reader(tmp_project_root).read("docs/a.md", offset=99)
+    assert content.body == ""
+
+
+def test_reader_offset_zero_rejected(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "a.md").write_text("a\n")
+    with pytest.raises(L108Error) as ei:
+        _reader(tmp_project_root).read("docs/a.md", offset=0)
+    assert ei.value.code == "invalid_path"
+
+
+def test_reader_limit_without_offset_starts_at_line_1(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "a.md").write_text("a\nb\nc\n")
+    content = _reader(tmp_project_root).read("docs/a.md", limit=2)
+    assert content.body == "a\nb\n"
+
+
+# Error codes
+def test_reader_not_found(tmp_project_root: Path) -> None:
+    _docs(tmp_project_root)
+    with pytest.raises(L108Error) as ei:
+        _reader(tmp_project_root).read("docs/missing.md")
+    assert ei.value.code == "not_found"
+
+
+def test_reader_binary_unsupported(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "blob.md").write_bytes(b"\xff\xfe\xfdbinary\x00content")
+    with pytest.raises(L108Error) as ei:
+        _reader(tmp_project_root).read("docs/blob.md")
+    assert ei.value.code == "binary_unsupported"
+
+
+def test_reader_path_forbidden(tmp_project_root: Path) -> None:
+    (tmp_project_root / "node_modules").mkdir()
+    (tmp_project_root / "node_modules" / "foo.md").write_text("hi\n")
+    with pytest.raises(L108Error) as ei:
+        _reader(tmp_project_root).read("node_modules/foo.md")
+    assert ei.value.code == "path_forbidden"
+
+
+def test_reader_malformed_frontmatter(tmp_project_root: Path) -> None:
+    docs = _docs(tmp_project_root)
+    (docs / "bad.md").write_text("---\nkey: [broken\n---\n# body\n")
+    with pytest.raises(L108Error) as ei:
+        _reader(tmp_project_root).read("docs/bad.md")
+    assert ei.value.code == "type_mismatch"
