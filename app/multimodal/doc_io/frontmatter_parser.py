@@ -39,4 +39,4 @@ def assert_required_keys(metadata: dict[str, Any]) -> None:
 def dump(metadata: dict[str, Any], body: str) -> str:
     """Render md text with frontmatter block."""
     post = frontmatter.Post(content=body, **metadata)
-    return frontmatter.dumps(post)
+    return str(frontmatter.dumps(post))
