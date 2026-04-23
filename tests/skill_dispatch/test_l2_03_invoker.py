@@ -33,6 +33,33 @@ class TestIC04Schemas:
         assert req.allow_fallback is True
         assert req.trigger_tick is None
 
+    def test_request_ts_field_auto_populated_iso8601_utc_z(self):
+        """P1-01 · §3.4.2 `ts` required string · default_factory 补 UTC ISO-8601 Z 后缀."""
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        req = InvocationRequest(
+            invocation_id="inv_ts", project_id="p1", capability="c",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        # ts 非空 · 以 Z 结尾 · 符合 ISO-8601
+        assert req.ts
+        assert req.ts.endswith("Z"), f"ts should end with Z (UTC): {req.ts!r}"
+        # 可被 datetime.fromisoformat 解析（剥 Z 后）
+        from datetime import datetime
+        datetime.fromisoformat(req.ts.replace("Z", "+00:00"))
+
+    def test_request_ts_field_accepts_caller_override(self):
+        """P1-01 · 调用方显式传 ts · 不被 default_factory 覆盖."""
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        custom_ts = "2026-04-23T10:00:00.123456Z"
+        req = InvocationRequest(
+            invocation_id="inv_ts2", project_id="p1", capability="c",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+            ts=custom_ts,
+        )
+        assert req.ts == custom_ts
+
     def test_request_rejects_empty_project_id(self):
         from app.skill_dispatch.invoker.schemas import InvocationRequest
 

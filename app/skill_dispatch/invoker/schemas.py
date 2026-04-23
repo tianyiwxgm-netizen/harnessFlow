@@ -12,9 +12,19 @@
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+
+def _iso_now_utc() -> str:
+    """ISO-8601 UTC 时间戳（Z 后缀 · 对齐 IC 契约 `ts: {type: string}`）.
+
+    用途：4 个 IC（IC-04/05/12/20）入参 `ts` 字段的 default_factory · 调用方未显式传时自动补.
+    格式：`YYYY-MM-DDTHH:MM:SS.mmmuuuZ`（Python isoformat + Z 替换 +00:00）.
+    """
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class InvocationRequest(BaseModel):
@@ -31,6 +41,8 @@ class InvocationRequest(BaseModel):
     timeout_ms: int = Field(default=30000, gt=0, le=300000)  # hard-cap 5min
     allow_fallback: bool = True
     trigger_tick: int | None = None
+    # IC-04 §3.4.2 ts: required string · default_factory 自动补 UTC ISO-8601 · 调用方可覆盖
+    ts: str = Field(default_factory=_iso_now_utc, min_length=1)
 
     @model_validator(mode="after")
     def _mirror_check(self) -> InvocationRequest:

@@ -153,6 +153,36 @@ class TestSubagentSchemas:
         vals = {v.value for v in VerdictOutcome}
         assert vals == {"PASS", "FAIL_L1", "FAIL_L2", "FAIL_L3", "FAIL_L4"}
 
+    def test_ic05_ts_field_auto_populated(self):
+        """P1-01 · §3.5.2 `ts` required · default_factory 补 UTC ISO-8601 Z."""
+        from app.skill_dispatch.subagent.schemas import DelegationRequest
+
+        req = DelegationRequest(
+            delegation_id="d", project_id="p1", role="researcher",
+            task_brief="A" * 60, context_copy={"project_id": "p1"}, caller_l1="L1-04",
+        )
+        assert req.ts and req.ts.endswith("Z")
+
+    def test_ic12_ts_field_auto_populated(self):
+        """P1-01 · §3.12.2 `ts` required · default_factory 补 UTC ISO-8601 Z."""
+        from app.skill_dispatch.subagent.schemas import CodebaseOnboardingRequest
+
+        req = CodebaseOnboardingRequest(
+            delegation_id="d", project_id="p1", repo_path="/tmp/x", kb_write_back=True,
+        )
+        assert req.ts and req.ts.endswith("Z")
+
+    def test_ic20_ts_field_auto_populated(self):
+        """P1-01 · §3.20.2 `ts` required · default_factory 补 UTC ISO-8601 Z."""
+        from app.skill_dispatch.subagent.schemas import VerifierRequest
+
+        req = VerifierRequest(
+            delegation_id="d", project_id="p1", wp_id="wp1",
+            blueprint_slice={}, s4_snapshot={},
+            acceptance_criteria=[],
+        )
+        assert req.ts and req.ts.endswith("Z")
+
 
 class TestContextScope:
     """Task 04.2 · Context COW + PM-03 隔离 + checksum + 跨 project 拒绝."""

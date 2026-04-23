@@ -14,7 +14,7 @@ class TestICContracts:
     """IC-04/05/12/20 schema 字段集合对齐校验."""
 
     def test_ic_04_request_matches_contract(self):
-        """InvocationRequest 必含 §3.4.2 字段 + Signature ⊇ Response."""
+        """InvocationRequest 必含 §3.4.2 字段 + Signature ⊇ Response + ts."""
         from app.skill_dispatch.invoker.schemas import (
             InvocationRequest,
             InvocationResponse,
@@ -25,6 +25,7 @@ class TestICContracts:
         required_req_fields = {
             "invocation_id", "project_id", "capability", "params",
             "caller_l1", "context", "timeout_ms", "allow_fallback", "trigger_tick",
+            "ts",   # P1-01 · §3.4.2 required
         }
         assert required_req_fields.issubset(req_fields), (
             f"IC-04 §3.4.2 fields missing: {required_req_fields - req_fields}"
@@ -49,6 +50,7 @@ class TestICContracts:
         required = {
             "delegation_id", "project_id", "role", "task_brief",
             "context_copy", "caller_l1", "allowed_tools", "timeout_s",
+            "ts",   # P1-01 · §3.5.2 required
         }
         assert required.issubset(req_fields)
 
@@ -72,6 +74,7 @@ class TestICContracts:
         required = {
             "delegation_id", "project_id", "repo_path", "kb_write_back",
             "focus", "timeout_s",
+            "ts",   # P1-01 · §3.12.2 required
         }
         assert required.issubset(req_fields)
 
@@ -88,6 +91,7 @@ class TestICContracts:
         required = {
             "delegation_id", "project_id", "wp_id", "blueprint_slice",
             "s4_snapshot", "acceptance_criteria", "timeout_s", "allowed_tools",
+            "ts",   # P1-01 · §3.20.2 required
         }
         assert required.issubset(req_fields)
 

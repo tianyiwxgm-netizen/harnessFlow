@@ -18,10 +18,19 @@ Lifecycle 状态机 (5 状态):
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+
+def _iso_now_utc() -> str:
+    """ISO-8601 UTC 时间戳（Z 后缀 · 对齐 IC 契约 `ts: {type: string}`）.
+
+    用途：IC-05/12/20 入参 `ts` 字段的 default_factory · 调用方未显式传时自动补.
+    """
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 # ----------------------------------------------------------------------------
 # Enums
@@ -64,6 +73,8 @@ class DelegationRequest(BaseModel):
     caller_l1: str = Field(min_length=2)
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Glob", "Grep", "Bash"])
     timeout_s: int = Field(default=1800, gt=0, le=7200)
+    # IC-05 §3.5.2 ts: required string · default_factory 自动补 UTC ISO-8601
+    ts: str = Field(default_factory=_iso_now_utc, min_length=1)
 
     @model_validator(mode="after")
     def _validate_semantics(self) -> DelegationRequest:
@@ -120,6 +131,8 @@ class CodebaseOnboardingRequest(BaseModel):
     kb_write_back: bool
     focus: dict[str, Any] | None = None
     timeout_s: int = Field(default=600, gt=0, le=3600)
+    # IC-12 §3.12.2 ts: required string · default_factory 自动补 UTC ISO-8601
+    ts: str = Field(default_factory=_iso_now_utc, min_length=1)
 
 
 class OnboardingFinalReport(BaseModel):
@@ -153,6 +166,8 @@ class VerifierRequest(BaseModel):
     acceptance_criteria: list[str]
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Glob", "Grep", "Bash"])
     timeout_s: int = Field(default=1200, gt=0, le=3600)
+    # IC-20 §3.20.2 ts: required string · default_factory 自动补 UTC ISO-8601
+    ts: str = Field(default_factory=_iso_now_utc, min_length=1)
 
     @model_validator(mode="after")
     def _strict_whitelist(self) -> VerifierRequest:
