@@ -518,4 +518,892 @@ app/l1_09/event_bus/context.py                # correlation_id / trace_id contex
 
 ---
 
-**§3（L2-05 + L2-01）完结 · 批 2 结束** · 下批写 §3（L2-02 + L2-03 + L2-04）+ §4 依赖图。
+**§3（L2-05 + L2-01）完结 · 批 2 结束** · 下接 §3（L2-02/03/04）+ §4 依赖图。
+
+### 3.7 WP-α-07 · L2-02 锁管理器 · acquire/release/is_locked（基础）
+
+**源文档锚点**：
+- 3-1 `L2-02-锁管理器.md §3.1 3 公共 + 2 内部接口 · §3.2/3.3/3.4 详细契约`
+- 3-1 `L2-02 §6 核心算法（flock + FIFO ticket queue）`
+- 3-1 `L2-02 §7.1 锁粒度矩阵（project 级 · WP 级 · 资源级）`
+- 3-2 `L2-02-锁管理器-tests.md` · 50 TC
+
+**工作内容（L3）**：
+
+- 实现 `LockManager` 单例 · 进程内持锁状态 + 跨进程 flock 协调
+- `acquire_lock(resource, holder, timeout_ms=3000) -> LeaseToken | LockError`
+  - 资源名规范校验：`^(_index|[a-z0-9_-]+:[a-z0-9_-]+)$`
+  - 资源必在 `ALLOWED_RESOURCES` 白名单（`event_bus` / `task_board` / `wp-<id>` / `kb` / `_index`）
+  - holder 格式：`<L-id>:<subcomponent>[:<context>]`（审计需要）
+  - 核心路径：
+    1. 先拿进程内 `threading.Lock`（防同进程内 race）
+    2. 若资源已被持有 · 入 FIFO 队列等（本 ticket · timeout_ms 内）
+    3. 取锁时：`fcntl.flock(fd, LOCK_EX)` + 设 TTL 超时 · 超时抛 `LockError.timeout`
+    4. 成功：生成 `LeaseToken`（ULID + lock_id + issued_at + expires_at = issued_at + TTL）
+    5. 登记到 `held_locks_map` · 发 L1-09 事件 `L1-09:lock_acquired`（经 WP04 append · 异步不阻塞）
+- `release_lock(token) -> ReleaseAck | LockError`
+  - 幂等：同 token 释放 2 次 · 第二次返 `ok_idempotent`（不报错）
+  - 3 步：thread_lock.release → flock LOCK_UN → close fd
+  - 发 `L1-09:lock_released` 事件
+- `is_locked(resource) -> LockState`
+  - 只读 · 不改状态 · 供 Supervisor / UI 观测
+
+**代码文件（L4）**：
+
+```
+app/l1_09/lock_manager/manager.py                 # LockManager 主类 ~250 行
+app/l1_09/lock_manager/fifo_queue.py              # FIFO ticket 队列 ~120 行
+app/l1_09/lock_manager/schemas.py                 # LeaseToken / LockError / LockState ~100 行
+app/l1_09/lock_manager/__init__.py                # ~15 行
+```
+
+**TDD 流程**：
+
+- `tests/l1_09/test_l2_02_lock_acquire.py` · ~30 test_fn · 对齐 TC-L109-L202-001~030
+- 关键测试：
+  - 无竞争 · 单次 acquire/release · P95 ≤ 5ms
+  - 10 方 FIFO 竞争 · 按 ticket 顺序出队 · 无饥饿
+  - timeout（3s）后返 `LockError.timeout` · 误差 ≤ 100ms
+  - resource 格式错 · 返 `invalid_resource`
+  - holder 格式错 · 返 `invalid_holder`
+  - 同 token release 2 次 · 第二次 `ok_idempotent`
+  - 未 acquire 先 release · 返 `invalid_token`
+
+**DoD**：
+- [ ] ~30 TC 全绿
+- [ ] 性能：无竞争 P95 ≤ 5ms · 10 方竞争 P95 ≤ 100ms（benchmark 验证）
+- [ ] 资源白名单硬断言（运行时不许新增 · 配置固化）
+- [ ] FIFO 严格（ticket 单调 · 只有队头可出）
+- [ ] coverage ≥ 85%
+
+### 3.8 WP-α-08 · L2-02 锁管理器 · 死锁检测 + janitor + force_release_all
+
+**源文档锚点**：
+- 3-1 `L2-02 §6.3 死锁检测（DFS 环检测 · V ≤ 10）`
+- 3-1 `L2-02 §6.4 janitor 守护线程（TTL 泄漏回收）`
+- 3-1 `L2-02 §3.5 force_release_all（仅 L2-04 shutdown 专属）`
+
+**工作内容（L3）**：
+
+- 实现 `DeadlockDetector`
+  - 维护 wait-for 图（有向 · 节点 = holder · 边 = 等待关系）
+  - 每次 acquire 入等时 · DFS 检环（< 1ms 算法 · V ≤ 10）
+  - 检到环 · 拒绝本次 acquire 请求（break_action = "reject_self"）· 发 `L1-09:deadlock_detected` CRITICAL 事件
+- 实现 `LockJanitor` 守护协程
+  - 每 5s 扫描一次 `held_locks_map`
+  - 若某锁 `now > expires_at + TTL_GRACE` · 判定泄漏 · force release（不走正常 release 路径）
+  - 发 `L1-09:lock_leaked` WARN 事件
+- 实现 `force_release_all(caller="L2-04-shutdown")` · 访问控制
+  - 仅 L2-04 shutdown 流程调（调用链校验 · 非 L2-04 call 拒绝）
+  - 清空所有锁 · 广播 `shutdown_rejected` 给等待队列
+- 实现 `list_held() -> list[LockState]`（只读观测 · Supervisor 用）
+
+**代码文件（L4）**：
+
+```
+app/l1_09/lock_manager/deadlock_detector.py       # DFS 环检测 ~150 行
+app/l1_09/lock_manager/janitor.py                 # 守护协程 ~120 行
+app/l1_09/lock_manager/shutdown_control.py        # force_release_all + 访问控制 ~80 行
+```
+
+**DoD**：
+- [ ] ~20 TC 全绿
+- [ ] 死锁场景测试：A 持 resource1 等 resource2 · B 持 resource2 等 resource1 · 期望 B 的 acquire 返 `deadlock_rejected`
+- [ ] 3-cycle 死锁也能检（A→B→C→A）
+- [ ] janitor 泄漏回收：模拟 sleep 超 TTL · 期望自动 release + WARN
+- [ ] force_release_all 访问控制：非 L2-04 caller raise
+- [ ] coverage ≥ 85%
+
+**L2-02 完工小结**：2 WP · 1.25 天 · ~2800 行代码 · ~50 TC · 外部可见：`from app.l1_09 import LockManager; lm.acquire_lock("event_bus", "L1-01:tick")` 可调。
+
+### 3.9 WP-α-09 · L2-03 审计记录器 · query_audit_trail（IC-18）
+
+**源文档锚点**：
+- 3-1 `L2-03-审计记录器+追溯查询.md §3.1-3.4 方法 · §3.2 schema（Trail / Anchor / EvidenceLayer）`
+- 3-1 `L2-03 §6 核心算法（按 anchor_type 分路查询）`
+- 3-1 `integration/ic-contracts.md §3.18 IC-18`
+
+**工作内容（L3）**：
+
+- 实现 `AuditQuery.query_audit_trail(anchor: Anchor, filter: QueryFilter) -> Trail`
+  - IC-18 · 被 L1-10 UI 调用（Admin 审计面板 · query_audit_trail tab）
+  - 3 种 anchor_type：
+    - `project_id` · 返该 project 的完整审计链
+    - `tick_id` · 返某次 tick 的所有事件（correlation_id 链）
+    - `event_id` · 返单事件 + 前后 N 条
+  - filter：time_range · actor · event_type · severity
+  - 返回 `Trail`（≥ 12 字段 · 含 4 层 EvidenceLayer · 分页）
+- 实现 `_scan_events(pid, filter)` · 按 pid 分片扫 jsonl
+  - 调 WP05 `read_range(pid, 0, -1)` + 内存 filter
+  - 大结果（> 10000 条）分页（cursor-based）
+- 实现 `_compose_trail(events) -> Trail`
+  - 聚合 · 按 event_type 分类
+  - 提取 evidence_layer（decision / action / result / audit）
+  - 计算 hash chain 连续性（传给 UI 标"完整 / 有 gap"）
+
+**代码文件（L4）**：
+
+```
+app/l1_09/audit/query.py                   # AuditQuery 主类 ~250 行
+app/l1_09/audit/schemas.py                 # Trail / Anchor / EvidenceLayer / QueryFilter ~180 行
+app/l1_09/audit/paginator.py               # cursor-based 分页 ~80 行
+```
+
+**DoD**：
+- [ ] ~28 TC 全绿
+- [ ] 3 种 anchor_type 各 ≥ 3 测试
+- [ ] 大结果分页：10 万 event · cursor 5 次返回 100 条 · 无 OOM
+- [ ] filter 组合：time + actor + type · 至少 5 组合覆盖
+- [ ] hash chain gap 检测：人工注入 1 条缺失 · query 正确标 gap
+- [ ] coverage ≥ 85%
+
+### 3.10 WP-α-10 · L2-03 审计记录器 · rotation + gate 三态
+
+**源文档锚点**：
+- 3-1 `L2-03 §7 rotation 策略（按 size 200MB + 按月）`
+- 3-1 `L2-03 §3.2.4 GateState 三态（rebuilding / open / closed）`
+- 3-1 `L2-03 §8 状态机`
+
+**工作内容（L3）**：
+
+- 实现 `AuditRotation`
+  - 每次 append 检查当前文件 size · ≥ 200MB 触发 rotation
+  - 也按月 rotate（最后日 23:59 自动）
+  - 命名：`audit.jsonl.YYYYMM.NN` · 保留 rotation history
+- 实现 `AuditGate` · 三态机
+  - `REBUILDING`：启动时 · L2-04 checkpoint 恢复中 · query 返"稍候"
+  - `OPEN`：正常可查
+  - `CLOSED`：HALT 状态 · query 拒绝（返错）
+  - 状态转换硬守则：REBUILDING → OPEN（只允许 L2-04 `on_system_resumed` 触发）· OPEN → CLOSED（halt 时）· CLOSED → REBUILDING（clear_halt + restart）
+- 实现 `AuditWriter`（对 L2-01 append 的延续 · 特化审计事件）
+  - L2-03 不独立写 · 复用 L2-01 `append`
+  - 但提供高层 API：`record_audit(action, payload) -> AuditID` · 内部组装 event 调 L2-01
+
+**代码文件（L4）**：
+
+```
+app/l1_09/audit/rotation.py                # 按 size+month rotation ~120 行
+app/l1_09/audit/gate.py                    # 三态机 ~100 行
+app/l1_09/audit/writer.py                  # record_audit 高层 API ~100 行
+```
+
+**DoD**：
+- [ ] ~28 TC 全绿
+- [ ] rotation 触发精准（200MB ± 1MB · month boundary ± 1min）
+- [ ] 三态机非法转换拒绝（REBUILDING → CLOSED 直跳 raise）
+- [ ] rotation 后原文件可归档 tar.zst · 不丢历史
+- [ ] coverage ≥ 85%
+
+**L2-03 完工小结**：2 WP · 1 天 · ~3200 行代码 · ~56 TC · 外部可见：`from app.l1_09 import query_audit_trail`（IC-18 入口 · L1-10 UI 消费）。
+
+### 3.11 WP-α-11 · L2-04 检查点与恢复 · take_snapshot（周期 + 关键事件）
+
+**源文档锚点**：
+- 3-1 `L2-04-检查点与恢复器.md §3.2.1 SnapshotResult · §6.1 周期 + 关键事件双触发 · §8.1 SnapshotJob 状态机`
+- 3-1 `L2-04 §10.1 critical_event_types`
+- 3-1 `L2-04 §11 错误码 40 条`
+
+**工作内容（L3）**：
+
+- 实现 `SnapshotJob`
+  - 周期触发：`snapshot_interval_sec` 默认 30s · 启动时首次 + 之后每 30s
+  - 关键事件触发：订阅 L2-01 事件 · 匹配 `critical_event_types`（gate_passed / hard_red_line / system_resumed）· 立即开 snapshot job
+  - 去重：若正在 snapshot · 后续触发排队（不并发）
+- `take_snapshot(pid) -> SnapshotResult`
+  - Step 1 · 取 `task_board` 锁（L2-02）
+  - Step 2 · 读当前 state（events.jsonl 末 seq · last_hash）
+  - Step 3 · 构造 manifest（含 sha256 + 时间戳 + seq）
+  - Step 4 · 原子写到 `projects/<pid>/checkpoints/ckpt-<seq>-<ts>.json`（调 L2-05 `write_atomic`）
+  - Step 5 · 保留最近 5 版 · 老的归档到 `archive/`
+  - Step 6 · 释放锁 · 发 `L1-09:snapshot_created` 事件
+- 硬约束：
+  - 单次 snapshot ≤ 5s（config `snapshot_deadline_s`）· 超时抛 `SNAPSHOT_E_LOCK_TIMEOUT` 跳过本次
+  - lock_acquire_timeout 5s（防锁风暴）
+  - 大 task_board（> 5MB）延迟到空闲窗口（OQ-1）
+
+**代码文件（L4）**：
+
+```
+app/l1_09/checkpoint/snapshot.py              # SnapshotJob + take_snapshot ~250 行
+app/l1_09/checkpoint/scheduler.py             # 周期 + 关键事件调度 ~150 行
+app/l1_09/checkpoint/schemas.py               # SnapshotResult / Manifest ~100 行
+```
+
+**DoD**：
+- [ ] ~18 TC 全绿（对齐 T-RECOVER-HAPPY-* / T-RECOVER-TIMEOUT-*）
+- [ ] 周期触发：30s ± 500ms 精度
+- [ ] 关键事件触发：gate_passed 事件 ≤ 100ms 开 snapshot
+- [ ] 锁超时：task_board 被 L1-01 占 · snapshot 5s 超时后跳过 + warn（不崩）
+- [ ] 5 版保留 · 第 6 版写入时归档第 1 版
+- [ ] coverage ≥ 85%
+
+### 3.12 WP-α-12 · L2-04 检查点与恢复 · recover_from_checkpoint · Tier 1-4
+
+**源文档锚点**：
+- 3-1 `L2-04 §3.2.2 RecoveryResult · §6.2 recover 主流程 · §8.2 RecoveryAttempt 状态机（T1-T8 状态）`
+- 3-1 `L2-04 §11.1 CHECKPOINT_CORRUPT / HASH_CHAIN_BROKEN / PID_MISMATCH / NO_CHECKPOINT / BLANK_REBUILD_REJECTED / DEADLINE_EXCEEDED` 等 15 错误码
+- 3-1 `integration/ic-contracts.md §3.10 IC-10 replay_from_event`
+
+**工作内容（L3）**：
+
+- 实现 `RecoveryAttempt.recover_from_checkpoint(pid) -> RecoveryResult`
+  - 启动期调用（每 ACTIVE project 串行 · D4 决策 · 并发 1）
+  - Tier 1：读 latest checkpoint → verify sha256 → replay events 尾段
+    - verify 通过 · replay 成功 · 发 `system_resumed(tier=1)` · 完成
+    - verify 失败（`CHECKPOINT_CORRUPT`）· 回退 Tier 1 previous 版
+  - Tier 2：Tier 1 所有 previous 版都失败 → 全量 events.jsonl 回放
+    - 调 WP05 `read_range(pid, 0, -1)` 扫全部
+    - 每条验证 hash chain
+    - hash 断裂 → Tier 3
+  - Tier 3：跳过损坏块（调 WP03 `recover_partial_write`）· 尝试最大可恢复子集
+    - 每跳 1 块发 WARN 事件
+    - 恢复后发 `system_resumed(tier=3, degraded=true)`
+  - Tier 4：全不可恢复 → 拒绝假恢复 · 设 `manifest.state = RECOVERY_FAILED` · 不广播 system_resumed · UI 提示备份
+- 硬约束：
+  - 单 project recovery ≤ 30s（`DEADLINE_EXCEEDED`）
+  - PID_MISMATCH 检查（人为搬运 checkpoint）· 拒绝恢复
+
+**代码文件（L4）**：
+
+```
+app/l1_09/checkpoint/recovery.py              # RecoveryAttempt 主类 ~300 行
+app/l1_09/checkpoint/tier_fallback.py         # Tier 1-4 降级 ~200 行
+app/l1_09/checkpoint/schemas.py               # RecoveryResult / Tier 枚举（已在 WP11）
+```
+
+**DoD**：
+- [ ] ~20 TC 全绿（对齐 T-RECOVER-CORRUPT-001~005 · T-RECOVER-TIMEOUT-001）
+- [ ] Tier 1 happy path：latest checkpoint 完整 · replay 尾 1000 events · 状态与 halt 前完全一致（对比 dict）
+- [ ] Tier 1 corrupt fallback：latest 破坏 · previous 可用 · 成功
+- [ ] Tier 2：连续 3 版 checkpoint 都坏 · 全量回放成功
+- [ ] Tier 3：events.jsonl 第 N 条 hash 断 · 跳过恢复后续（记 skipped_range）
+- [ ] Tier 4：全坏 · 拒绝 · manifest.state = RECOVERY_FAILED · 不发 system_resumed
+- [ ] 30s 硬约束：注入 10 万 events · 必发 `recovery_failed{tier:4}` · 不假恢复
+- [ ] coverage ≥ 85%
+
+### 3.13 WP-α-13 · L2-04 检查点与恢复 · begin_shutdown + replay_events
+
+**源文档锚点**：
+- 3-1 `L2-04 §3.2.3 ShutdownToken · §6.3 drain + final snapshot`
+- 3-1 `L2-04 §3.2.4 ReplayResult（简表）· §1.5 D5 双 SIGINT 强退`
+- 3-1 `L2-04 §11.1 SHUTDOWN_E_DRAIN_TIMEOUT / FINAL_SNAPSHOT_FAIL`
+
+**工作内容（L3）**：
+
+- 实现 `begin_shutdown() -> ShutdownToken`
+  - 通知所有 pid 的 SnapshotJob：拒绝新 snapshot 请求（state = SHUTTING_DOWN）
+  - drain：等所有 in-flight snapshot 完成 · 超 3s 超时
+  - 每 ACTIVE pid 做 final snapshot（`trigger=shutdown`）
+  - ack：总耗时 ≤ 5s · 返回 `ShutdownToken(shutdown_id, drained_at, projects_snapshotted[])`
+  - 发 `L1-09:shutdown_clean` 事件
+- 第二次 SIGINT 强退协议：
+  - signal handler 捕获第 2 次 SIGINT · `os._exit(2)`（不走正常 shutdown）
+  - 下次启动走 Tier 2 recovery（因未 final snapshot）
+- 实现 `replay_events(pid, from_seq, to_seq, callback)` · IC-10
+  - 供 recovery 主路径调 · 或 Supervisor 审计重放调
+  - 失败（hash 断）返 `ReplayResult(success=false, failed_at=N)`
+
+**代码文件（L4）**：
+
+```
+app/l1_09/checkpoint/shutdown.py              # begin_shutdown + signal handler ~180 行
+app/l1_09/checkpoint/replay.py                # replay_events ~120 行
+```
+
+**DoD**：
+- [ ] ~16 TC 全绿
+- [ ] 干净 shutdown：drain + final snapshot + ack 总 ≤ 5s
+- [ ] drain timeout：in-flight snapshot 挂 > 3s · DRAIN_TIMEOUT · 强制继续
+- [ ] 第二次 SIGINT 强退：signal handler 调 `os._exit(2)`
+- [ ] final snapshot 失败（盘满）· 仍发 `shutdown_clean{degraded:true, final_snapshot:false}` · 下次启动走 Tier 2
+- [ ] replay_events 100 万 event 流式处理 · 内存 < 100MB
+- [ ] coverage ≥ 85%
+
+**L2-04 完工小结**：3 WP · 2.25 天 · ~4000 行代码 · ~54 TC · 外部可见：`from app.l1_09 import RecoveryAttempt; ra.recover_from_checkpoint(pid)`（启动期 bootstrap） + `begin_shutdown()`（关闭期）。
+
+### 3.14 WP 总结 · Dev-α-M2 全组完工
+
+**13 WP · 5-7 天 · ~17400 行代码 · ~269 TC · 5 L2 全完**：
+
+| L2 | WP 数 | 估时 | 代码行 | TC 数 | 交付状态 |
+|:---:|:---:|:---:|---:|:---:|:---:|
+| L2-05 | 3 | 1.5 天 | 3700 | 53 | atomic_write / append / hash chain / verify |
+| L2-01 | 3 | 2 天 | 3700 | 56 | EventBus.append / register / read_range / halt |
+| L2-02 | 2 | 1.25 天 | 2800 | 50 | LockManager · flock + FIFO + 死锁 + janitor |
+| L2-03 | 2 | 1 天 | 3200 | 56 | AuditQuery · IC-18 · rotation · gate |
+| L2-04 | 3 | 2.25 天 | 4000 | 54 | Snapshot · Tier 1-4 recovery · shutdown |
+
+---
+
+## §4 WP 依赖图（组内 + 跨组 mock）
+
+### 4.1 组内 WP 依赖（PlantUML）
+
+```plantuml
+@startuml
+skinparam monochrome true
+skinparam defaultTextAlignment center
+
+rectangle "L2-05 崩溃安全层（底座）" as L25 {
+  rectangle "α-WP01\natomic_write" as W1
+  rectangle "α-WP02\nappend + hash" as W2
+  rectangle "α-WP03\nverify + recover" as W3
+}
+
+rectangle "L2-01 事件总线（入口）" as L21 {
+  rectangle "α-WP04\nEventBus.append\n(IC-09)" as W4
+  rectangle "α-WP05\nsubscriber + reader" as W5
+  rectangle "α-WP06\nhalt_guard + ctx" as W6
+}
+
+rectangle "L2-02 锁管理器（独立）" as L22 {
+  rectangle "α-WP07\nacquire/release" as W7
+  rectangle "α-WP08\n死锁检测 + janitor" as W8
+}
+
+rectangle "L2-03 审计查询" as L23 {
+  rectangle "α-WP09\nquery_audit_trail" as W9
+  rectangle "α-WP10\nrotation + gate" as W10
+}
+
+rectangle "L2-04 检查点与恢复" as L24 {
+  rectangle "α-WP11\ntake_snapshot" as W11
+  rectangle "α-WP12\nTier 1-4 recovery" as W12
+  rectangle "α-WP13\nshutdown + replay" as W13
+}
+
+W1 --> W2
+W2 --> W3
+W3 --> W4
+W4 --> W5
+W4 --> W6
+W4 --> W9
+W9 --> W10
+W4 --> W11
+W7 --> W11
+W11 --> W12
+W11 --> W13
+W12 --> W13
+
+W7 --> W8
+
+note right of W4 : Dev-α-M1 里程碑\nIC-09 可对外
+note right of W13 : Dev-α-M2 里程碑\n全组完工
+
+note top of L22 : L2-02 锁管理器独立\n可与 L2-05/L2-01 并行
+@enduml
+```
+
+### 4.2 跨组依赖 mock 表（Dev-α 对外 · 其他组启动前 mock）
+
+| 其他组 | 需要 Dev-α 哪个 L2 | Mock 策略（Dev-α 未 ready 时）|
+|:---|:---|:---|
+| Dev-β L1-06 KB | L2-01 IC-09 append（KB 写审计）| mock `EventBus.append(event)` · 直接 return `AppendEventResult` dummy |
+| Dev-γ L1-05 Skill | L2-01 IC-09 · L2-02 锁（skill 调用加锁）| 同上 + mock `LockManager.acquire_lock()` 返 mock token |
+| Dev-δ L1-02 Lifecycle | L2-01 IC-09 | 同 Dev-β |
+| Dev-ε L1-03 WBS | L2-01 IC-09 | 同 Dev-β |
+| Dev-ζ L1-07 监督 | L2-01 IC-09 + register_subscriber（订阅事件）| mock subscriber API 返 handle |
+| Dev-η L1-08 多模态 | L2-01 IC-09 | 同 Dev-β |
+| Dev-θ L1-10 UI | L2-03 IC-18 `query_audit_trail`（Admin 面板）| mock 返 dummy Trail |
+| 主-1 L1-04 Quality Loop | L2-01 IC-09 + L2-03 IC-18 + L2-04 IC-10 replay | mock 三者 |
+| 主-2 L1-01 主循环 | L2-04 bootstrap recovery | mock · 启动时直接跳过 recovery 进 happy state |
+
+### 4.3 Dev-α 集成替换时机
+
+| 时机 | 替换 | 前置 |
+|:---|:---|:---|
+| Dev-α-M1 达成（WP04 完）| IC-09 可对外 · Dev-β/γ/δ/ε/η 从 mock 切真实 | WP04 单测全绿 + 1 跨组集成测 |
+| Dev-α-M2 达成（WP13 完）| IC-10/IC-18 + shutdown/recovery 可对外 · Dev-ζ/主-1 切真实 | WP13 单测全绿 + 波 1 收尾 Gate |
+
+**§3+§4 完结 · 批 3 结束** · 下接 §5-§10（最后一批）。
+
+---
+
+## §5 每日 standup 节奏 + commit 规范
+
+### 5.1 每日 standup 模板
+
+Dev-α 会话每 WP 结束或每 2 小时（以先到为准）做一次 standup（会话内记录 · commit message 体现）：
+
+```
+[Dev-α Standup · 2026-04-XX HH:MM]
+
+■ 今日目标：WP α-0N · <L2 简述>
+■ 已完成：
+  - WP α-0M · commit <SHA> · coverage XX%
+■ 进行中：
+  - WP α-0N · 进度 50%（tests 写完 · 实现 3/5）
+■ 阻塞：
+  - [ ] 无 / 或具体问题（触发 §6 自修正?）
+■ 明日计划：
+  - WP α-0(N+1)
+■ 自修正触发：（若有）
+  - 发现 3-1 L2-05 §6 某步骤描述歧义 · 已按 §6 情形 B 提 tech-correction-issue
+```
+
+### 5.2 git commit 规范（严格 · 每 WP 独立 commit）
+
+**每 WP 至少 2 commit**：
+
+```
+# commit 1 · 红灯提交（可选但推荐）
+test(harnessFlow-code): α-WP01 add failing tests for atomic_write
+
+- 复制 3-2 L2-05-tests.md §2 正向 + §3 负向 · 15 test_fn
+- pytest 全 fail（期望红灯）
+- refs TC-CRASH-WRITE-001 ~ TC-CRASH-WRITE-015
+
+# commit 2 · 绿灯实现
+feat(harnessFlow-code): α-WP01 L2-05 atomic_write 原子写
+
+- 实现 AtomicWriter class · 5 步 syscall 序
+- tmp + fsync + rename · 含 ENOSPC / EIO 错误处理
+- pytest tests/l1_09/test_l2_05_atomic_write.py · 15/15 绿
+- coverage 87%
+- 对齐 3-1 L2-05 §3.2 + §6.1 + §11 E_WRITE_*
+- refs WP α-01 · L1-09 L2-05
+
+# commit 3（可选）· refactor
+refactor(harnessFlow-code): α-WP01 extract _tmp_name helper
+
+- 提炼 tmp 文件名生成逻辑到工具函数
+- tests 仍 15/15 绿
+```
+
+### 5.3 commit body 必含字段
+
+| 字段 | 必选 | 说明 |
+|:---|:---:|:---|
+| WP ID | ✅ | `α-WP0N` |
+| 对应 3-2 TC 数 | ✅ | 本 commit 覆盖的 TC ID range |
+| coverage | ✅（feat）| 百分比 |
+| 对应 3-1 锚点 | ✅（feat）| 引 L2-XX §N.M |
+| 阻塞/自修正 | 可选 | 若有自修正触发 · 必引 §6 情形 |
+
+### 5.4 push 时机
+
+- 每 WP 完成（feat commit）后 push（**非 batch 攒多份 · 实时 push · 便于主会话 review**）
+- 若遇阻塞 · WIP commit 可本地保留 · 但不阻塞 push 已完成的 WP
+- 绝对不允许 `--force push`（除非主会话明确授权）
+
+### 5.5 branch 策略
+
+- 本组工作直接在 `main` · 不开 feature branch（小团队 · 质量靠 TDD 保）
+- 若主会话后续要切 branch-per-L1 · 另议
+
+---
+
+## §6 自修正触发点（4-0 master §6 在 L1-09 的具体映射）
+
+基于 4-0 master §6 的 5 情形 · 本组可能触发的具体场景：
+
+### 6.1 情形 A · 2-prd 产品需求偏差
+
+**典型场景**：
+- 发现 `docs/2-prd/L1-09 韧性+审计/prd.md` 某条硬约束（如"每事件必 fsync"）在某 edge case 下无法实现（性能瓶颈 · 实际不切可行）
+- 发现 PRD 对 "rotation 策略" 的描述与 3-1 L2-03 §7 矛盾
+
+**处理**：
+```
+1. 暂停相关 WP（α-WP0N · state=BLOCKED）
+2. 开 issue：docs/.github/ISSUE_TEMPLATE/prd-correction.md
+   - 触发点：WP α-04 实现时
+   - 偏差：引 PRD 原文 + 实际冲突
+   - 2-3 方案（保守/折中/激进）
+3. 发主会话审批（L1-09 owner + 产品负责人）
+4. approve 后改 2-prd/L1-09 prd.md · 同步看 3-1 是否需改
+5. 本 WP 解锁
+```
+
+### 6.2 情形 B · 3-1 技术设计不可行
+
+**典型场景**（L1-09 高频）：
+- `L2-04 §8.2 RecoveryAttempt 状态机` 的某个 transition（如 T5 → T6）在代码层发现竞态
+- `L2-01 §6 核心算法` 的 correlation_id 透传在 asyncio + thread 混合场景下行为不符合预期
+- `L2-05 §6.3 hash chain GENESIS` 的算法描述缺少 project_id 前缀（导致跨 project 攻击面）
+
+**处理**：
+```
+1. 暂停 WP
+2. tech-correction-issue：
+   - 位置：docs/3-1-.../L1-09/L2-0X.md §N.M
+   - 问题：具体代码尝试 + 为何不行 + 错误现象
+   - 修正方案
+3. 主会话审批
+4. approve 后：
+   - 修 3-1 对应 L2
+   - 跑 scripts/quality_gate.sh（确保 Gate 仍绿）
+   - 同步改 3-2 对应 tests.md（若 §3 接口或 §11 错误码变了 · TC 必同步）
+   - 若涉 IC · 改 ic-contracts.md · 通知消费方 Dev 组
+5. 本 WP 解锁
+```
+
+### 6.3 情形 C · 3-2 TDD 用例逻辑错
+
+**典型场景**：
+- 对着 3-2 L2-04 tests §4 IC-10 的 TC-RECOVER-CORRUPT-003 实现代码 · 跑发现 test 的 assert 逻辑错（期望返 OK 但语义应 PARTIAL）
+
+**处理**：
+```
+1. 自检 · 真的是 test 错？
+   - 再读 3-1 L2-04 §11 错误码定义
+   - 让主会话 peer review（开 issue）
+2. 确认 test 错 · 改 3-2 tests.md（保持 TC ID 稳定 · 只改 expected）
+3. 同步改已实现的 pytest 代码
+4. WP 继续
+```
+
+### 6.4 情形 D · IC 契约矛盾（Dev-α 作为 IC-09 生产方 · 与 Dev-γ/Dev-ζ 消费方分歧）
+
+**典型场景**：
+- Dev-ζ L1-07 监督订阅 IC-09 · 发现 event payload 某字段在不同 event_type 下语义不一致
+- Dev-γ L1-05 skill 调用时写 `L1-05:skill_invoked` 事件 · 字段 schema 与 Dev-α 的 Event pydantic 校验冲突
+
+**处理**（主会话仲裁）：
+```
+1. 两端 WP 双暂停
+2. 主会话读：
+   - docs/3-1-Solution-Technical/integration/ic-contracts.md §3.9 IC-09
+   - docs/3-1-Solution-Technical/integration/p0-seq.md 对应时序
+   - L1-05 / L1-07 architecture 中的 event 定义
+3. 判定真相（通常是 ic-contracts 描述模糊 · 两端都按自己理解）
+4. 修 ic-contracts.md §3.9.3（入参 schema）· 加更严格的字段说明
+5. Dev-α · Dev-消费方 同步更新代码
+6. 开 integration-test-IC-09 立即跑（本组提供给 QA-1 的预制集成测试）
+7. 双方 WP 解锁
+```
+
+### 6.5 情形 E · 3-3 监督规约偏差
+
+**典型场景**：
+- 3-3 `hard-redlines.md`（O 会话写）定义 HRL-05「审计绕过尝试」的触发条件是「直接写 events.jsonl 不经 EventBus.append」· 但 Dev-α 实现后发现该检测逻辑应在 L1-07 监督做 · 不是 L1-09 自检测
+
+**处理**：
+- 同 §6.1-§6.4 · 但触发 O 会话修 3-3 hard-redlines.md 对应条目
+- 不影响 Dev-α 本组 WP · 仅记 issue · 不 BLOCK
+
+### 6.6 自修正审计（Dev-α 特别强调）
+
+Dev-α 每次自修正必写 `projects/_correction_log.jsonl`：
+
+```python
+def log_correction(correction_type, location, before_hash, after_hash):
+    """4-0 master §6.2 要求 · Dev-α 严格记录"""
+    record = {
+        "timestamp": utcnow_iso(),
+        "type": correction_type,  # prd/tech/tdd/ic/monitor
+        "triggered_by": "Dev-α",
+        "wp": current_wp_id,
+        "location": location,
+        "before_hash": before_hash,
+        "after_hash": after_hash,
+        "reviewer": "main-session",
+        "impact_scope": [...],
+    }
+    append_jsonl("projects/_correction_log.jsonl", record)
+    # 本身也经 L2-01 EventBus · 双路径审计
+```
+
+**Dev-α 特别责任**：作为脊柱组 · 发现 IC-09 / IC-10 / IC-18 相关契约矛盾时 · 必须**优先级 P0** 走情形 D 路径 · 不得在代码里静默 workaround。
+
+---
+
+## §7 本组对外契约（IC mock + 真实替换时机）
+
+### 7.1 Dev-α 提供的对外接口清单
+
+| IC | 方法签名 | 消费方 | 本组提供位置 | mock 策略（其他组用）|
+|:---|:---|:---|:---|:---|
+| IC-09 | `EventBus.append(event: Event) -> AppendEventResult` | 全部 L1 | WP α-04 | 返 `AppendEventResult(event_id=uuid(), seq=0, hash="0"*64)` |
+| IC-09 ext | `register_subscriber(sub) -> SubscriberHandle` | L1-07 监督 | WP α-05 | 返 dummy handle · callback 永不触发 |
+| IC-10 | `replay_from_event(pid, from_seq) -> ReplayResult` | L1-09 内部（bootstrap）· L1-07 审计重放 | WP α-13 | 返 `ReplayResult(events=[], success=true)` |
+| IC-18 | `query_audit_trail(anchor, filter) -> Trail` | L1-10 UI | WP α-09 | 返 empty `Trail(events=[], total=0)` |
+| 内部 | `LockManager.acquire_lock(resource, holder) -> LeaseToken` | L1-02/04 用 task_board 锁 | WP α-07 | 返 dummy `LeaseToken(token_id=uuid())` · release 永成功 |
+| 内部 | `RecoveryAttempt.recover_from_checkpoint(pid)` | L1-01 启动 | WP α-12 | mock 时跳过 · 返 `RecoveryResult(tier=1, recovered=false, state={})` |
+
+### 7.2 其他组 mock 模板（Dev-α 为消费方提供参考）
+
+**Python mock 代码骨架**（其他组 Dev 会话可复制）：
+
+```python
+# tests/conftest.py（其他组会话用）
+import pytest
+from unittest.mock import MagicMock
+
+@pytest.fixture
+def mock_event_bus():
+    """模拟 L1-09 L2-01 EventBus · Dev-α ready 前使用"""
+    bus = MagicMock()
+    bus.append.return_value = MagicMock(
+        event_id="mock-event-id",
+        seq=1,
+        hash="0" * 64,
+    )
+    bus.register_subscriber.return_value = MagicMock(handle_id="mock-sub")
+    return bus
+
+@pytest.fixture
+def mock_lock_manager():
+    """模拟 L1-09 L2-02 LockManager"""
+    lm = MagicMock()
+    lm.acquire_lock.return_value = MagicMock(
+        token_id="mock-token",
+        lock_id="mock-lock",
+        expires_at="2026-04-25T12:00:00Z",
+    )
+    return lm
+```
+
+### 7.3 替换时机表
+
+| 消费方会话 | 用 Dev-α mock 到波 N | 集成替换触发条件 |
+|:---|:---:|:---|
+| Dev-β L1-06 | 波 1 中（并行）| Dev-α WP04 完 · IC-09 可真实调 |
+| Dev-γ L1-05 | 波 2 中 | 同上 · 另加 LockManager WP07 完 |
+| Dev-ζ L1-07 | 波 2 中 · 波 3 初 | IC-09 + register_subscriber 都真实 |
+| Dev-δ/ε/η | 波 2 中 | IC-09 真实即可 |
+| Dev-θ L1-10 | 波 3 后 | IC-18 query_audit_trail 可返真 Trail |
+| 主-1 L1-04 | 波 4 初（集成期）| 全部 IC（09/10/18 + 内部锁）真实 |
+
+### 7.4 Dev-α 对其他组的 SLO 承诺
+
+| 承诺 | 指标 | 违规响应 |
+|:---|:---|:---|
+| IC-09 `append` 延迟 | P95 ≤ 50ms（scope §14 性能表）| 若实测不达 · 走 §6.2 情形 B 改 3-1 §12（降预期） |
+| IC-09 幂等 | 同 event_id 第二次 append 必返原结果（含原 seq）| 违规即 bug · 必改 |
+| IC-09 halt semantic | fsync 失败必 halt · 后续 append raise | 违规导致上层感知错 · P0 紧急修 |
+| IC-18 query | 10 万 event P95 ≤ 500ms（分页）| 违规走性能优化 WP + 回归测 |
+| Lock TTL | 3s 等锁超时精度 ± 100ms | 违规改 §10 config 或性能问题排查 |
+
+---
+
+## §8 验收 DoD（本组完工判据 · 脊柱特化）
+
+基于 4-0 master §8 标准 + L1-09 脊柱特有：
+
+### 8.1 每 WP 级 DoD（复用 4-0 §8.1 + 本组加码）
+
+**通用**（4-0 §8.1 照搬）：
+- 代码落盘 · ruff + mypy 绿
+- 对应 3-2 tests 全绿 · coverage ≥ 80%
+- 每错误码 ≥ 1 负向 TC
+- PM-14 合规
+- 独立 commit
+
+**L1-09 加码**：
+- **fsync 硬约束测试**：每涉 fsync 的 WP · 必有 mock `os.fsync` 抛 EIO 的负向测（期望 raise + halt）
+- **hash chain 硬断言**：每涉 hash chain 的 WP · 必有"篡改第 N 条 payload · 期望 verify 返 CORRUPT · 定位准确" 的 mutation test
+- **PM-14 物理分片**：每 WP 的单测 · fixture 用 2 个不同 project_id · 验证无跨 project 串话
+
+### 8.2 组级 DoD（Dev-α 完工 · 全组可切真实集成）
+
+| 维度 | 判据 | 验证命令 |
+|:---|:---|:---|
+| 全 WP 绿 | 13 WP 全 closed · commits push | `git log --oneline \| grep 'α-WP' \| wc -l` ≥ 13 |
+| pytest 全绿 | 5 L2 tests 全跑绿 | `pytest tests/l1_09/ -v` 期望 ~270 passed |
+| coverage | ≥ 85%（脊柱高于普通 L1 的 80%）| `pytest --cov=app/l1_09 --cov-report=term` |
+| 集成测试 | 组内 5 L2 联调 test（test_l1_09_integration.py）≥ 10 | 手工建 + pytest |
+| IC 契约一致 | 所有 IC-09/10/18 payload 符合 ic-contracts.md §3.N | 自动 schema 校验脚本 |
+| 性能 SLO | IC-09 append P95 ≤ 50ms · LockManager acquire ≤ 5ms · recovery ≤ 30s | bench_*.py 跑 3 遍平均 |
+| 幂等 | event_id 幂等 + release_lock 幂等 | 专项 test |
+| halt 端到端 | mock fsync EIO · IC-09 halt · 后续 append raise · 持久化 `_halt.marker` | 专项 test |
+| 崩溃恢复 | Tier 1 happy + Tier 2 fallback + Tier 3 skip + Tier 4 refuse | 4 专项 test |
+| PM-14 隔离 | 2 project 并发写 · 无串话 · 分片独立 | 专项 test |
+| 自修正记录 | 所有触发的 §6 correction 在 `_correction_log.jsonl` | `jq length _correction_log.jsonl` ≥ 0 |
+
+### 8.3 验收流程（主会话检查）
+
+```bash
+# 1. 全绿自检
+pytest tests/l1_09/ -v --cov=app/l1_09 --cov-report=term-missing
+ruff check app/l1_09/
+mypy app/l1_09/
+
+# 2. 性能验证
+python tests/l1_09/perf/bench_append_qps.py       # 期望 QPS ≥ 200
+python tests/l1_09/perf/bench_lock_acquire.py     # P95 ≤ 5ms
+python tests/l1_09/perf/bench_recovery.py         # bootstrap ≤ 30s (10k events)
+
+# 3. 集成测试（组内）
+pytest tests/l1_09/integration/ -v
+
+# 4. schema 一致性
+python scripts/check_ic_schema_conformance.py --l1 09
+
+# 5. PM-14 验证
+pytest tests/l1_09/ -v -k "pm14 or project_isolation"
+```
+
+### 8.4 组完工 → 波 1 收尾 Gate
+
+Dev-α 完工即：
+- IC-09 可对外真实调（其他组 mock → real 切换可开始）
+- 脊柱稳定 · 下波业务 L1 可启动
+
+---
+
+## §9 风险清单 + 降级策略（脊柱组特化）
+
+### 9.1 P0 风险（Dev-α 特有 · 全局影响）
+
+| 风险 | 触发 | 影响全局 | 降级 |
+|:---|:---|:---|:---|
+| **R-α-01 fsync 实现在不同 FS 行为不一致** | APFS / ext4 / NFS 行为差异 | IC-09 halt 可能误触或漏触 | 限定 V1 只支持 Linux ext4 / macOS APFS · 测试覆盖两种 · 其他 FS 启动 warn |
+| **R-α-02 hash chain 性能成瓶颈** | sha256 每事件计算 · 高 QPS 下 CPU 瓶颈 | IC-09 P95 超 50ms | 降级：采用 Blake3（更快 · V2+ OQ · V1 先 sha256）· 若紧急 · 调 `hash_chain_async=true`（异步补算 · 有一致性风险 · 仅降级用） |
+| **R-α-03 recovery Tier 3 跳损块算法边界漏洞** | events.jsonl 损坏形式多样 · 跳法可能丢合法事件 | 数据不完整 | 降级：Tier 3 失败不自动进 · 发 FAIL_TIER_3 事件 · UI 提示人工审查 |
+| **R-α-04 drain 超时 · 非干净 shutdown 频繁** | 高并发 + 磁盘慢 | 每次启动都走 Tier 2 全量回放 · 慢 | 增加 `shutdown_grace_sec` 配置 · V1 默认 3s · 若实测不够改 10s |
+| **R-α-05 LockManager 死锁检测漏判** | 实际代码路径复杂（> 10 方）· 算法漏 cycle | 死锁 · 卡死 | 降级：janitor TTL 兜底（超 3s 强 release + WARN）· 保证不永久死锁 |
+
+### 9.2 P1 风险（Dev-α 组内延期）
+
+| 风险 | 触发 | 降级 |
+|:---|:---|:---|
+| R-α-06 WP04 EventBus.append 实现超预估 | 幂等 + hash chain + halt 逻辑多 · 1 天吃不下 | 拆 WP04 为 WP04a（基础 append）+ WP04b（幂等 + halt）· 波 1 可能延 1-2 天 |
+| R-α-07 WP12 Tier 1-4 恢复测试构造复杂 | 需模拟多种 corruption · mock 工程量大 | 优先 Tier 1/2 必做 · Tier 3/4 做主要路径 · edge case 留给 QA-1 补 |
+| R-α-08 Dev-α 会话 context 溢出 | 17400 行代码 · 单会话可能压不住 | 分 Dev-α1（WP01-06 · L2-05+01）· Dev-α2（WP07-13 · L2-02/03/04）· 但同会话风格一致 · Dev-α2 续 Dev-α1 的 commit |
+
+### 9.3 降级决策流程
+
+```
+遇风险 · 不能按 DoD 完工
+  ↓
+是否可走 §6 自修正协议（改源文档）？
+  YES → 走自修正 · 通知主会话
+  NO  → 判风险等级
+        ↓
+       P0 · 立即通知主会话 · 阻塞下波
+       P1 · 记 risk-log.md · 本波收尾前解决
+       P2 · backlog
+```
+
+---
+
+## §10 交付清单（本组完工交什么）
+
+### 10.1 代码文件清单（必交 · 约 17400 行）
+
+```
+app/l1_09/
+├── __init__.py                              （导出主接口）
+├── crash_safety/（L2-05 · ~3700 行）
+│   ├── atomic_writer.py
+│   ├── appender.py
+│   ├── hash_chain.py
+│   ├── canonical_json.py
+│   ├── integrity_checker.py
+│   └── schemas.py
+├── event_bus/（L2-01 · ~3700 行）
+│   ├── core.py
+│   ├── emitter.py
+│   ├── subscriber.py
+│   ├── reader.py
+│   ├── halt_guard.py
+│   ├── meta.py
+│   ├── context.py
+│   └── schemas.py
+├── lock_manager/（L2-02 · ~2800 行）
+│   ├── manager.py
+│   ├── fifo_queue.py
+│   ├── deadlock_detector.py
+│   ├── janitor.py
+│   ├── shutdown_control.py
+│   └── schemas.py
+├── audit/（L2-03 · ~3200 行）
+│   ├── query.py
+│   ├── writer.py
+│   ├── paginator.py
+│   ├── rotation.py
+│   ├── gate.py
+│   └── schemas.py
+└── checkpoint/（L2-04 · ~4000 行）
+    ├── snapshot.py
+    ├── scheduler.py
+    ├── recovery.py
+    ├── tier_fallback.py
+    ├── shutdown.py
+    ├── replay.py
+    └── schemas.py
+```
+
+### 10.2 测试文件清单（必交 · 约 5500 行）
+
+```
+tests/l1_09/
+├── conftest.py                              （共享 fixture · mock_pid · fake_clock · tmp_fs · mock_event_bus）
+├── test_l2_01_event_bus.py                  (52 test_fn · 56 TC)
+├── test_l2_02_lock_manager.py               (46 · 50)
+├── test_l2_03_audit.py                      (52 · 56)
+├── test_l2_04_checkpoint.py                 (50 · 54)
+├── test_l2_05_crash_safety.py               (48 · 53)
+├── integration/
+│   ├── test_l1_09_integration.py            (≥ 10 跨 L2 集成)
+│   ├── test_ic_09_contract.py               (IC-09 契约 · 给 QA-1 预制)
+│   ├── test_tier_recovery.py                (Tier 1-4 崩溃恢复 e2e)
+│   └── test_pm14_isolation.py               (多 project 隔离)
+└── perf/
+    ├── bench_append_qps.py                  (≥ 200 QPS)
+    ├── bench_lock_acquire.py                (无竞争 P95 ≤ 5ms)
+    ├── bench_recovery.py                    (10k events ≤ 30s)
+    └── bench_audit_query.py                 (10w events P95 ≤ 500ms)
+```
+
+### 10.3 文档产出（必交）
+
+| 文档 | 位置 | 作用 |
+|:---|:---|:---|
+| `app/l1_09/README.md` | `app/l1_09/` | 本 L1 模块 README · 架构 · 用法 · API 速查 |
+| `_correction_log.jsonl`（若触发自修正）| `projects/_correction_log.jsonl` | 自修正审计 |
+| `risk-log.md`（若触发风险）| `app/l1_09/risk-log.md` | 本组风险记录 |
+
+### 10.4 CI / Gate 通过证据
+
+- `pytest tests/l1_09/ -v` · 270 passed
+- `ruff check app/l1_09/ --fix-only false` · 0 error
+- `mypy app/l1_09/` · 0 error
+- coverage 报告：`pytest --cov=app/l1_09 --cov-report=html:coverage_l1_09/` · ≥ 85%
+- perf bench 全过：3 个 bench 连续 3 次运行平均值达标
+
+### 10.5 commit 清单汇总（预期 · 完工时主会话核对）
+
+```
+α-WP01 · L2-05 atomic_write                (feat commit + test commit · 2 个)
+α-WP02 · L2-05 append + hash chain         (2)
+α-WP03 · L2-05 verify + recover            (2)
+α-WP04 · L2-01 EventBus.append             (2)
+α-WP05 · L2-01 subscriber + reader         (2)
+α-WP06 · L2-01 halt_guard + ctx            (2)
+α-WP07 · L2-02 acquire/release/is_locked   (2)
+α-WP08 · L2-02 deadlock + janitor          (2)
+α-WP09 · L2-03 query_audit_trail           (2)
+α-WP10 · L2-03 rotation + gate             (2)
+α-WP11 · L2-04 take_snapshot               (2)
+α-WP12 · L2-04 Tier 1-4 recovery           (2)
+α-WP13 · L2-04 shutdown + replay           (2)
+
+总计：26-30 commits
+```
+
+### 10.6 交付验收 checklist（主会话完工时核对）
+
+- [ ] 13 WP 全 closed
+- [ ] pytest all green · coverage ≥ 85%
+- [ ] ruff + mypy 全绿
+- [ ] perf 3 个 bench 达标
+- [ ] PM-14 多 project 隔离测试绿
+- [ ] IC-09 halt 端到端测试绿
+- [ ] Tier 1-4 recovery 测试全绿
+- [ ] `_correction_log.jsonl` 记录完整（若有自修正）
+- [ ] `app/l1_09/README.md` 写了
+- [ ] 交付包：`tar -czf dev-alpha-l1-09.tar.gz app/l1_09/ tests/l1_09/ app/l1_09/README.md`
+
+---
+
+## 更新记录
+
+| 版本 | 日期 | 作者 | 变更 |
+|:---|:---|:---|:---|
+| v1.0 | 2026-04-23 | 主会话 | 初版落盘 · 4 批写入 · §1-§10 + 附录 · ~2500 行 |
+
+---
+
+*— Dev-α · L1-09 韧性+审计 · Execution Plan · v1.0 · 2026-04-23 · 标杆 md · 其他 19 份子 exe-plan 按此结构派生 —*
