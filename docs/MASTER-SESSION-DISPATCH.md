@@ -228,6 +228,115 @@ updated_at: 2026-04-22
 
 ---
 
+## §5.6 独立模块 · 独立包 · 语义命名（写代码铁律）
+
+> 所有 Dev / main 会话写代码必遵守 · 违反直接 code-review reject。
+
+### 铁律 1 · 一个独立逻辑单元 → 一个独立 Python 包
+
+**Python 包定义**：目录 + `__init__.py` + 明确的 public API（仅 export 必要符号）。
+
+**最小粒度**：每个 L2 至少一个独立包。例如 L1-09 的 6 个 L2：
+
+```
+app/l1_09/
+├── __init__.py                        # L1-09 公开 API（re-export 各 L2）
+├── crash_safety/                       # L2-05 · 独立包
+│   ├── __init__.py
+│   ├── atomic_write.py
+│   ├── fsync_policy.py
+│   └── recovery.py
+├── event_bus/                          # L2-01 · 独立包
+│   ├── __init__.py
+│   ├── append_only.py
+│   ├── hash_chain.py
+│   └── fsync_enforcer.py
+├── lock_manager/                       # L2-02 · 独立包
+│   ├── __init__.py
+│   ├── file_lock.py
+│   └── deadlock_detector.py
+├── audit_trail/                        # L2-03 · 独立包
+├── checkpoint/                         # L2-04 · 独立包
+└── shutdown/                           # L2-06 · 独立包
+```
+
+**绝不允许** · 把 L2-01 的 `hash_chain.py` 放到 L2-03 的 `audit_trail/` 下。各 L2 代码在**自己包内部**。
+
+### 铁律 2 · 包名必须有语义（业务语义 · 不是技术抽象）
+
+| ✅ 好名字（业务语义） | ❌ 坏名字（无意义/技术词）|
+|:---|:---|
+| `crash_safety/` | `utils/` |
+| `hash_chain/` | `helpers/` |
+| `stage_gate_controller/` | `manager/` |
+| `verifier/` | `service/` |
+| `rollback_router/` | `handler/` |
+| `skill_dispatcher/` | `core/` |
+| `kb_promotion/` | `common/` |
+| `panic_detector/` | `misc/` |
+
+**判据**：包名要能让**陌生工程师不读代码就知道这包是干什么业务的**。看到 `utils/` 你不知道干嘛 · 看到 `crash_safety/` 你立刻懂。
+
+### 铁律 3 · 跨包通信只走 public API
+
+**错误示范**：
+```python
+# 在 audit_trail/reader.py 里
+from app.l1_09.event_bus.hash_chain import _internal_verify   # ❌ 碰 _private
+```
+
+**正确示范**：
+```python
+# event_bus/__init__.py 明确 export
+from .hash_chain import verify_chain   # public
+__all__ = ["verify_chain", "append_event"]
+
+# audit_trail/reader.py
+from app.l1_09.event_bus import verify_chain   # ✅ 只用 public API
+```
+
+### 铁律 4 · 模块边界与 IC 契约对齐
+
+每个 L1 对外暴露的 **public API = IC 契约清单**。
+
+示例 L1-09 `app/l1_09/__init__.py`：
+```python
+"""L1-09 · 韧性+审计 · 对外 IC 公开入口"""
+from .event_bus import append_event          # IC-09
+from .audit_trail import query_audit         # IC-18
+from .checkpoint import create_checkpoint    # (内部)
+
+__all__ = ["append_event", "query_audit"]    # IC-09 + IC-18 · 外部只能用这 2 个
+```
+
+其他 L1 调用 L1-09 **只能** `from app.l1_09 import append_event` · 不能 `from app.l1_09.event_bus.append_only import _batch_append`。
+
+### 铁律 5 · 文件尺寸 & 职责单一
+
+- 单文件 ≤ 400 行（含注释 · 超则拆）
+- 单函数 ≤ 50 行（超则抽方法）
+- 一个 class 只干一件事（SRP）
+
+### 铁律 6 · 测试包镜像源码包
+
+```
+app/l1_09/crash_safety/          # 源码
+tests/l1_09/crash_safety/        # 测试（必须同名镜像）
+├── test_atomic_write.py
+├── test_fsync_policy.py
+└── test_recovery.py
+```
+
+一眼就知道测试对应哪个源码包。
+
+### 铁律 7 · 共享 util 禁止进入跨 L1 区域
+
+- 各 L1 自己的 util 放在 `app/l1_XX/_internal/`（带下划线 · 明示私有）
+- **禁止**建 `app/shared/utils/` 这种跨 L1 共享 util 目录（除非主会话批准）
+- 共享逻辑优先**通过 IC 契约**传递 · 不是 import
+
+---
+
 ## §6 会话启动模板（用户用）
 
 ### 6.1 启动必须用 superpowers 全链路执行（强制）
