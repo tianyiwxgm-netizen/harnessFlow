@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.l1_06.l2_01.errors import TierError
-from app.l1_06.l2_01.schemas import (
+from app.knowledge_base.tier_manager.errors import TierError
+from app.knowledge_base.tier_manager.schemas import (
     PromotionRequest,
     ScopeDecisionRequest,
     WriteSlotRequest,
 )
-from app.l1_06.l2_01.tier_manager import TierManager
+from app.knowledge_base.tier_manager.tier_manager import TierManager
 
 
 class TestL2_01_Negative:

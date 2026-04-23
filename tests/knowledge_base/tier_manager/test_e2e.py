@@ -5,14 +5,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.l1_06.l2_01.schemas import (
+from app.knowledge_base.tier_manager.schemas import (
     ActivateEvent,
     ExpireScanTrigger,
     PromotionRequest,
     ScopeDecisionRequest,
     WriteSlotRequest,
 )
-from app.l1_06.l2_01.tier_manager import TierManager
+from app.knowledge_base.tier_manager.tier_manager import TierManager
 
 
 def _emitted(bus: MagicMock) -> list[str]:

@@ -1,12 +1,12 @@
 """L1-06 L2-01 · integration with sibling L2s · 3-2 §8."""
 from __future__ import annotations
 
-from app.l1_06.l2_01.schemas import (
+from app.knowledge_base.tier_manager.schemas import (
     PromotionRequest,
     ScopeDecisionRequest,
     WriteSlotRequest,
 )
-from app.l1_06.l2_01.tier_manager import TierManager
+from app.knowledge_base.tier_manager.tier_manager import TierManager
 
 
 class TestL2_01_Integration:

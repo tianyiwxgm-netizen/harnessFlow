@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from app.l1_06.l2_01.schemas import (
+from app.knowledge_base.tier_manager.schemas import (
     ActivateEvent,
     ExpireScanTrigger,
     PromotionRequest,
     ScopeDecisionRequest,
     WriteSlotRequest,
 )
-from app.l1_06.l2_01.tier_manager import TierManager
+from app.knowledge_base.tier_manager.tier_manager import TierManager
 
 
 def _emitted_event_types(bus: MagicMock) -> list[str]:

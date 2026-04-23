@@ -4,12 +4,12 @@ from __future__ import annotations
 import contextlib
 import threading
 
-from app.l1_06.l2_01.schemas import (
+from app.knowledge_base.tier_manager.schemas import (
     ActivateEvent,
     ScopeDecisionRequest,
     WriteSlotRequest,
 )
-from app.l1_06.l2_01.tier_manager import TierManager
+from app.knowledge_base.tier_manager.tier_manager import TierManager
 
 
 class TestL2_01_EdgeCases:

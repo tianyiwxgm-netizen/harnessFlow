@@ -10,8 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.l1_06.l2_01.schemas import ApplicableContext, EntryCandidate
-from app.l1_06.l2_01.tier_manager import TierManager
+from app.knowledge_base.tier_manager.schemas import ApplicableContext, EntryCandidate
+from app.knowledge_base.tier_manager.tier_manager import TierManager
 
 
 @pytest.fixture
