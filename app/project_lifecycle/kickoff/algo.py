@@ -6,9 +6,15 @@ from __future__ import annotations
 
 from app.project_lifecycle.kickoff.anchor_hash import compute_anchor_hash
 from app.project_lifecycle.kickoff.atomic_writer import atomic_write_chart
+from app.project_lifecycle.kickoff.pid_gen import ensure_pid, generate_pid, is_valid_pid
+from app.project_lifecycle.kickoff.producer_core import produce_kickoff
 
 __all__ = [
     "atomic_write_chart",
     "compute_anchor_hash",
-    # produce_kickoff / recover_draft 后续批次加
+    "produce_kickoff",
+    "generate_pid",
+    "is_valid_pid",
+    "ensure_pid",
+    # recover_draft 后续批次加
 ]
