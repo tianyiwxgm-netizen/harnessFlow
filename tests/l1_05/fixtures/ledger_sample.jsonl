@@ -1,0 +1,3 @@
+{"capability":"write_test","skill_id":"superpowers:tdd-workflow","success_count":12,"failure_count":1,"last_attempt_ts":1714000000,"failure_reason":null}
+{"capability":"write_test","skill_id":"builtin:write_test_min","success_count":3,"failure_count":0,"last_attempt_ts":1714000100,"failure_reason":null}
+{"capability":"review_code","skill_id":"plugin:python-reviewer","success_count":8,"failure_count":2,"last_attempt_ts":1714000050,"failure_reason":"timeout"}

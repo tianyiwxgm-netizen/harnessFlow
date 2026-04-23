@@ -98,8 +98,16 @@ class RegistrySnapshot(BaseModel):
       - 热更新时生成新 snapshot · 原子 swap 指针
     """
 
+    model_config = {"arbitrary_types_allowed": True}
+
     version: str
     capability_points: dict[str, CapabilityPoint]
     subagents: dict[str, SubagentEntry]
     tools: dict[str, ToolEntry]
     loaded_at_ts_ns: int
+    # ledger_index key: (capability, skill_id) · value: LedgerEntry
+    # 用 dict[str, LedgerEntry] 按 "capability|skill_id" 字符串做 key 以便 Pydantic 序列化.
+    ledger_index: dict[str, "LedgerEntry"] = Field(default_factory=dict)
+
+    def ledger_get(self, capability: str, skill_id: str) -> "LedgerEntry | None":
+        return self.ledger_index.get(f"{capability}|{skill_id}")

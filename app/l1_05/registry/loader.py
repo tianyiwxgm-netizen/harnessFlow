@@ -59,13 +59,17 @@ class RegistryLoader:
         subs = self._stage2_parse_subagents(raw.get("subagents") or {})
         tools = self._stage2_parse_tools(raw.get("tools") or {})
         caps = self._stage3_validate_and_fill(caps)
-        return RegistrySnapshot(
+        ledger_idx = self._stage4_load_ledger()
+        snap = RegistrySnapshot(
             version=str(raw.get("version", "0")),
             capability_points=caps,
             subagents=subs,
             tools=tools,
             loaded_at_ts_ns=time.time_ns(),
+            ledger_index=ledger_idx,
         )
+        self._stage5_write_snapshot(snap)
+        return snap
 
     # ------------------------------------------------------------------ Stage 1
     def _stage1_read_yaml(self) -> dict:
@@ -120,3 +124,42 @@ class RegistryLoader:
         当前严格策略：不自动补 · 要求上游（registry.yaml 作者）必须提供 builtin_fallback.
         """
         return caps
+
+    # ------------------------------------------------------------------ Stage 4
+    def _stage4_load_ledger(self) -> dict[str, "LedgerEntry"]:
+        """从 ledger.jsonl 恢复 success/failure 历史 · key = 'capability|skill_id'."""
+        import json
+
+        from .schemas import LedgerEntry
+
+        path = self.project_root / "skills" / "registry-cache" / "ledger.jsonl"
+        idx: dict[str, LedgerEntry] = {}
+        if not path.exists():
+            return idx
+        for ln_no, raw_line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if not raw_line.strip():
+                continue
+            try:
+                rec = LedgerEntry(**json.loads(raw_line))
+            except (ValidationError, ValueError, json.JSONDecodeError) as e:
+                raise RegistryLoadError(
+                    "E_REG_VALIDATION",
+                    f"ledger.jsonl line {ln_no}: {e}",
+                ) from e
+            # 若同 (capability, skill_id) 多条 · 后写覆盖前写（最新 attempt）.
+            idx[f"{rec.capability}|{rec.skill_id}"] = rec
+        return idx
+
+    # ------------------------------------------------------------------ Stage 5
+    def _stage5_write_snapshot(self, snap: RegistrySnapshot) -> None:
+        """落盘 snapshot-{ts}.yaml 作为 last-known-good 兜底（启动加载完成后即写）."""
+        out_path = (
+            self.project_root
+            / "skills"
+            / "registry-cache"
+            / f"snapshot-{snap.loaded_at_ts_ns}.yaml"
+        )
+        body = snap.model_dump(mode="json")
+        out_path.write_text(yaml.safe_dump(body, sort_keys=True), encoding="utf-8")

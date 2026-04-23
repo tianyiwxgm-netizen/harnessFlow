@@ -253,3 +253,128 @@ class TestLoaderStages1to3:
         loader.load()
         elapsed_ms = (time.perf_counter() - t0) * 1000
         assert elapsed_ms < 500.0, f"startup load exceeded 500ms SLO: {elapsed_ms:.1f}ms"
+
+
+class TestLedgerAndQuery:
+    """Task 01.3 · Loader Stage 4-5 + query_api 4 接口."""
+
+    def _prepare(self, tmp_project, fixtures_dir, *, with_ledger=True):
+        import shutil
+
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
+        if with_ledger:
+            shutil.copy(fixtures_dir / "ledger_sample.jsonl", cache / "ledger.jsonl")
+        return cache
+
+    def test_stage4_loads_ledger_entries(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+
+        self._prepare(tmp_project, fixtures_dir)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        rec = snap.ledger_get("write_test", "superpowers:tdd-workflow")
+        assert rec is not None
+        assert rec.success_count == 12
+        assert rec.failure_count == 1
+
+    def test_stage4_handles_missing_ledger_as_empty(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        assert snap.ledger_index == {}
+
+    def test_stage5_writes_snapshot_file(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+
+        cache = self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        RegistryLoader(project_root=tmp_project).load()
+        snapshots = list(cache.glob("snapshot-*.yaml"))
+        assert len(snapshots) >= 1
+        assert snapshots[0].stat().st_size > 0
+
+    def test_query_candidates_returns_builtin_fallback_last(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import RegistryQueryAPI
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap)
+        cands = api.query_candidates("write_test")
+        assert len(cands) == 2
+        assert cands[-1].is_builtin_fallback, "builtin_fallback 必须排末尾"
+        assert cands[0].skill_id == "superpowers:tdd-workflow"
+
+    def test_query_candidates_unknown_raises_E_REG_MISSING_CAPABILITY(
+        self, tmp_project, fixtures_dir
+    ):
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import CapabilityNotFoundError, RegistryQueryAPI
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap)
+        with pytest.raises(CapabilityNotFoundError, match="E_REG_MISSING_CAPABILITY"):
+            api.query_candidates("no_such_capability")
+
+    def test_query_subagent_returns_entry(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import RegistryQueryAPI
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap)
+        v = api.query_subagent("verifier")
+        assert v.role == "verifier"
+        assert v.timeout_s == 1200
+
+    def test_query_subagent_unknown_raises(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import RegistryQueryAPI, SubagentNotFoundError
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap)
+        with pytest.raises(SubagentNotFoundError):
+            api.query_subagent("hacker")
+
+    def test_query_tool_atomic(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import RegistryQueryAPI
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap)
+        assert api.query_tool("Read").kind == "atomic"
+
+    def test_query_schema_pointer(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import RegistryQueryAPI
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap)
+        assert api.query_schema_pointer("write_test") == "schemas/skill/write_test.v1.json"
+
+    def test_swap_replaces_snapshot_atomically(self, tmp_project, fixtures_dir):
+        """Registry hot-reload · swap() 原子替换 · 旧查询到新 snapshot."""
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import RegistryQueryAPI
+        from app.l1_05.registry.schemas import RegistrySnapshot
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap1 = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap1)
+        assert "write_test" in api.snapshot.capability_points
+
+        empty = RegistrySnapshot(
+            version="0",
+            capability_points={},
+            subagents={},
+            tools={},
+            loaded_at_ts_ns=0,
+        )
+        api.swap(empty)
+        from app.l1_05.registry.query_api import CapabilityNotFoundError
+        with pytest.raises(CapabilityNotFoundError):
+            api.query_candidates("write_test")
