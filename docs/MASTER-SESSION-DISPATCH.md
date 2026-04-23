@@ -53,16 +53,16 @@ updated_at: 2026-04-22
 
 ### 2.1 波 1-3 · 底座 + 业务 + 监督（11 Dev · 独立分派）
 
-| # | 会话名 | L1 | md 路径 | 估时 | 波 |
-|:---:|:---|:---:|:---|:---:|:---:|
-| 1 | **Dev-α** | L1-09 韧性+审计 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-α-L1-09-resilience-audit.md` | 5-7 天 | 1 |
-| 2 | **Dev-β** | L1-06 3 层 KB | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-β-L1-06-kb-3-layer.md` | 6.5 天 | 1 |
-| 3 | **Dev-γ** | L1-05 Skill+subagent | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-γ-L1-05-skill-subagent.md` | 5 天 | 2 |
-| 4 | **Dev-δ** | L1-02 项目生命周期 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-δ-L1-02-lifecycle.md` | 7 天 | 2 |
-| 5 | **Dev-ε** | L1-03 WBS+WP | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-ε-L1-03-wbs-wp.md` | 5.25 天 | 2 |
-| 6 | **Dev-ζ** | L1-07 Harness 监督 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-ζ-L1-07-supervisor.md` | 7.5 天 | 3 |
-| 7 | **Dev-η** | L1-08 多模态 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-η-L1-08-multimodal.md` | 5.5 天 | 3 |
-| 8 | **Dev-θ** | L1-10 UI | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-θ-L1-10-ui.md` | 8.5 天 | 3 |
+| # | 会话名        | L1 | md 路径 | 估时 | 波 |
+|:---:|:-----------|:---:|:---|:---:|:---:|
+| 1 | **Dev-α**  | L1-09 韧性+审计 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-α-L1-09-resilience-audit.md` | 5-7 天 | 1 |
+| 2 | **Dev-β**  | L1-06 3 层 KB | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-β-L1-06-kb-3-layer.md` | 6.5 天 | 1 |
+| 3 | **Dev-γ**  | L1-05 Skill+subagent | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-γ-L1-05-skill-subagent.md` | 5 天 | 2 |
+| 4 | **Dev-δ**  | L1-02 项目生命周期 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-δ-L1-02-lifecycle.md` | 7 天 | 2 |
+| 5 | **Dev-ε**  | L1-03 WBS+WP | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-ε-L1-03-wbs-wp.md` | 5.25 天 | 2 |
+| 6 | **Dev-ζ**  | L1-07 Harness 监督 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-ζ-L1-07-supervisor.md` | 7.5 天 | 3 |
+| 7 | **Dev-η**  | L1-08 多模态 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-η-L1-08-multimodal.md` | 5.5 天 | 3 |
+| 8 | **Dev-θ**  | L1-10 UI | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-θ-L1-10-ui.md` | 8.5 天 | 3 |
 
 > **4-3 监督规约**：Dev-ζ 和主-1 会话内自行读 `docs/4-exe-plan/4-3-exe-monitoring&controlling/4-3-monitoring-impl-plan.md` · 作源导读 · 不单独开会话。
 
@@ -211,27 +211,73 @@ updated_at: 2026-04-22
 
 ## §6 会话启动模板（用户用）
 
+### 6.1 启动必须用 superpowers 全链路执行（强制）
+
+**所有 Dev / main / QA / Sign 会话统一用 `superpowers` 插件驱动**（已安装 · 见 `.claude/plugins/`）：
+
+| 阶段 | superpowers skill | 作用 |
+|:---:|:---|:---|
+| 接到任务 | `superpowers:using-superpowers` | 启动技能调度 · 扫 md 定 skill |
+| 规划 | `superpowers:writing-plans` | 把 md 的 §3 WP 细化为 step-by-step plan · 落到 `docs/superpowers/plans/` |
+| 执行（推荐）| `superpowers:subagent-driven-development` | 每 WP 一个 subagent · 两阶段 review(spec + code quality) |
+| 执行（替代）| `superpowers:executing-plans` | 同会话内逐 task 跑 · 断点 checkpoint |
+| TDD（必用）| `superpowers:test-driven-development` | red-green-refactor 铁律(Q-04) |
+| 完成前 | `superpowers:verification-before-completion` | 确认真完成(能跑 + test 绿 + DoD 勾齐) |
+| Review | `superpowers:requesting-code-review` | 分派 code-reviewer subagent 审 |
+| 收尾 | `superpowers:finishing-a-development-branch` | commit + push + PR |
+| 跨会话隔离 | `superpowers:using-git-worktrees` | 推荐用 worktree 隔离(波 1-3 并发期防冲突) |
+
+**铁律**：
+- 不准跳过 `writing-plans`（即使 md 已有 §3 WP · 仍要落到 `superpowers/plans/` 便于追踪）
+- 不准跳过 `verification-before-completion`（DoD 自检入口）
+- `test-driven-development` 每 WP 必用（Q-04 硬约束）
+
+### 6.2 会话启动模板（复制发送）
+
 每开一个会话 · 复制下面模板发第一条消息：
 
 ```
-按本 md 执行 harnessFlow 开发任务：
+按 harnessFlow 会话分工执行任务 · 启动 superpowers 全链路：
 
-<md 全路径>
+目标 exe-plan md：<md 全路径>
+  例如：/Users/zhongtianyi/work/code/harnessFlow/docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-α-L1-09-resilience-audit.md
 
-执行说明：
-1. 读 md 的 §1-§10 全部
-2. 按 §3 WP 拆解顺序执行
-3. 严格 TDD：每 WP 先写 test（red）· 实现（green）· 跑 test 全绿 · 提交
-4. 发现源文档问题时走 §6 自修正协议（而非硬改代码）
-5. 每日 standup：提交到 `docs/4-exe-plan/standup-logs/<会话名>-<date>.md`
-6. DoD 全绿后才可交付
+执行流程（必须按此顺序启动 skill · 不得跳步）：
 
-约束：
-- Code + TDD test **必须在同一会话内完成**（不可分开）
-- 跨 L1 / 跨 IC 问题 · 冻结 · 向用户汇报 · 主会话仲裁
-- 本会话不得修改其他 L1 代码（越界走 §6 情形 D）
+1. 调 Skill(`superpowers:using-superpowers`) · 扫本次任务可用 skill
+2. 读 <md 全路径> 完整 §1-§10
+3. 读 md 中声明的 parent_doc（2-prd + 3-1 + 3-2 + 3-3 相关部分 + ic-contracts.md）
+4. 调 Skill(`superpowers:writing-plans`) · 把 md 的 §3 WP 落成 `docs/superpowers/plans/<会话名>-impl.md`
+5. 调 Skill(`superpowers:using-git-worktrees`) · 创建隔离 worktree（波 1-3 并发期强烈推荐）
+6. 调 Skill(`superpowers:subagent-driven-development`) · 逐 WP 推进（或 `superpowers:executing-plans` 同会话执行）
+7. 每 WP 内：调 Skill(`superpowers:test-driven-development`) · red → green → refactor → commit
+8. 全部 WP 完 · 调 Skill(`superpowers:verification-before-completion`) · 自检 DoD
+9. 调 Skill(`superpowers:requesting-code-review`) · 分派 code-reviewer 审
+10. 调 Skill(`superpowers:finishing-a-development-branch`) · commit + push + PR
+
+约束（来自 4-0-master-execution-plan.md Q-01~Q-04 + PM-08/PM-14）：
+- Code + TDD test **必须在同一会话内**完成（Q-04 铁律）
+- PM-14：所有写操作必含 root pid
+- PM-08：仅 L1-09 events.jsonl 为事实源（其他 L1 读不写）
+- 100ms 硬约束（panic/halt/tick-drift）· 任一破 → P0
+- 源文档不一致 → 冻结 · 走 md §6 自修正（不硬改代码）
+- 跨 L1 / 跨 IC 问题 → 向用户汇报 · 主会话仲裁
+- 不得修改本会话 L1 以外的代码（越界走 §6 情形 D）
+
+每日 standup：提交到 `docs/4-exe-plan/standup-logs/<会话名>-<date>.md`
 
 开干。
+```
+
+### 6.3 主会话专用模板补充（main-1 / main-2 / main-3 / main-4）
+
+主会话接力 · 在上面模板基础上额外加：
+
+```
+主会话铁律附加：
+- 本会话负责跨 L1 仲裁（情形 C/D/E）· 有权改源文档（2-prd / 3-1 / 3-2 / 3-3 / ic-contracts.md）
+- 任何源文档修改必记录到 `projects/_correction_log.jsonl`
+- main-4 追加调 Skill(`superpowers:finishing-a-development-branch`) 做 release tag + GitHub release
 ```
 
 ---
