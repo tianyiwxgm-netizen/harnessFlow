@@ -151,3 +151,112 @@ def test_validation_result_error_shape() -> None:
     v = ValidationResult(ok=False, error_code="path_escape")
     assert v.ok is False
     assert v.error_code == "path_escape"
+
+
+# --- Task 01.3 whitelist tests ---
+
+from pathlib import Path
+
+from app.multimodal.path_safety.whitelist import PathWhitelistValidator
+
+
+@pytest.mark.parametrize("bad_path,expected_code", [
+    ("../../etc/passwd", "path_escape"),
+    ("/etc/passwd", "path_escape"),
+    ("docs/normal.md\x00", "invalid_path"),
+    ("", "invalid_path"),
+    ("../p-other-project/secret.md", "cross_project"),
+    ("node_modules/foo.js", "path_forbidden"),
+])
+def test_whitelist_rejects(tmp_project_root: Path, bad_path: str, expected_code: str) -> None:
+    v = PathWhitelistValidator(
+        project_root=tmp_project_root,
+        project_id="p-001",
+        allowlist=["docs/", "tests/", "harnessFlow/"],
+    )
+    with pytest.raises(L108Error) as ei:
+        v.validate(bad_path, action="read")
+    assert ei.value.code == expected_code
+
+
+def test_whitelist_allows_valid(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    (tmp_project_root / "docs" / "intro.md").write_text("# hi")
+    v = PathWhitelistValidator(
+        project_root=tmp_project_root,
+        project_id="p-001",
+        allowlist=["docs/", "tests/"],
+    )
+    result = v.validate("docs/intro.md", action="read")
+    assert result.ok is True
+    assert result.realpath is not None
+    assert result.realpath.endswith("docs/intro.md")
+    assert result.allowlist_match == "docs/"
+
+
+def test_whitelist_rejects_none_path(tmp_project_root: Path) -> None:
+    v = PathWhitelistValidator(tmp_project_root, "p-001", ["docs/"])
+    with pytest.raises(L108Error) as ei:
+        v.validate(None, action="read")  # type: ignore[arg-type]
+    assert ei.value.code == "invalid_path"
+
+
+# --- Task 01.4 symlink cycle detection tests ---
+
+import os
+
+from app.multimodal.path_safety.symlink_detector import SymlinkCycleDetector
+
+
+def test_symlink_no_cycle_passes(tmp_project_root: Path) -> None:
+    """Plain file · no symlinks · no cycle detected."""
+    (tmp_project_root / "docs").mkdir()
+    target = tmp_project_root / "docs" / "a.md"
+    target.write_text("hi")
+    SymlinkCycleDetector().check(target)  # should not raise
+
+
+def test_symlink_detects_cycle_a_b_c_a(tmp_project_root: Path) -> None:
+    """Cycle a → b → c → a must be detected as path_escape/symlink_loop."""
+    docs = tmp_project_root / "docs"
+    docs.mkdir()
+    a, b, c = docs / "a", docs / "b", docs / "c"
+    os.symlink(b, a)
+    os.symlink(c, b)
+    os.symlink(a, c)
+    with pytest.raises(L108Error) as ei:
+        SymlinkCycleDetector().check(a)
+    assert ei.value.code == "path_escape"
+    assert "symlink_loop" in ei.value.detail
+
+
+def test_symlink_depth_exceeded(tmp_project_root: Path) -> None:
+    """Chain a → b → c → d → … (10 hops) · exceeds MAX_DEPTH=8."""
+    docs = tmp_project_root / "docs"
+    docs.mkdir()
+    # Build a chain of 10 symlinks pointing forward, last one points to a real file.
+    final = docs / "final.md"
+    final.write_text("end")
+    prev = final
+    for i in range(10):
+        link = docs / f"s{i}"
+        os.symlink(prev, link)
+        prev = link
+    with pytest.raises(L108Error) as ei:
+        SymlinkCycleDetector().check(prev)
+    assert ei.value.code == "path_escape"
+    assert "symlink_depth_exceeded" in ei.value.detail
+
+
+def test_symlink_depth_within_limit(tmp_project_root: Path) -> None:
+    """Chain of 5 symlinks → under MAX_DEPTH=8 → passes."""
+    docs = tmp_project_root / "docs"
+    docs.mkdir()
+    final = docs / "final.md"
+    final.write_text("end")
+    prev = final
+    for i in range(5):
+        link = docs / f"s{i}"
+        os.symlink(prev, link)
+        prev = link
+    SymlinkCycleDetector().check(prev)  # should not raise
