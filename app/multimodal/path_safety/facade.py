@@ -74,6 +74,7 @@ class PathSafetyFacade:
 
             # --- whitelist + symlink ---
             validation = self.whitelist.validate(cmd.target_path, action="read")
+            assert validation.realpath is not None  # invariant: ok=True ⇒ realpath set
             real = Path(validation.realpath)
             self.symlink.check(real)
 
