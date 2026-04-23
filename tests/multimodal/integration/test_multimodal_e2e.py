@@ -6,12 +6,9 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from app.multimodal.code_structure.ast_parser import ASTParser
 from app.multimodal.common.event_bus_stub import EventBusStub
 from app.multimodal.doc_io.md_reader import MDReader
-from app.multimodal.ic_12_delegator import L1_05_Client
 from app.multimodal.path_safety.schemas import ProcessContentCommand
 from app.multimodal.path_safety.whitelist import PathWhitelistValidator
 from app.multimodal.process_content import ProcessContentDeps, process_content

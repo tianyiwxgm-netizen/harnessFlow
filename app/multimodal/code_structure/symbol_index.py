@@ -7,7 +7,6 @@ from pathlib import Path
 
 from app.multimodal.code_structure.schemas import SymbolDef, SymbolIndex, SymbolRef
 
-
 # --- regex-based definition/reference extractors (lang-agnostic enough for WP-03) ---
 
 _PY_DEF = re.compile(r"^(\s*)(class|def)\s+([A-Za-z_]\w*)", re.MULTILINE)

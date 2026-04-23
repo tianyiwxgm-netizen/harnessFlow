@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
 
 from app.multimodal.common.errors import L108Error
 from app.multimodal.path_safety.schemas import ValidationResult
@@ -25,7 +24,7 @@ class PathWhitelistValidator:
         self.project_id = project_id
         self.allowlist = allowlist
 
-    def validate(self, path: Optional[str], action: str) -> ValidationResult:
+    def validate(self, path: str | None, action: str) -> ValidationResult:
         """Validate a path against whitelist.
 
         Algorithm (in order):
@@ -61,8 +60,7 @@ class PathWhitelistValidator:
             # Not under project_root; check if cross_project or path_escape
             if self._is_cross_project(real):
                 raise L108Error("cross_project", str(real))
-            else:
-                raise L108Error("path_escape", str(real))
+            raise L108Error("path_escape", str(real))
 
         # Step 4: Check if path is allowed
         if not rel.parts or (rel.parts[0] + "/") not in self.allowlist:

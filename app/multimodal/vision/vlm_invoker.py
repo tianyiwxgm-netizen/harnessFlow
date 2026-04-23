@@ -30,7 +30,7 @@ class VLMInvoker:
             raise L108Error("not_found", str(image_path))
         try:
             result = await asyncio.wait_for(self.client.call(data, task, timeout_s=t_s), timeout=t_s)
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             raise L108Error("E_PC_VISION_API_FAIL", f"VLM timeout > {t_s}s") from e
         except Exception as e:
             raise L108Error("E_PC_VISION_API_FAIL", f"VLM call failed: {e}") from e

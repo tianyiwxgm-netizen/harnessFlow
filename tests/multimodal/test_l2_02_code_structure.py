@@ -6,13 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from app.multimodal.code_structure.ast_parser import ASTParser, LANG_REGISTRY
+from app.multimodal.code_structure.ast_parser import LANG_REGISTRY, ASTParser
 from app.multimodal.code_structure.cache import LRUCache
 from app.multimodal.code_structure.schemas import (
-    ASTTree, DepEdge, DepGraph, SymbolDef, SymbolIndex, SymbolRef,
+    ASTTree,
+    DepEdge,
+    DepGraph,
+    SymbolDef,
+    SymbolIndex,
 )
 from app.multimodal.common.errors import L108Error
-
 
 # --- schemas ---
 
@@ -259,7 +262,9 @@ def test_parser_missing_file_raises(tmp_path: Path) -> None:
 # --- dep_graph ---
 
 from app.multimodal.code_structure.dep_graph import (
-    build_dep_graph, build_dep_graph_from_sources, extract_imports,
+    build_dep_graph,
+    build_dep_graph_from_sources,
+    extract_imports,
 )
 
 
@@ -343,7 +348,9 @@ def test_dep_graph_unknown_extension_skipped(tmp_path: Path) -> None:
 # --- symbol_index ---
 
 from app.multimodal.code_structure.symbol_index import (
-    build_symbol_index, extract_python, extract_typescript,
+    build_symbol_index,
+    extract_python,
+    extract_typescript,
 )
 
 

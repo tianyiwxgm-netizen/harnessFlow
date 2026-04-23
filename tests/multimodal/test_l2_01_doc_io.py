@@ -8,7 +8,6 @@ from app.multimodal.common.errors import L108Error
 from app.multimodal.doc_io import frontmatter_parser, paginator
 from app.multimodal.doc_io.schemas import MDContent, MDPage, WriteResult, YAMLContent
 
-
 # --- schemas ---
 
 def test_md_page_basic() -> None:

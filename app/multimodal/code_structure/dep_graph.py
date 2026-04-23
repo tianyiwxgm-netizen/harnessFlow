@@ -9,7 +9,6 @@ import networkx as nx
 
 from app.multimodal.code_structure.schemas import DepEdge, DepGraph
 
-
 # Language → iterable of regexes capturing the imported module name (group 1).
 _IMPORT_PATTERNS: dict[str, list[re.Pattern[str]]] = {
     "python": [

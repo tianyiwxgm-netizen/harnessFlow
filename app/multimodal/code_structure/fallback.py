@@ -8,7 +8,6 @@ from pathlib import Path
 
 from app.multimodal.code_structure.schemas import ASTTree
 
-
 _DEF_RE = re.compile(
     r"^(\s*)(?:class|def|function|fn|func|struct|type)\s+([A-Za-z_]\w*)",
     re.MULTILINE,

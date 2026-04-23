@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from app.multimodal.common.errors import L108Error
 
@@ -30,7 +30,7 @@ class ConcurrencyLockKeeper:
         lock = self._get_or_create(path)
         try:
             await asyncio.wait_for(lock.acquire(), timeout=self._timeout_s)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise L108Error("concurrency_lock_timeout", f"lock wait > {self._timeout_s}s for {path}")
         try:
             yield

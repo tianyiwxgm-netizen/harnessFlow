@@ -11,11 +11,10 @@ import pytest
 from app.multimodal.common.errors import L108Error
 from app.multimodal.vision.batch import batch_analyze
 from app.multimodal.vision.cache import VisionCache, hash_image
-from app.multimodal.vision.orchestrator import ImageOrchestrator
 from app.multimodal.vision.ocr_fallback import extract_text
+from app.multimodal.vision.orchestrator import ImageOrchestrator
 from app.multimodal.vision.schemas import BatchResult, VisionRequest, VisionResult, VisionTask
-from app.multimodal.vision.vlm_invoker import VLMClient, VLMInvoker
-
+from app.multimodal.vision.vlm_invoker import VLMInvoker
 
 # --- fixture · minimal PNG file ---
 

@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from app.multimodal.code_structure.ast_parser import ASTParser
 from app.multimodal.common.event_bus_stub import EventBusStub
 from app.multimodal.doc_io.md_reader import MDReader

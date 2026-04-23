@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from app.multimodal.vision.schemas import BatchResult, VisionResult, VisionTask
 

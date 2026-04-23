@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from app.multimodal.common.errors import L108Error
 from app.multimodal.common.event_bus_stub import EventBusStub
@@ -23,7 +24,6 @@ from app.multimodal.path_safety.schemas import (
 )
 from app.multimodal.path_safety.symlink_detector import SymlinkCycleDetector
 from app.multimodal.path_safety.whitelist import PathWhitelistValidator
-
 
 # Stub dispatcher signature — WP-05 will replace with real L2-01/02/03 router
 DispatchFn = Callable[[ProcessContentCommand, ValidationResult, RouteDecision], dict[str, Any]]

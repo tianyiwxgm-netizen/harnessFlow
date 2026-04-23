@@ -10,7 +10,6 @@ from app.multimodal.common.errors import (
     L108Error,
 )
 
-
 # --- Task 01.1 error codes tests ---
 
 
@@ -114,7 +113,7 @@ def test_process_content_result_ok() -> None:
 
 
 def test_process_content_result_error() -> None:
-    from app.multimodal.path_safety.schemas import ProcessContentResult, ErrorBody
+    from app.multimodal.path_safety.schemas import ErrorBody, ProcessContentResult
     r = ProcessContentResult(
         command_id="pc-01HYA1",
         success=False,
@@ -485,8 +484,8 @@ from typing import Any
 from app.multimodal.common.pid_guard import assert_same_project
 from app.multimodal.path_safety.facade import PathSafetyFacade
 from app.multimodal.path_safety.halted_state import HaltedState
-from app.multimodal.path_safety.startup_validator import validate_startup_config
 from app.multimodal.path_safety.schemas import ProcessContentCommand
+from app.multimodal.path_safety.startup_validator import validate_startup_config
 
 
 def _dummy_dispatch(cmd: Any, validation: Any, route: Any) -> dict[str, Any]:

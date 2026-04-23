@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from app.multimodal.doc_io.schemas import MDPage
 
-
 MAX_LINES_PER_PAGE: int = 2000
 
 

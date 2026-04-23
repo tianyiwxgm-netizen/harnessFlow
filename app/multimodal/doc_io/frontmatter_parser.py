@@ -8,7 +8,6 @@ import frontmatter
 
 from app.multimodal.common.errors import L108Error
 
-
 # Keys required by harnessFlow doc convention · aligned with 3-1/3-2 template
 REQUIRED_KEYS: frozenset[str] = frozenset({"doc_id", "doc_type"})
 
