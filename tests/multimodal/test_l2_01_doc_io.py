@@ -458,3 +458,50 @@ def test_edit_binary_file_rejected(tmp_project_root: Path) -> None:
     with pytest.raises(L108Error) as ei:
         _writer(tmp_project_root, require_fm=False).edit("docs/blob.md", "a", "b")
     assert ei.value.code == "binary_unsupported"
+
+
+# --- Task 02.7 yaml_rw tests ---
+
+from app.multimodal.doc_io.yaml_rw import YAMLRW
+
+
+def _yaml(root: Path) -> YAMLRW:
+    return YAMLRW(PathWhitelistValidator(root, "p-001", ["docs/"]))
+
+
+def test_yaml_write_and_read_dict_roundtrip(tmp_project_root: Path) -> None:
+    _docs2(tmp_project_root)
+    data = {"name": "x", "items": [1, 2, 3], "meta": {"k": "v"}}
+    _yaml(tmp_project_root).write("docs/a.yaml", data)
+    loaded = _yaml(tmp_project_root).read("docs/a.yaml")
+    assert loaded.data == data
+
+
+def test_yaml_write_and_read_list_roundtrip(tmp_project_root: Path) -> None:
+    _docs2(tmp_project_root)
+    data = [{"a": 1}, {"b": 2}]
+    _yaml(tmp_project_root).write("docs/b.yaml", data)
+    loaded = _yaml(tmp_project_root).read("docs/b.yaml")
+    assert loaded.data == data
+
+
+def test_yaml_read_not_found(tmp_project_root: Path) -> None:
+    _docs2(tmp_project_root)
+    with pytest.raises(L108Error) as ei:
+        _yaml(tmp_project_root).read("docs/missing.yaml")
+    assert ei.value.code == "not_found"
+
+
+def test_yaml_read_malformed_raises(tmp_project_root: Path) -> None:
+    docs = _docs2(tmp_project_root)
+    (docs / "bad.yaml").write_text("key: [unclosed\n")
+    with pytest.raises(L108Error) as ei:
+        _yaml(tmp_project_root).read("docs/bad.yaml")
+    assert ei.value.code == "type_mismatch"
+
+
+def test_yaml_write_rejects_scalar_top_level(tmp_project_root: Path) -> None:
+    _docs2(tmp_project_root)
+    with pytest.raises(L108Error) as ei:
+        _yaml(tmp_project_root).write("docs/scalar.yaml", "just a string")  # type: ignore[arg-type]
+    assert ei.value.code == "type_mismatch"
