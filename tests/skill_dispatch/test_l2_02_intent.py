@@ -163,3 +163,74 @@ class TestIntentSchemas:
         assert len(card.why) <= 2048
         if len(huge_reason) > 2048:
             assert card.truncated is True
+
+
+class TestHardEdgeScan:
+    """Task 02.2 · 启动硬编码扫描 · PM-09 红线：禁 superpowers/gstack/ecc/plugin:* 字面量."""
+
+    def test_scan_passes_clean_tree(self, tmp_path):
+        from app.skill_dispatch.intent_selector.hard_edge_scan import HardEdgeScan
+
+        (tmp_path / "good.py").write_text('CAPABILITY = "write_test"\n', encoding="utf-8")
+        # 不抛
+        HardEdgeScan(roots=[tmp_path]).run()
+
+    def test_scan_crashes_on_superpowers_literal(self, tmp_path):
+        from app.skill_dispatch.intent_selector.hard_edge_scan import (
+            HardcodedSkillViolation,
+            HardEdgeScan,
+        )
+
+        bad = tmp_path / "offender.py"
+        bad.write_text('SKILL = "superpowers:tdd-workflow"\n', encoding="utf-8")
+        with pytest.raises(HardcodedSkillViolation, match="offender.py"):
+            HardEdgeScan(roots=[tmp_path]).run()
+
+    def test_scan_catches_gstack_and_ecc_patterns(self, tmp_path):
+        from app.skill_dispatch.intent_selector.hard_edge_scan import (
+            HardcodedSkillViolation,
+            HardEdgeScan,
+        )
+
+        (tmp_path / "gs.py").write_text('S = "gstack:x"\n', encoding="utf-8")
+        (tmp_path / "ec.py").write_text('S = "ecc:y"\n', encoding="utf-8")
+        (tmp_path / "pl.py").write_text('S = "plugin:z"\n', encoding="utf-8")
+        with pytest.raises(HardcodedSkillViolation) as ei:
+            HardEdgeScan(roots=[tmp_path]).run()
+        msg = str(ei.value)
+        assert "gs.py" in msg and "ec.py" in msg and "pl.py" in msg
+
+    def test_scan_ignores_tests_and_mocks_and_cache(self, tmp_path):
+        from app.skill_dispatch.intent_selector.hard_edge_scan import HardEdgeScan
+
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "t.py").write_text('X = "superpowers:ok"\n', encoding="utf-8")
+        (tmp_path / "_mocks").mkdir()
+        (tmp_path / "_mocks" / "m.py").write_text('X = "superpowers:ok"\n', encoding="utf-8")
+        (tmp_path / "__pycache__").mkdir()
+        (tmp_path / "__pycache__" / "c.py").write_text('X = "superpowers:ok"\n', encoding="utf-8")
+        # tests / _mocks / __pycache__ 均被默认 ignore · 不抛
+        HardEdgeScan(roots=[tmp_path]).run()
+
+    def test_scan_reports_all_violations_not_first(self, tmp_path):
+        from app.skill_dispatch.intent_selector.hard_edge_scan import (
+            HardcodedSkillViolation,
+            HardEdgeScan,
+        )
+
+        for i in range(3):
+            (tmp_path / f"o{i}.py").write_text(f'S = "superpowers:x{i}"\n', encoding="utf-8")
+        with pytest.raises(HardcodedSkillViolation) as ei:
+            HardEdgeScan(roots=[tmp_path]).run()
+        msg = str(ei.value)
+        # 3 个文件都应在 violation list
+        for i in range(3):
+            assert f"o{i}.py" in msg, f"missing o{i}.py in {msg}"
+
+    def test_scan_honors_custom_ignore(self, tmp_path):
+        from app.skill_dispatch.intent_selector.hard_edge_scan import HardEdgeScan
+
+        (tmp_path / "bench").mkdir()
+        (tmp_path / "bench" / "b.py").write_text('X = "superpowers:benchmark"\n', encoding="utf-8")
+        # 自定义 ignore=["bench"] · 不抛
+        HardEdgeScan(roots=[tmp_path], ignore=["bench"]).run()
