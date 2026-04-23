@@ -238,3 +238,99 @@ class TestContextScope:
         tampered = dict(ctx)
         tampered["wp_id"] = "altered"
         assert verify_checksum(tampered, chk) is False
+
+
+class TestResourceLimiter:
+    """Task 04.3 · max_concurrent=3 · max_queue=10 · asyncio semaphore."""
+
+    async def test_allows_three_concurrent_slots(self):
+        import asyncio
+
+        from app.skill_dispatch.subagent.resource_limiter import ResourceLimiter
+
+        limiter = ResourceLimiter(max_concurrent=3, max_queue=5)
+        counter = {"running": 0, "peak": 0}
+        lock = asyncio.Lock()
+
+        async def work():
+            async with limiter.slot():
+                async with lock:
+                    counter["running"] += 1
+                    counter["peak"] = max(counter["peak"], counter["running"])
+                await asyncio.sleep(0.02)
+                async with lock:
+                    counter["running"] -= 1
+
+        await asyncio.gather(*[work() for _ in range(3)])
+        assert counter["peak"] == 3
+
+    async def test_fourth_slot_waits_until_release(self):
+        import asyncio
+        import time
+
+        from app.skill_dispatch.subagent.resource_limiter import ResourceLimiter
+
+        limiter = ResourceLimiter(max_concurrent=2, max_queue=5)
+        durations: list[float] = []
+
+        async def work(delay: float):
+            t0 = time.perf_counter()
+            async with limiter.slot():
+                await asyncio.sleep(delay)
+            durations.append(time.perf_counter() - t0)
+
+        await asyncio.gather(work(0.05), work(0.05), work(0.05))
+        durations.sort()
+        # 第 3 个必然至少等 50ms · 然后自己再跑 50ms
+        assert durations[2] > 0.09
+
+    async def test_queue_full_raises_session_limit(self):
+        import asyncio
+
+        from app.skill_dispatch.subagent.resource_limiter import (
+            ResourceLimiter,
+            SessionLimitError,
+        )
+
+        limiter = ResourceLimiter(max_concurrent=1, max_queue=1)
+        # 1 跑 + 1 排队 = 2 个占位 · 第 3 个立即 raise
+        hold_fut: asyncio.Future[None] = asyncio.get_event_loop().create_future()
+
+        async def long_runner():
+            async with limiter.slot():
+                await hold_fut   # 挂住 · 直到测试最后释放
+
+        async def short_runner():
+            async with limiter.slot():
+                return True
+
+        t1 = asyncio.create_task(long_runner())
+        # 让 t1 进入 slot
+        await asyncio.sleep(0.01)
+        t2 = asyncio.create_task(short_runner())
+        # 让 t2 进入 queue
+        await asyncio.sleep(0.01)
+        with pytest.raises(SessionLimitError):
+            async with limiter.slot():
+                pass
+        hold_fut.set_result(None)
+        await asyncio.gather(t1, t2)
+
+    async def test_slot_released_on_exception(self):
+        import asyncio
+
+        from app.skill_dispatch.subagent.resource_limiter import ResourceLimiter
+
+        limiter = ResourceLimiter(max_concurrent=1, max_queue=5)
+
+        async def boom():
+            async with limiter.slot():
+                raise ValueError("dead")
+
+        try:
+            await boom()
+        except ValueError:
+            pass
+        # 如果没释放 · 下一次 slot 会 hang
+        async with limiter.slot():
+            pass   # 应该立即进入
