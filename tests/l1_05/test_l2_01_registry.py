@@ -347,6 +347,26 @@ class TestLedgerAndQuery:
         api = RegistryQueryAPI(snapshot=snap)
         assert api.query_tool("Read").kind == "atomic"
 
+    def test_query_tool_unknown_raises(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import RegistryQueryAPI, ToolNotFoundError
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap)
+        with pytest.raises(ToolNotFoundError, match="E_REG_MISSING_TOOL"):
+            api.query_tool("NoSuchTool")
+
+    def test_query_schema_pointer_unknown_raises(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import CapabilityNotFoundError, RegistryQueryAPI
+
+        self._prepare(tmp_project, fixtures_dir, with_ledger=False)
+        snap = RegistryLoader(project_root=tmp_project).load()
+        api = RegistryQueryAPI(snapshot=snap)
+        with pytest.raises(CapabilityNotFoundError):
+            api.query_schema_pointer("no_such_cap")
+
     def test_query_schema_pointer(self, tmp_project, fixtures_dir):
         from app.l1_05.registry.loader import RegistryLoader
         from app.l1_05.registry.query_api import RegistryQueryAPI
