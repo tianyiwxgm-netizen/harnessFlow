@@ -1,0 +1,46 @@
+# L2-01 Registry 启动加载样例 · 符合 registry.yaml 契约.
+# 每个 capability 至少 2 candidates + 1 builtin_fallback（PM-09）.
+version: "1.0"
+capability_points:
+  write_test:
+    description: "生成 pytest red 测试"
+    schema_pointer: "schemas/skill/write_test.v1.json"
+    candidates:
+      - skill_id: "superpowers:tdd-workflow"
+        availability: true
+        cost_usd: 0.02
+        timeout_s: 60
+      - skill_id: "builtin:write_test_min"
+        availability: true
+        cost_usd: 0.0
+        timeout_s: 30
+        is_builtin_fallback: true
+  review_code:
+    description: "Python 代码静态审查"
+    schema_pointer: "schemas/skill/review_code.v1.json"
+    candidates:
+      - skill_id: "plugin:python-reviewer"
+        availability: true
+        cost_usd: 0.05
+        timeout_s: 120
+      - skill_id: "builtin:review_code_min"
+        availability: true
+        cost_usd: 0.0
+        timeout_s: 60
+        is_builtin_fallback: true
+subagents:
+  codebase_onboarding:
+    role: codebase_onboarding
+    tool_whitelist: [Read, Glob, Grep, Bash]
+    timeout_s: 600
+    schema_pointer: "schemas/subagent/onboarding_report.v1.json"
+  verifier:
+    role: verifier
+    tool_whitelist: [Read, Glob, Grep, Bash]
+    timeout_s: 1200
+    schema_pointer: "schemas/subagent/verifier_verdict.v1.json"
+tools:
+  Read:
+    kind: atomic
+  Bash:
+    kind: atomic
