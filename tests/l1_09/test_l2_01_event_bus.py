@@ -296,7 +296,10 @@ class TestHaltSemantics:
             bus.append(_make_event())
 
     def test_clear_halt_unlocks(self, bus: EventBus, monkeypatch: pytest.MonkeyPatch) -> None:
-        """clear_halt(admin_token) 解锁 · 可继续 append（WP06 严格校验）."""
+        """clear_halt(admin_token) 解锁 · 可继续 append（WP06 严格校验 env var）."""
+        import os as _os
+        real_fsync = _os.fsync
+        monkeypatch.setenv("HARNESS_ADMIN_TOKEN", "super-secret-xyz")
 
         def fake_fsync(fd: int) -> None:
             raise OSError(errno.EIO, "fsync EIO")
@@ -305,8 +308,9 @@ class TestHaltSemantics:
         with pytest.raises(BusFsyncFailed):
             bus.append(_make_event())
 
-        monkeypatch.undo()
-        assert bus.halt_guard.clear_halt(admin_token="admin") is True
+        # 还原 fsync · 保留 env var
+        monkeypatch.setattr("app.l1_09.crash_safety.appender.os.fsync", real_fsync)
+        assert bus.halt_guard.clear_halt(admin_token="super-secret-xyz") is True
         assert bus.halt_guard.is_halted() is False
         # 再 append 正常
         r = bus.append(_make_event())

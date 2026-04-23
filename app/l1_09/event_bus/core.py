@@ -43,6 +43,13 @@ from app.l1_09.crash_safety.schemas import (
 from app.l1_09.crash_safety.schemas import (
     IOErrorCS as CSIOErrorCS,
 )
+from app.l1_09.event_bus.context import (
+    get_correlation_id,
+    get_span_id,
+    get_trace_id,
+    new_correlation_id,
+    set_correlation_id,
+)
 from app.l1_09.event_bus.halt_guard import HaltGuard
 from app.l1_09.event_bus.meta import load_meta, save_meta
 from app.l1_09.event_bus.reader import read_range as _read_range_module
@@ -171,15 +178,21 @@ class EventBus:
         """IC-09 唯一写入口 · append 一条事件到 `projects/<pid>/events.jsonl`.
 
         失败分类（详见 §3.2 错误码表）:
-            - BusHalted · 已 halt · 拒任何 append
+            - BusHalted · 已 halt · 拒任何 append · 携带 halt_reason/halt_at
             - BusFsyncFailed · fsync 失败 · halt marker 写入 · 抛 halt
             - BusWriteFailed / BusDiskFull · L2-05 重试耗尽
         """
         # Step 1: halt check（跨进程 · 文件 marker）
         if self.halt_guard.is_halted():
+            info = self.halt_guard.load_halt_info() or {}
             raise BusHalted(
-                f"EventBus halted · marker: {self.halt_guard.marker_path}",
+                (
+                    f"EventBus halted · reason={info.get('reason', 'unknown')} · "
+                    f"source={info.get('source', 'unknown')} · "
+                    f"halted_at={info.get('timestamp', 'unknown')}"
+                ),
                 cause="halt_marker_present",
+                correlation_id=get_correlation_id(),
             )
 
         # Step 2: pydantic 已在 Event() 构造时校验
@@ -187,6 +200,14 @@ class EventBus:
 
         # Step 3-4: 幂等 + event_id
         event_id = event.event_id or f"evt_{ulid.new()}"
+
+        # WP06 · 注入 correlation_id（若 context 未设 · 自动生成并落到 body · 保证每事件可追溯）
+        correlation_id = get_correlation_id()
+        if correlation_id is None:
+            correlation_id = new_correlation_id()
+            set_correlation_id(correlation_id)
+        trace_id = get_trace_id()
+        span_id = get_span_id()
         if event.idempotency_key and event.idempotency_key in self._idempotent_cache:
             cached = self._idempotent_cache[event.idempotency_key]
             return cached.model_copy(update={"idempotent_replay": True})
@@ -214,6 +235,9 @@ class EventBus:
                 sequence=sequence,
                 prev_hash=prev_hash,
                 persisted_at=persisted_at,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                span_id=span_id,
             )
             link = compute_hash_chain_link(prev_hash, body)
             line_obj = {**body, "hash": link.curr_hash}
@@ -310,9 +334,15 @@ def _event_to_body(
     sequence: int,
     prev_hash: str,
     persisted_at: datetime,
+    correlation_id: str | None = None,
+    trace_id: str | None = None,
+    span_id: str | None = None,
 ) -> dict[str, object]:
-    """组装 hash 链参与的 body（包含 prev_hash · 不含 hash · 不含 jsonl_offset）."""
-    return {
+    """组装 hash 链参与的 body（包含 prev_hash · 不含 hash · 不含 jsonl_offset）.
+
+    WP06 · correlation_id/trace_id/span_id 写入 body · 参与 hash 计算（不可篡改追溯）.
+    """
+    body: dict[str, object] = {
         "event_id": event_id,
         "project_id": event.project_id,
         "type": event.type,
@@ -326,6 +356,13 @@ def _event_to_body(
         "prev_hash": prev_hash,
         "persisted_at": persisted_at.isoformat().replace("+00:00", "Z"),
     }
+    if correlation_id is not None:
+        body["correlation_id"] = correlation_id
+    if trace_id is not None:
+        body["trace_id"] = trace_id
+    if span_id is not None:
+        body["span_id"] = span_id
+    return body
 
 
 # 复用给 tests 的工具（供 subscriber / reader / replay 后续 WP 共用）
