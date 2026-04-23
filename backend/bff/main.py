@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.bff.config import settings
-from backend.bff.routes import health, trim_profile
+from backend.bff.routes import admin, health, trim_profile
 
 app = FastAPI(
     title="HarnessFlow BFF",
@@ -21,3 +21,4 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api")
 app.include_router(trim_profile.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")

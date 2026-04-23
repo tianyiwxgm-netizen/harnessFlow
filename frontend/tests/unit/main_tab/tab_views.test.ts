@@ -13,7 +13,8 @@ describe('11 placeholder tab views render correctly (via router)', () => {
     setActivePinia(createPinia());
   });
 
-  for (const id of TAB_IDS) {
+  // admin_entry now mounts AdminLayout (not a placeholder view); tested in admin_layout.test
+  for (const id of TAB_IDS.filter((t) => t !== 'admin_entry')) {
     it(`tab view "${id}" renders its title + pid indicator`, async () => {
       const router = createRouter({ history: createMemoryHistory(), routes });
       installGuards(router);

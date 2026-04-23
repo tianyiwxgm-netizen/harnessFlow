@@ -101,8 +101,10 @@ describe('router guards (L2-01 路由守则)', () => {
     warn.mockRestore();
   });
 
-  it('each of the 11 canonical tabs resolves successfully', async () => {
+  it('each of the 10 simple top-level tabs resolves to its own path', async () => {
     const router = makeRouter();
+    // admin_entry is exercised in admin_guard.test because it has child routes
+    // and the layout → default-subtab redirect changes the final path.
     for (const id of [
       'overview',
       'gate',
@@ -114,13 +116,20 @@ describe('router guards (L2-01 路由守则)', () => {
       'kb',
       'retro',
       'events',
-      'admin_entry',
     ] as const) {
       await router.push(`/tabs/${id}`);
       await router.isReady();
       expect(router.currentRoute.value.path).toBe(`/tabs/${id}`);
       expect(router.currentRoute.value.meta.tabId).toBe(id);
     }
+  });
+
+  it('/tabs/admin_entry redirects to its default subtab /health', async () => {
+    const router = makeRouter();
+    await router.push('/tabs/admin_entry');
+    await router.isReady();
+    expect(router.currentRoute.value.path).toBe('/tabs/admin_entry/health');
+    expect(router.currentRoute.value.meta.tabId).toBe('admin_entry');
   });
 
   it('route meta includes title from TAB_REGISTRY', async () => {

@@ -13,6 +13,11 @@ interface UISessionState {
   activeProjectId: string | null;
   activeTabId: TabId;
   preferences: PreferenceBundle;
+  /**
+   * L2-07 admin guard flag. Default true in WP04 demo mode; real auth (OIDC / session)
+   * replaces this in a future WP via a boot-time hook that flips it based on user claims.
+   */
+  isAdmin: boolean;
 }
 
 export const useUISessionStore = defineStore('ui_session', {
@@ -23,6 +28,7 @@ export const useUISessionStore = defineStore('ui_session', {
       tabOrder: TAB_IDS,
       theme: 'auto',
     },
+    isAdmin: true,
   }),
 
   getters: {
@@ -82,6 +88,10 @@ export const useUISessionStore = defineStore('ui_session', {
 
     setTheme(theme: Theme): void {
       this.preferences.theme = theme;
+    },
+
+    setAdmin(flag: boolean): void {
+      this.isAdmin = flag;
     },
   },
 });
