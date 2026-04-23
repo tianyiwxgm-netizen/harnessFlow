@@ -7,6 +7,7 @@
       <div class="main-layout__brand">
         <strong>HarnessFlow</strong>
       </div>
+      <TrimProfileSwitcher />
       <div
         class="main-layout__pid"
         :class="{ 'main-layout__pid--active': uiSession.hasActiveProject }"
@@ -27,7 +28,7 @@
     >
       <ul>
         <li
-          v-for="tabId in uiSession.orderedTabIds"
+          v-for="tabId in visibleTabIds"
           :key="tabId"
           :data-test="`tab-link-${tabId}`"
           :class="{
@@ -48,11 +49,20 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { RouterLink } from 'vue-router';
 import { useUISessionStore } from '@/stores/ui_session';
+import { useTrimProfileStore } from '@/stores/trim_profile';
 import { TAB_REGISTRY } from '@/domain/tabs';
+import { filterVisibleTabs } from '@/domain/trim_profile';
+import TrimProfileSwitcher from '@/views/TrimConfig/TrimProfileSwitcher.vue';
 
 const uiSession = useUISessionStore();
+const trimProfile = useTrimProfileStore();
+
+const visibleTabIds = computed(() =>
+  filterVisibleTabs(uiSession.orderedTabIds, trimProfile.current),
+);
 </script>
 
 <style scoped>
@@ -66,6 +76,7 @@ const uiSession = useUISessionStore();
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   padding: 0.75rem 1.5rem;
   background: #1e293b;
   color: white;
