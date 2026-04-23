@@ -131,9 +131,18 @@ class TestL2_03_QueryAndWBS:
             _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
         )
         manifest = resp.result
-        payload = sut.request_wbs_decomposition(pid, manifest, trim_level="full")
+        payload = sut.request_wbs_decomposition(
+            pid, manifest, trim_level="full",
+            artifacts_4_pack={
+                "charter_path": "charter.md", "plan_path": "plan.md",
+                "requirements_path": "req.md", "risk_path": "risk.md",
+            },
+            architecture_output={
+                "togaf_phases": ["A", "B"], "adr_path": "adr.md",
+            },
+        )
         assert payload["project_id"] == pid
-        assert payload["command_id"].startswith("wbs-")
+        assert payload["command_id"].startswith("wbs-req-")
         assert payload["four_set_manifest"]["manifest_hash"]
         # 确认事件发出
         wbs_events = [
@@ -141,6 +150,144 @@ class TestL2_03_QueryAndWBS:
             if c.kwargs["event_type"] == "ic_19_request_wbs_decomposition"
         ]
         assert len(wbs_events) == 1
+
+
+class TestL2_03_IC19_Payload:
+    """IC-19 §3.19.2 payload 必填字段校验 · fix-2026-04-23 P2-01。
+
+    §3.19.2 required: [command_id, project_id, artifacts_4_pack,
+                       architecture_output]
+    """
+
+    @pytest.fixture
+    def sut_and_manifest(self, pid: str, tmp_project_root: Path) -> tuple:
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        resp = sut.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        return sut, resp.result
+
+    def test_TC_L102_L203_660_ic_19_command_id_uuid_format(
+        self, sut_and_manifest, pid: str,
+    ) -> None:
+        """§3.19.2 · command_id 格式 wbs-req-{uuid}."""
+        sut, manifest = sut_and_manifest
+        payload = sut.request_wbs_decomposition(
+            pid, manifest,
+            artifacts_4_pack={
+                "charter_path": "c.md", "plan_path": "p.md",
+                "requirements_path": "r.md", "risk_path": "risk.md",
+            },
+            architecture_output={"togaf_phases": ["A"], "adr_path": "adr.md"},
+        )
+        assert payload["command_id"].startswith("wbs-req-")
+        # 去掉前缀剩 uuid
+        uuid_part = payload["command_id"][len("wbs-req-"):]
+        assert len(uuid_part) >= 32, f"command_id uuid too short: {uuid_part!r}"
+
+    def test_TC_L102_L203_661_ic_19_command_id_unique(
+        self, sut_and_manifest, pid: str,
+    ) -> None:
+        """command_id 每次不同 · 非缓存同 pid 多次调用（§3.19.5 Non-idempotent）."""
+        sut, manifest = sut_and_manifest
+        kw = dict(
+            artifacts_4_pack={
+                "charter_path": "c.md", "plan_path": "p.md",
+                "requirements_path": "r.md", "risk_path": "risk.md",
+            },
+            architecture_output={"togaf_phases": ["A"], "adr_path": "adr.md"},
+        )
+        p1 = sut.request_wbs_decomposition(pid, manifest, **kw)
+        p2 = sut.request_wbs_decomposition(pid, manifest, **kw)
+        assert p1["command_id"] != p2["command_id"]
+
+    def test_TC_L102_L203_662_ic_19_artifacts_4_pack_required(
+        self, sut_and_manifest, pid: str,
+    ) -> None:
+        """§3.19.2 · artifacts_4_pack required 4 子字段 charter/plan/requirements/risk。"""
+        sut, manifest = sut_and_manifest
+        payload = sut.request_wbs_decomposition(
+            pid, manifest,
+            artifacts_4_pack={
+                "charter_path": "projects/x/chart/a.md",
+                "plan_path": "projects/x/pmp/scope.md",
+                "requirements_path": "projects/x/four-set/requirements.md",
+                "risk_path": "projects/x/pmp/risk.md",
+            },
+            architecture_output={"togaf_phases": ["A"], "adr_path": "adr.md"},
+        )
+        assert "artifacts_4_pack" in payload
+        a4p = payload["artifacts_4_pack"]
+        for k in ("charter_path", "plan_path", "requirements_path", "risk_path"):
+            assert k in a4p, f"artifacts_4_pack missing {k}"
+
+    def test_TC_L102_L203_663_ic_19_architecture_output_required(
+        self, sut_and_manifest, pid: str,
+    ) -> None:
+        """§3.19.2 · architecture_output required 子字段 togaf_phases / adr_path。"""
+        sut, manifest = sut_and_manifest
+        payload = sut.request_wbs_decomposition(
+            pid, manifest,
+            artifacts_4_pack={
+                "charter_path": "c.md", "plan_path": "p.md",
+                "requirements_path": "r.md", "risk_path": "risk.md",
+            },
+            architecture_output={
+                "togaf_phases": ["B", "C", "D"],
+                "adr_path": "projects/x/togaf/adr.md",
+            },
+        )
+        assert "architecture_output" in payload
+        arch = payload["architecture_output"]
+        assert "togaf_phases" in arch
+        assert "adr_path" in arch
+        assert isinstance(arch["togaf_phases"], list)
+
+    def test_TC_L102_L203_664_ic_19_ts_iso8601(
+        self, sut_and_manifest, pid: str,
+    ) -> None:
+        """§3.19.2 · ts ISO-8601 Z (non-required by schema but we emit for audit)."""
+        sut, manifest = sut_and_manifest
+        payload = sut.request_wbs_decomposition(
+            pid, manifest,
+            artifacts_4_pack={
+                "charter_path": "c.md", "plan_path": "p.md",
+                "requirements_path": "r.md", "risk_path": "risk.md",
+            },
+            architecture_output={"togaf_phases": ["A"], "adr_path": "adr.md"},
+        )
+        assert "ts" in payload
+        assert "T" in payload["ts"]
+        assert payload["ts"].endswith("Z")
+
+    def test_TC_L102_L203_665_ic_19_reject_missing_artifacts_4_pack(
+        self, sut_and_manifest, pid: str,
+    ) -> None:
+        """artifacts_4_pack 缺字段 · raise（schema 校验）."""
+        sut, manifest = sut_and_manifest
+        with pytest.raises((ValueError, FourSetError)):
+            sut.request_wbs_decomposition(
+                pid, manifest,
+                artifacts_4_pack={"charter_path": "c.md"},  # 缺 3 字段
+                architecture_output={"togaf_phases": ["A"], "adr_path": "adr.md"},
+            )
+
+    def test_TC_L102_L203_666_ic_19_reject_missing_architecture_output(
+        self, sut_and_manifest, pid: str,
+    ) -> None:
+        """architecture_output 缺字段 · raise。"""
+        sut, manifest = sut_and_manifest
+        with pytest.raises((ValueError, FourSetError)):
+            sut.request_wbs_decomposition(
+                pid, manifest,
+                artifacts_4_pack={
+                    "charter_path": "c.md", "plan_path": "p.md",
+                    "requirements_path": "r.md", "risk_path": "risk.md",
+                },
+                architecture_output={"adr_path": "adr.md"},  # 缺 togaf_phases
+            )
 
 
 class TestL2_03_MoreErrorCodes:

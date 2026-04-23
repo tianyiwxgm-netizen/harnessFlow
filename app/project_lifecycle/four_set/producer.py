@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -175,11 +177,58 @@ class FourPiecesProducer:
         manifest: FourSetManifest,
         *,
         trim_level: str = "full",
+        artifacts_4_pack: dict[str, Any] | None = None,
+        architecture_output: dict[str, Any] | None = None,
+        target_wp_granularity: str = "medium",
     ) -> dict[str, Any]:
-        """IC-19 发起 · S2 Gate 通过后调 L1-03 触发 WBS 拆解。"""
+        """IC-19 发起 · S2 Gate 通过后调 L1-03 触发 WBS 拆解。
+
+        对齐 ic-contracts.md §3.19.2 required:
+          [command_id, project_id, artifacts_4_pack, architecture_output]
+
+        - command_id 格式 wbs-req-{uuid} · §3.19.5 Non-idempotent 每次产新值
+        - artifacts_4_pack 4 子字段: charter_path/plan_path/requirements_path/risk_path
+        - architecture_output 子字段: togaf_phases / adr_path
+        """
+        # §3.19.2 入参校验 · 缺字段 raise（E_WBS_4_PACK_INCOMPLETE / E_WBS_ARCH_OUTPUT_MISSING）
+        if artifacts_4_pack is None:
+            msg = (
+                "§3.19.2 E_WBS_4_PACK_INCOMPLETE · artifacts_4_pack required "
+                "(charter_path/plan_path/requirements_path/risk_path)"
+            )
+            raise ValueError(msg)
+        _required_4pack = {"charter_path", "plan_path", "requirements_path", "risk_path"}
+        _missing_4pack = _required_4pack - set(artifacts_4_pack.keys())
+        if _missing_4pack:
+            msg = f"§3.19.2 E_WBS_4_PACK_INCOMPLETE · missing {_missing_4pack}"
+            raise ValueError(msg)
+
+        if architecture_output is None:
+            msg = "§3.19.2 E_WBS_ARCH_OUTPUT_MISSING · architecture_output required"
+            raise ValueError(msg)
+        _required_arch = {"togaf_phases", "adr_path"}
+        _missing_arch = _required_arch - set(architecture_output.keys())
+        if _missing_arch:
+            msg = f"§3.19.2 E_WBS_ARCH_OUTPUT_MISSING · missing {_missing_arch}"
+            raise ValueError(msg)
+
+        if target_wp_granularity not in ("fine", "medium", "coarse"):
+            msg = f"§3.19.2 · target_wp_granularity={target_wp_granularity!r} not in [fine,medium,coarse]"
+            raise ValueError(msg)
+
+        ts = (
+            datetime.now(timezone.utc)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z")
+        )
         payload = {
             "project_id": project_id,
-            "command_id": f"wbs-{project_id}",
+            "command_id": f"wbs-req-{uuid.uuid4()}",  # §3.19.2 uuid 格式
+            "artifacts_4_pack": dict(artifacts_4_pack),
+            "architecture_output": dict(architecture_output),
+            "target_wp_granularity": target_wp_granularity,
+            "ts": ts,
+            # 保留 four_set_manifest 作 audit 补充（非 §3.19.2 require）
             "four_set_manifest": {
                 "manifest_path": manifest.manifest_path,
                 "manifest_hash": manifest.manifest_hash,
