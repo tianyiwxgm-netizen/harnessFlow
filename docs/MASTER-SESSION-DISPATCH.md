@@ -215,6 +215,19 @@ updated_at: 2026-04-22
 
 ---
 
+## §5.5 代码所有权矩阵（防冲突必读）
+
+**所有 Dev 会话启动前必读**：`docs/CODE-OWNERSHIP-MATRIX.md`
+
+**核心 3 条铁律**：
+1. 各 Dev **只写 `app/l1_XX/**` + `tests/l1_XX/**`**（自己 L1 目录）
+2. 共享文件（`pyproject.toml` / `tests/conftest.py` / `scripts/` / `docs/`）**冻结 · 找主会话合并**
+3. 跨 L1 消费 **只通过 IC 接口**（mock / stub）· 不读不改对方源码
+
+**推荐分支策略**：各 Dev 开独立分支 `dev-<你的名>-l1-<数字>` · 主会话定期 merge 到 main。
+
+---
+
 ## §6 会话启动模板（用户用）
 
 ### 6.1 启动必须用 superpowers 全链路执行（强制）
