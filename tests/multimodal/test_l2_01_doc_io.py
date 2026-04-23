@@ -300,3 +300,161 @@ def test_reader_malformed_frontmatter(tmp_project_root: Path) -> None:
     with pytest.raises(L108Error) as ei:
         _reader(tmp_project_root).read("docs/bad.md")
     assert ei.value.code == "type_mismatch"
+
+
+# --- atomic_write_stub ---
+
+import hashlib
+
+from app.multimodal.common.atomic_write_stub import atomic_write_bytes, atomic_write_text
+
+
+def test_atomic_write_bytes_creates_file_with_hash(tmp_path: Path) -> None:
+    target = tmp_path / "a.bin"
+    sha = atomic_write_bytes(target, b"hello")
+    assert target.read_bytes() == b"hello"
+    assert sha == hashlib.sha256(b"hello").hexdigest()
+
+
+def test_atomic_write_bytes_overwrites(tmp_path: Path) -> None:
+    target = tmp_path / "b.bin"
+    atomic_write_bytes(target, b"first")
+    atomic_write_bytes(target, b"second")
+    assert target.read_bytes() == b"second"
+
+
+def test_atomic_write_text_encodes_utf8(tmp_path: Path) -> None:
+    target = tmp_path / "c.md"
+    atomic_write_text(target, "你好\n")
+    assert target.read_text(encoding="utf-8") == "你好\n"
+
+
+def test_atomic_write_leaves_no_tmp_files_on_success(tmp_path: Path) -> None:
+    target = tmp_path / "d.md"
+    atomic_write_text(target, "x")
+    # only the final file should exist
+    siblings = list(target.parent.iterdir())
+    assert siblings == [target]
+
+
+# --- md_writer.write ---
+
+from app.multimodal.doc_io.md_writer import MDWriter
+
+
+def _writer(root: Path, *, require_fm: bool = True) -> MDWriter:
+    return MDWriter(
+        PathWhitelistValidator(root, "p-001", ["docs/"]),
+        require_frontmatter_keys=require_fm,
+    )
+
+
+def _docs2(root: Path) -> Path:
+    d = root / "docs"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def test_write_creates_new_md_with_frontmatter(tmp_project_root: Path) -> None:
+    _docs2(tmp_project_root)
+    content = "---\ndoc_id: x\ndoc_type: plan\n---\n# Body\n"
+    result = _writer(tmp_project_root).write("docs/new.md", content)
+    assert result.bytes_written == len(content.encode("utf-8"))
+    assert (tmp_project_root / "docs" / "new.md").read_text() == content
+
+
+def test_write_rejects_missing_required_keys(tmp_project_root: Path) -> None:
+    _docs2(tmp_project_root)
+    content = "---\ndoc_id: only_this\n---\n# Body\n"   # missing doc_type
+    with pytest.raises(L108Error) as ei:
+        _writer(tmp_project_root).write("docs/bad.md", content)
+    assert ei.value.code == "type_mismatch"
+
+
+def test_write_without_frontmatter_allowed_when_policy_off(tmp_project_root: Path) -> None:
+    _docs2(tmp_project_root)
+    content = "# no frontmatter\n"
+    result = _writer(tmp_project_root, require_fm=False).write("docs/nofm.md", content)
+    assert result.bytes_written > 0
+
+
+def test_write_overwrites_existing_file(tmp_project_root: Path) -> None:
+    docs = _docs2(tmp_project_root)
+    (docs / "over.md").write_text("old content\n")
+    content = "---\ndoc_id: x\ndoc_type: t\n---\nnew content\n"
+    _writer(tmp_project_root).write("docs/over.md", content)
+    assert (docs / "over.md").read_text() == content
+
+
+def test_write_path_forbidden(tmp_project_root: Path) -> None:
+    (tmp_project_root / "secrets").mkdir()
+    with pytest.raises(L108Error) as ei:
+        _writer(tmp_project_root, require_fm=False).write("secrets/x.md", "# hi\n")
+    assert ei.value.code == "path_forbidden"
+
+
+def test_write_post_hash_mismatch_raises(tmp_project_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Simulate external tampering by having read_bytes return wrong content after write."""
+    docs = _docs2(tmp_project_root)
+    content = "---\ndoc_id: x\ndoc_type: t\n---\n# Body\n"
+
+    real_read_bytes = Path.read_bytes
+
+    def fake_read_bytes(self: Path) -> bytes:
+        if self.name == "tamper.md":
+            return b"TAMPERED"
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", fake_read_bytes)
+    with pytest.raises(L108Error) as ei:
+        _writer(tmp_project_root).write("docs/tamper.md", content)
+    assert ei.value.code == "type_mismatch"
+    assert "post-write hash mismatch" in ei.value.detail
+
+
+# --- md_writer.edit ---
+
+def test_edit_exact_single_match(tmp_project_root: Path) -> None:
+    docs = _docs2(tmp_project_root)
+    (docs / "e.md").write_text("---\ndoc_id: x\ndoc_type: t\n---\nhello world\n")
+    result = _writer(tmp_project_root).edit("docs/e.md", "world", "earth")
+    assert "hello earth" in (docs / "e.md").read_text()
+    assert result.post_write_hash != ""
+
+
+def test_edit_old_string_not_found(tmp_project_root: Path) -> None:
+    docs = _docs2(tmp_project_root)
+    (docs / "e.md").write_text("nothing here\n")
+    with pytest.raises(L108Error) as ei:
+        _writer(tmp_project_root, require_fm=False).edit("docs/e.md", "unicorn", "pegasus")
+    assert ei.value.code == "invalid_path"
+
+
+def test_edit_multiple_matches_without_replace_all_rejects(tmp_project_root: Path) -> None:
+    docs = _docs2(tmp_project_root)
+    (docs / "e.md").write_text("foo bar foo\n")
+    with pytest.raises(L108Error) as ei:
+        _writer(tmp_project_root, require_fm=False).edit("docs/e.md", "foo", "baz")
+    assert ei.value.code == "invalid_path"
+
+
+def test_edit_replace_all_accepts_multiple(tmp_project_root: Path) -> None:
+    docs = _docs2(tmp_project_root)
+    (docs / "e.md").write_text("foo bar foo\n")
+    _writer(tmp_project_root, require_fm=False).edit("docs/e.md", "foo", "baz", replace_all=True)
+    assert (docs / "e.md").read_text() == "baz bar baz\n"
+
+
+def test_edit_missing_file_not_found(tmp_project_root: Path) -> None:
+    _docs2(tmp_project_root)
+    with pytest.raises(L108Error) as ei:
+        _writer(tmp_project_root, require_fm=False).edit("docs/nope.md", "a", "b")
+    assert ei.value.code == "not_found"
+
+
+def test_edit_binary_file_rejected(tmp_project_root: Path) -> None:
+    docs = _docs2(tmp_project_root)
+    (docs / "blob.md").write_bytes(b"\xff\xfe\x00binary")
+    with pytest.raises(L108Error) as ei:
+        _writer(tmp_project_root, require_fm=False).edit("docs/blob.md", "a", "b")
+    assert ei.value.code == "binary_unsupported"
