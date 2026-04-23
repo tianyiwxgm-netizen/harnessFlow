@@ -18,8 +18,11 @@ import pytest
 
 from app.project_lifecycle.four_set.errors import (
     E_AC_FORMAT_VIOLATION,
+    E_CROSS_REF_DEAD,
+    E_DEPENDENCY_CLOSURE_EMPTY,
     E_ID_PATTERN_VIOLATION,
     E_LLM_OUTPUT_EMPTY,
+    E_REDO_OUT_OF_SCOPE,
     FourSetError,
 )
 from app.project_lifecycle.four_set.producer import FourPiecesProducer
@@ -414,3 +417,459 @@ class TestL2_03_IcAndEvents:
             "requirements-analysis", "goals-writing",
             "ac-scenario-writer", "quality-audit",
         ]
+
+
+# ---------------------------------------------------------------------------
+# P2-04 fix-2026-04-23 · WP03 补 15 TC · 3 错误码各 5 TC（正/负/边界）
+# 对齐 docs/3-1-Solution-Technical/L1-02-项目生命周期编排/L2-03-4 件套生产器.md
+#   §5.2 E04 CROSS_REF_DEAD · E09 REDO_OUT_OF_SCOPE · E14 DEPENDENCY_CLOSURE_EMPTY
+#   §6.3 cross_ref_check · §6.4 resolve_dependency_closure
+# ---------------------------------------------------------------------------
+
+
+def _redo_skill_with_deleted_req(deleted_id: str = "REQ-002") -> MagicMock:
+    """Redo skill · 模拟 REQ-002 在重做中被删除 · goals 仍引用它。"""
+    m = MagicMock()
+
+    def _deleg(*, role, **kwargs):
+        if role == "requirements-analysis":
+            # 重做后只保留 REQ-001 · REQ-002 被删
+            return {"items": [{"id": "REQ-001", "description": "x", "priority": "P0"}]}
+        if role == "goals-writing":
+            # 仍引用已删的 REQ-002
+            return {"items": [{
+                "id": "GOAL-001", "statement": "x",
+                "linked_reqs": ["REQ-001", deleted_id],  # dead ref
+            }]}
+        if role == "ac-scenario-writer":
+            return {"items": [{
+                "id": "AC-001", "given": "g", "when": "w", "then": "t",
+                "linked_goal": "GOAL-001",
+            }]}
+        if role == "quality-audit":
+            return {"items": [{
+                "id": "QS-001", "measurable_criteria": "x",
+                "verification_method": "e2e_test", "linked_ac": "AC-001",
+            }]}
+        return {"items": []}
+
+    m.delegate_subagent.side_effect = _deleg
+    return m
+
+
+class TestL2_03_E_CROSS_REF_DEAD:
+    """E_CROSS_REF_DEAD (E04) · 5 TC · 下游引用上游已删 id（重做场景）。
+
+    与 E_TRACEABILITY_BROKEN (E03) 区分:
+      - E03 初始装配时 · cross_ref 整体失败
+      - E04 重做场景 · 上游 id 被删 · 下游仍引 · 级联重做触发条件
+    """
+
+    def test_TC_L102_L203_801_cross_ref_dead_goal_to_deleted_req(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """正 · redo=True · goal 引用被删 REQ-002 · E_CROSS_REF_DEAD。"""
+        # 先 baseline assemble
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        # 再 redo · 上游删 REQ-002 · goal 仍 linked
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_redo_skill_with_deleted_req("REQ-002"),
+            event_bus=MagicMock(),
+        )
+        ctx = _setup_upstream(tmp_project_root, pid)
+        req = FourSetRequest(
+            project_id=pid, request_id="redo-1", stage="S2",
+            context=ctx, caller_l2="L2-01",
+            target_subset=("requirements",),  # redo 信号
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        assert resp.result.err_type == E_CROSS_REF_DEAD
+
+    def test_TC_L102_L203_802_cross_ref_dead_ac_to_deleted_goal(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """正 · redo · AC 引已删 GOAL-99 · E_CROSS_REF_DEAD。"""
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        bad = MagicMock()
+        bad.delegate_subagent.side_effect = lambda *, role, **kw: {
+            "requirements-analysis": {"items": [{"id": "REQ-001", "description": "x", "priority": "P0"}]},
+            "goals-writing": {"items": [{"id": "GOAL-001", "statement": "x", "linked_reqs": ["REQ-001"]}]},
+            "ac-scenario-writer": {"items": [{
+                "id": "AC-001", "given": "g", "when": "w", "then": "t",
+                "linked_goal": "GOAL-99",  # 上游已删
+            }]},
+            "quality-audit": {"items": [{
+                "id": "QS-001", "measurable_criteria": "x",
+                "verification_method": "e2e_test", "linked_ac": "AC-001",
+            }]},
+        }[role]
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=bad, event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="redo-2", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("goals",),
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        assert resp.result.err_type == E_CROSS_REF_DEAD
+
+    def test_TC_L102_L203_803_cross_ref_dead_initial_assembly_uses_e03_not_e04(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """负 · 初始装配(无 target_subset)时 · 仍用 E_TRACEABILITY_BROKEN (E03)。"""
+        from app.project_lifecycle.four_set.errors import E_TRACEABILITY_BROKEN
+        bad = MagicMock()
+        bad.delegate_subagent.side_effect = lambda *, role, **kw: {
+            "requirements-analysis": {"items": [{"id": "REQ-001", "description": "x", "priority": "P0"}]},
+            "goals-writing": {"items": [{"id": "GOAL-001", "statement": "x", "linked_reqs": ["REQ-001"]}]},
+            "ac-scenario-writer": {"items": [{
+                "id": "AC-001", "given": "g", "when": "w", "then": "t",
+                "linked_goal": "GOAL-99",
+            }]},
+            "quality-audit": {"items": [{
+                "id": "QS-001", "measurable_criteria": "x",
+                "verification_method": "e2e_test", "linked_ac": "AC-001",
+            }]},
+        }[role]
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=bad, event_bus=MagicMock(),
+        )
+        # 初始装配 · 无 target_subset
+        resp = sut.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        assert resp.status == "err"
+        assert resp.result.err_type == E_TRACEABILITY_BROKEN
+
+    def test_TC_L102_L203_804_cross_ref_dead_qs_to_deleted_ac(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """边界 · redo · QS 引已删 AC-99 · E_CROSS_REF_DEAD。"""
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        bad = MagicMock()
+        bad.delegate_subagent.side_effect = lambda *, role, **kw: {
+            "requirements-analysis": {"items": [{"id": "REQ-001", "description": "x", "priority": "P0"}]},
+            "goals-writing": {"items": [{"id": "GOAL-001", "statement": "x", "linked_reqs": ["REQ-001"]}]},
+            "ac-scenario-writer": {"items": [{
+                "id": "AC-001", "given": "g", "when": "w", "then": "t",
+                "linked_goal": "GOAL-001",
+            }]},
+            "quality-audit": {"items": [{
+                "id": "QS-001", "measurable_criteria": "x",
+                "verification_method": "e2e_test",
+                "linked_ac": "AC-99",  # 上游 AC-99 已删
+            }]},
+        }[role]
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=bad, event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="redo-3", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("acceptance_criteria",),
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        assert resp.result.err_type == E_CROSS_REF_DEAD
+
+    def test_TC_L102_L203_805_cross_ref_dead_report_contains_dead_ref_info(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """边界 · dead_refs 在 StructuredErr.context 中列出 · 审计可追溯。"""
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        sut = FourPiecesProducer(
+            template=_default_template(),
+            skill=_redo_skill_with_deleted_req("REQ-002"),
+            event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="redo-4", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("requirements",),
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        assert resp.result.err_type == E_CROSS_REF_DEAD
+        # context 含 dead_refs 明细
+        assert "dead_refs" in resp.result.context or "errors" in resp.result.context
+        ctx_str = str(resp.result.context)
+        assert "REQ-002" in ctx_str  # 被删的 id 出现在审计信息中
+
+
+class TestL2_03_E_DEPENDENCY_CLOSURE_EMPTY:
+    """E_DEPENDENCY_CLOSURE_EMPTY (E14) · 5 TC · target_subset 解析空闭包。"""
+
+    def test_TC_L102_L203_811_closure_empty_illegal_doc_type(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """正 · target_subset 含非法 doc_type · E_DEPENDENCY_CLOSURE_EMPTY。"""
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-closure-1", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("invalid_doc_type",),  # type: ignore[arg-type]
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        assert resp.result.err_type == E_DEPENDENCY_CLOSURE_EMPTY
+
+    def test_TC_L102_L203_812_closure_empty_returns_legal_list_in_context(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """正 · 错误返回 context 含合法 doc_type 列表（§5.2 处理策略：返合法列表）。"""
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-closure-2", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("typo_xxx",),  # type: ignore[arg-type]
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        # context 列出合法值
+        ctx_str = str(resp.result.context)
+        assert "requirements" in ctx_str
+        assert "goals" in ctx_str
+
+    def test_TC_L102_L203_813_closure_empty_single_valid_doc_type(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """负 · target_subset=("requirements",) · 合法闭包（含 4 项）· 不触发 E14。
+
+        §6.4 CLOSURE['requirements'] = 4 项级联·合法。
+        """
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-closure-3", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("requirements",),
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "ok"
+
+    def test_TC_L102_L203_814_closure_empty_target_subset_all_four(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """边界 · target_subset=全 4 · 合法闭包 · 不触发 E14。"""
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-closure-4", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=(
+                "requirements", "goals", "acceptance_criteria", "quality_standards",
+            ),
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "ok"
+
+    def test_TC_L102_L203_815_closure_empty_mixed_valid_and_invalid(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """边界 · target_subset 含 1 合法 + 1 非法 · 必须 raise E14（严格校验）。"""
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-closure-5", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("goals", "bogus"),  # type: ignore[arg-type]
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        assert resp.result.err_type == E_DEPENDENCY_CLOSURE_EMPTY
+
+
+class TestL2_03_E_REDO_OUT_OF_SCOPE:
+    """E_REDO_OUT_OF_SCOPE (E09) · 5 TC · 重做越界修改。
+
+    §5.2 内部 bug 安全网:
+      redo 声称只改 target_subset + closure · 实际越界修改 · raise E09。
+    """
+
+    def test_TC_L102_L203_821_redo_out_of_scope_target_quality_only(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """正 · target_subset=('quality_standards',) · closure={qs} · 但 skill 同时动了 REQ。"""
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        # skill 声称只改 QS · 但实际也改了 REQ（返回不同 REQ-002）· 越界
+        out_of_scope = MagicMock()
+        out_of_scope.delegate_subagent.side_effect = lambda *, role, **kw: {
+            "requirements-analysis": {"items": [
+                {"id": "REQ-001", "description": "x", "priority": "P0"},
+                {"id": "REQ-002", "description": "new", "priority": "P0"},  # 新增 · 越界
+            ]},
+            "goals-writing": {"items": [{"id": "GOAL-001", "statement": "x", "linked_reqs": ["REQ-001"]}]},
+            "ac-scenario-writer": {"items": [{
+                "id": "AC-001", "given": "g", "when": "w", "then": "t",
+                "linked_goal": "GOAL-001",
+            }]},
+            "quality-audit": {"items": [{
+                "id": "QS-001", "measurable_criteria": "new",
+                "verification_method": "e2e_test", "linked_ac": "AC-001",
+            }]},
+        }[role]
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=out_of_scope, event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-scope-1", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("quality_standards",),  # closure 只 qs
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        assert resp.result.err_type == E_REDO_OUT_OF_SCOPE
+
+    def test_TC_L102_L203_822_redo_out_of_scope_context_mentions_offending_doc(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """正 · 错误 context 含越界 doc_type 明细（审计）。"""
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        bad = MagicMock()
+        bad.delegate_subagent.side_effect = lambda *, role, **kw: {
+            "requirements-analysis": {"items": [
+                {"id": "REQ-001", "description": "x", "priority": "P0"},
+                {"id": "REQ-002", "description": "out", "priority": "P0"},
+            ]},
+            "goals-writing": {"items": [{"id": "GOAL-001", "statement": "x", "linked_reqs": ["REQ-001"]}]},
+            "ac-scenario-writer": {"items": [{
+                "id": "AC-001", "given": "g", "when": "w", "then": "t",
+                "linked_goal": "GOAL-001",
+            }]},
+            "quality-audit": {"items": [{
+                "id": "QS-001", "measurable_criteria": "n",
+                "verification_method": "e2e_test", "linked_ac": "AC-001",
+            }]},
+        }[role]
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=bad, event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-scope-2", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("quality_standards",),
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        # context 点明越界 doc_type
+        ctx_str = str(resp.result.context)
+        assert "requirements" in ctx_str or "out_of_scope" in ctx_str
+
+    def test_TC_L102_L203_823_redo_in_scope_no_error(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """负 · 重做 closure 内（target=req · closure 全 4）· 不触发 E09。"""
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        # 重做 requirements · closure=全 4 · skill 修改任何 4 doc 都 in-scope
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-scope-3", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("requirements",),  # closure 含全 4 (§6.4)
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "ok"
+
+    def test_TC_L102_L203_824_redo_ac_scope_rejects_req_change(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """边界 · target=ac · closure={ac,qs} · 修 req → E09。"""
+        first = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        first.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        bad = MagicMock()
+        bad.delegate_subagent.side_effect = lambda *, role, **kw: {
+            "requirements-analysis": {"items": [
+                {"id": "REQ-001", "description": "x", "priority": "P0"},
+                {"id": "REQ-003", "description": "sneaky add", "priority": "P1"},
+            ]},
+            "goals-writing": {"items": [{"id": "GOAL-001", "statement": "x", "linked_reqs": ["REQ-001"]}]},
+            "ac-scenario-writer": {"items": [{
+                "id": "AC-001", "given": "g", "when": "w", "then": "t",
+                "linked_goal": "GOAL-001",
+            }]},
+            "quality-audit": {"items": [{
+                "id": "QS-001", "measurable_criteria": "x",
+                "verification_method": "e2e_test", "linked_ac": "AC-001",
+            }]},
+        }[role]
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=bad, event_bus=MagicMock(),
+        )
+        req = FourSetRequest(
+            project_id=pid, request_id="r-scope-4", stage="S2",
+            context=_setup_upstream(tmp_project_root, pid), caller_l2="L2-01",
+            target_subset=("acceptance_criteria",),  # closure={ac,qs} · req 越界
+        )
+        resp = sut.assemble_four_set(req, project_root=str(tmp_project_root))
+        assert resp.status == "err"
+        assert resp.result.err_type == E_REDO_OUT_OF_SCOPE
+
+    def test_TC_L102_L203_825_redo_out_of_scope_only_detects_in_redo_mode(
+        self, pid: str, tmp_project_root: Path,
+    ) -> None:
+        """边界 · 初始装配(no target_subset) · 改任何 doc 都不是 redo · 不触发 E09。"""
+        sut = FourPiecesProducer(
+            template=_default_template(), skill=_default_skill(), event_bus=MagicMock(),
+        )
+        resp = sut.assemble_four_set(
+            _make_req(pid, tmp_project_root), project_root=str(tmp_project_root),
+        )
+        # 初始路径 · 必须 ok
+        assert resp.status == "ok"

@@ -499,3 +499,37 @@ class TestL2_01_IC16_Stub:
                   "artifacts_bundle", "trim_level", "allowed_decisions",
                   "blocks_progress", "ts"):
             assert k in payload, f"降级事件 missing {k}"
+
+
+class TestL2_01_IC16_Builder:
+    """ic_16_stub.build_push_stage_gate_card_command · 直接 unit-level 校验。"""
+
+    def test_TC_L102_L201_430_builder_rejects_empty_gate_id(self) -> None:
+        from app.project_lifecycle.stage_gate import build_push_stage_gate_card_command
+        with pytest.raises(ValueError, match="E_CARD_GATE_ID_MISMATCH"):
+            build_push_stage_gate_card_command(
+                gate_id="", project_id="p_x", stage_name="S2",
+            )
+
+    def test_TC_L102_L201_431_builder_rejects_empty_project_id(self) -> None:
+        from app.project_lifecycle.stage_gate import build_push_stage_gate_card_command
+        with pytest.raises(ValueError, match="E_CARD_NO_PROJECT_ID"):
+            build_push_stage_gate_card_command(
+                gate_id="g1", project_id="", stage_name="S2",
+            )
+
+    def test_TC_L102_L201_432_builder_rejects_empty_bundle(self) -> None:
+        from app.project_lifecycle.stage_gate import build_push_stage_gate_card_command
+        with pytest.raises(ValueError, match="E_CARD_BUNDLE_EMPTY"):
+            build_push_stage_gate_card_command(
+                gate_id="g1", project_id="p_x", stage_name="S2",
+                artifacts_bundle=[],
+            )
+
+    def test_TC_L102_L201_433_builder_rejects_bad_trim_level(self) -> None:
+        from app.project_lifecycle.stage_gate import build_push_stage_gate_card_command
+        with pytest.raises(ValueError, match="E_CARD_TRIM_UNSUPPORTED"):
+            build_push_stage_gate_card_command(
+                gate_id="g1", project_id="p_x", stage_name="S2",
+                trim_level="bogus",
+            )

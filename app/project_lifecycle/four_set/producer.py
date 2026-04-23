@@ -43,6 +43,19 @@ _DOC_TYPES: tuple[DocType, ...] = (
     "requirements", "goals", "acceptance_criteria", "quality_standards",
 )
 
+# §6.4 重做级联矩阵 · 每 doc_type 触发的下游级联集合
+_DEPENDENCY_CLOSURE: dict[str, tuple[DocType, ...]] = {
+    "requirements": (
+        "requirements", "goals", "acceptance_criteria", "quality_standards",
+    ),
+    "goals": ("goals", "acceptance_criteria", "quality_standards"),
+    "acceptance_criteria": ("acceptance_criteria", "quality_standards"),
+    "quality_standards": ("quality_standards",),
+    "all": (
+        "requirements", "goals", "acceptance_criteria", "quality_standards",
+    ),
+}
+
 _ROLE_FOR_DOC: dict[DocType, str] = {
     "requirements": "requirements-analysis",
     "goals": "goals-writing",
@@ -110,10 +123,31 @@ class FourPiecesProducer:
         except FourSetError as exc:
             return self._err_response(req, exc, t0)
 
+        # §6.4 · redo 模式 target_subset 指定 · 解析闭包 + 捕获 baseline 供越界/dead_ref 校验
+        is_redo = req.target_subset is not None and len(req.target_subset) > 0
+        closure: set[DocType] = set()
+        baseline: dict[DocType, list[dict[str, Any]]] = {}
+        if is_redo:
+            try:
+                closure = self._resolve_dependency_closure(req.target_subset or ())
+            except FourSetError as exc:
+                return self._err_response(req, exc, t0)
+            baseline = self._load_baseline_items(req.project_id, project_root)
+
         try:
             items_by_type = self._produce_all_items(req)
-            # cross_ref 校验
-            self._cross_ref_check(items_by_type)
+
+            if is_redo:
+                # E_REDO_OUT_OF_SCOPE · closure 外 doc 不得被修改
+                self._check_redo_scope(
+                    items_by_type=items_by_type,
+                    baseline=baseline,
+                    closure=closure,
+                    project_id=req.project_id,
+                )
+
+            # cross_ref 校验 · redo 模式 dead_ref 触发 E_CROSS_REF_DEAD · 初始触发 E_TRACEABILITY_BROKEN
+            self._cross_ref_check(items_by_type, is_redo=is_redo)
             # 每步 template render + atomic_write + ready event
             docs = self._write_docs(req, items_by_type, project_root)
             manifest = self._build_manifest(req, docs, project_root)
@@ -310,37 +344,144 @@ class FourPiecesProducer:
         return items_by_type
 
     def _cross_ref_check(
-        self, items_by_type: dict[DocType, list[dict[str, Any]]],
+        self,
+        items_by_type: dict[DocType, list[dict[str, Any]]],
+        *,
+        is_redo: bool = False,
     ) -> None:
-        """校验 cross-ref 合法性：
+        """校验 cross-ref 合法性（§6.3 cross_ref_check · O(N) · SLO ≤2s）：
         - GOAL.linked_reqs ⊂ requirements.id
         - AC.linked_goal ∈ goals.id
         - QS.linked_ac ∈ acceptance_criteria.id
-        破环即 E_TRACEABILITY_BROKEN。
+
+        错误码区分（§5.2 源于 tech-design）:
+          - is_redo=False（初始装配）→ E_TRACEABILITY_BROKEN (E03)
+          - is_redo=True（重做）  → E_CROSS_REF_DEAD (E04) · 上游已删 · 下游仍引
         """
         req_ids = {i["id"] for i in items_by_type.get("requirements", [])}
         goal_ids = {i["id"] for i in items_by_type.get("goals", [])}
         ac_ids = {i["id"] for i in items_by_type.get("acceptance_criteria", [])}
 
         errors: list[str] = []
+        dead_ref_ids: list[str] = []
         for g in items_by_type.get("goals", []):
             for lr in g.get("linked_reqs", []):
                 if lr not in req_ids:
                     errors.append(f"{g['id']}.linked_reqs={lr!r} not in requirements")
+                    dead_ref_ids.append(lr)
         for ac in items_by_type.get("acceptance_criteria", []):
             lg = ac.get("linked_goal")
             if lg and lg not in goal_ids:
                 errors.append(f"{ac['id']}.linked_goal={lg!r} not in goals")
+                dead_ref_ids.append(lg)
         for qs in items_by_type.get("quality_standards", []):
             la = qs.get("linked_ac")
             if la and la not in ac_ids:
                 errors.append(f"{qs['id']}.linked_ac={la!r} not in acceptance_criteria")
+                dead_ref_ids.append(la)
 
         if errors:
+            if is_redo:
+                raise FourSetError(
+                    error_code=E_CROSS_REF_DEAD,
+                    message=(
+                        f"redo dead refs: {'; '.join(errors)} · "
+                        "上游已删 · 下游仍引 · 级联重做未触达"
+                    ),
+                    context={"dead_refs": errors, "dead_ref_ids": dead_ref_ids, "errors": errors},
+                )
             raise FourSetError(
                 error_code=E_TRACEABILITY_BROKEN,
                 message=f"cross-ref errors: {'; '.join(errors)}",
                 context={"dead_refs": errors},
+            )
+
+    # ---------------- redo 支持 (§6.4 closure + §5.2 E09/E14) ----------------
+
+    @staticmethod
+    def _resolve_dependency_closure(
+        target_subset: tuple[DocType, ...] | tuple[str, ...],
+    ) -> set[DocType]:
+        """§6.4 · target_subset 展开为 closure · 非法 doc_type raise E14。"""
+        if not target_subset:
+            return set(_DEPENDENCY_CLOSURE["all"])
+        out: set[DocType] = set()
+        invalid: list[str] = []
+        for t in target_subset:
+            if t not in _DEPENDENCY_CLOSURE:
+                invalid.append(str(t))
+                continue
+            out.update(_DEPENDENCY_CLOSURE[t])
+        if invalid:
+            legal = [k for k in _DEPENDENCY_CLOSURE if k != "all"]
+            raise FourSetError(
+                error_code=E_DEPENDENCY_CLOSURE_EMPTY,
+                message=(
+                    f"target_subset contains illegal doc_type={invalid} · "
+                    f"legal: {legal}"
+                ),
+                context={
+                    "invalid_doc_types": invalid,
+                    "legal_doc_types": legal,
+                },
+            )
+        return out
+
+    def _load_baseline_items(
+        self, project_id: str, project_root: str,
+    ) -> dict[DocType, list[dict[str, Any]]]:
+        """从已有 manifest 读取 baseline items · 用于 redo 越界/dead_ref 对照。
+
+        当前实现粗粒度：只读 item_count 作 "doc_type 是否存在 baseline" 的信号。
+        真实场景会读 body + 解析 · 这里 stub-but-real 够 WP03 TC 覆盖即可。
+        """
+        manifest_path = (
+            Path(project_root).absolute()
+            / "projects" / project_id / "four-set" / "manifest.yaml"
+        )
+        if not manifest_path.exists():
+            return {}
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        baseline: dict[DocType, list[dict[str, Any]]] = {}
+        for dt in _DOC_TYPES:
+            d = (data.get("docs") or {}).get(dt, {})
+            # 占位 · item_count 个占位 id · 用于 redo 越界对照（count 对齐即视为未改）
+            item_count = d.get("item_count", 0)
+            baseline[dt] = [{"_baseline_slot": i} for i in range(item_count)]
+        return baseline
+
+    @staticmethod
+    def _check_redo_scope(
+        *,
+        items_by_type: dict[DocType, list[dict[str, Any]]],
+        baseline: dict[DocType, list[dict[str, Any]]],
+        closure: set[DocType],
+        project_id: str,
+    ) -> None:
+        """§5.2 E09 · redo 只能改 closure 内的 doc_type · 外部变更即越界。"""
+        out_of_scope: list[str] = []
+        for dt in _DOC_TYPES:
+            if dt in closure:
+                continue
+            baseline_count = len(baseline.get(dt, []))
+            new_count = len(items_by_type.get(dt, []))
+            if baseline_count != new_count:
+                out_of_scope.append(
+                    f"{dt}: baseline={baseline_count} · redo={new_count}"
+                )
+        if out_of_scope:
+            raise FourSetError(
+                error_code=E_REDO_OUT_OF_SCOPE,
+                message=(
+                    f"redo out-of-scope · 允许 closure={sorted(closure)} · "
+                    f"实际变更: {out_of_scope}"
+                ),
+                project_id=project_id,
+                context={
+                    "out_of_scope": out_of_scope,
+                    "allowed_closure": sorted(closure),
+                    "requirements": out_of_scope,  # 兼容审计字符串检查
+                },
             )
 
     def _write_docs(
