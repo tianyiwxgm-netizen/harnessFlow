@@ -14,7 +14,13 @@ from typing import Any, Protocol
 import yaml
 
 from app.project_lifecycle.four_set.errors import (
+    E_AC_FORMAT_VIOLATION,
+    E_CROSS_REF_DEAD,
+    E_DEPENDENCY_CLOSURE_EMPTY,
+    E_ID_PATTERN_VIOLATION,
+    E_LLM_OUTPUT_EMPTY,
     E_PM14_PID_MISMATCH,
+    E_REDO_OUT_OF_SCOPE,
     E_TRACEABILITY_BROKEN,
     E_UPSTREAM_MISSING,
     FourSetError,
@@ -130,12 +136,83 @@ class FourPiecesProducer:
             latency_ms=int((time.perf_counter() - t0) * 1000),
         )
 
+    def query_artifact_refs(
+        self,
+        project_id: str,
+        *,
+        project_root: str,
+    ) -> FourSetManifest | None:
+        """Gate bundle 索引查询 · 返最新 manifest 或 None。"""
+        manifest_path = Path(project_root).absolute() / "projects" / project_id / "four-set" / "manifest.yaml"
+        if not manifest_path.exists():
+            return None
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        docs_raw = data.get("docs", {})
+        docs: dict[DocType, DocRef] = {}
+        for dt in _DOC_TYPES:
+            d = docs_raw.get(dt, {})
+            docs[dt] = DocRef(
+                doc_type=dt,
+                doc_id=f"{dt}-{project_id[:8]}",
+                path=d.get("path", ""),
+                hash=d.get("hash", ""),
+                version=data.get("version", "v1"),
+                item_count=d.get("item_count", 0),
+            )
+        body = yaml.safe_dump(data, sort_keys=True, allow_unicode=True)
+        return FourSetManifest(
+            manifest_path=str(manifest_path),
+            manifest_hash=hashlib.sha256(body.encode("utf-8")).hexdigest(),
+            version=data.get("version", "v1"),
+            docs=docs,
+            cross_check_report=CrossCheckReport(total_refs_checked=len(docs)),
+            produced_at_ns=0,
+        )
+
+    def request_wbs_decomposition(
+        self,
+        project_id: str,
+        manifest: FourSetManifest,
+        *,
+        trim_level: str = "full",
+    ) -> dict[str, Any]:
+        """IC-19 发起 · S2 Gate 通过后调 L1-03 触发 WBS 拆解。"""
+        payload = {
+            "project_id": project_id,
+            "command_id": f"wbs-{project_id}",
+            "four_set_manifest": {
+                "manifest_path": manifest.manifest_path,
+                "manifest_hash": manifest.manifest_hash,
+                "version": manifest.version,
+            },
+            "trim_level": trim_level,
+        }
+        self._event_bus.append_event(
+            project_id=project_id,
+            event_type="ic_19_request_wbs_decomposition",
+            payload=payload,
+        )
+        return payload
+
     # ---- 4 step pipeline ----
 
     def _produce_all_items(
         self, req: FourSetRequest,
     ) -> dict[DocType, list[dict[str, Any]]]:
-        """按 REQ → GOAL → AC → QS 顺序 delegate skill · 返 items。"""
+        """按 REQ → GOAL → AC → QS 顺序 delegate skill · 返 items。
+
+        - LLM 返空 items → E_LLM_OUTPUT_EMPTY
+        - doc_id 正则不符 → E_ID_PATTERN_VIOLATION
+        - AC 缺 given/when/then → E_AC_FORMAT_VIOLATION
+        """
+        import re
+        id_patterns: dict[DocType, re.Pattern] = {
+            "requirements": re.compile(r"^REQ-\d{3}$"),
+            "goals": re.compile(r"^GOAL-\d{3}$"),
+            "acceptance_criteria": re.compile(r"^AC-\d{3}$"),
+            "quality_standards": re.compile(r"^QS-\d{3}$"),
+        }
+
         items_by_type: dict[DocType, list[dict[str, Any]]] = {}
         for doc_type in _DOC_TYPES:
             role = _ROLE_FOR_DOC[doc_type]
@@ -151,7 +228,36 @@ class FourPiecesProducer:
                     "previous_docs": list(items_by_type.keys()),
                 },
             )
-            items_by_type[doc_type] = list(result.get("items", []))
+            items = list(result.get("items", []))
+            if not items:
+                raise FourSetError(
+                    error_code=E_LLM_OUTPUT_EMPTY,
+                    message=f"skill returned empty items for {doc_type}",
+                    project_id=req.project_id,
+                    context={"doc_type": doc_type},
+                )
+            # doc_id 正则
+            id_re = id_patterns[doc_type]
+            for it in items:
+                if not id_re.match(str(it.get("id", ""))):
+                    raise FourSetError(
+                        error_code=E_ID_PATTERN_VIOLATION,
+                        message=f"{doc_type} id={it.get('id')!r} violates pattern {id_re.pattern}",
+                        project_id=req.project_id,
+                        context={"doc_type": doc_type, "bad_id": it.get("id")},
+                    )
+            # AC 必含 Given/When/Then
+            if doc_type == "acceptance_criteria":
+                for ac in items:
+                    for k in ("given", "when", "then"):
+                        if not ac.get(k):
+                            raise FourSetError(
+                                error_code=E_AC_FORMAT_VIOLATION,
+                                message=f"AC {ac.get('id')!r} missing {k!r}",
+                                project_id=req.project_id,
+                                context={"ac_id": ac.get("id"), "missing": k},
+                            )
+            items_by_type[doc_type] = items
         return items_by_type
 
     def _cross_ref_check(
