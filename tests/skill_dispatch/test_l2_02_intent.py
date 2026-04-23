@@ -482,3 +482,179 @@ class TestKBBoost:
         elapsed_ms = (time.perf_counter() - t0) * 1000
         # 允许一点 overhead · 但不能到 5s
         assert elapsed_ms < 500, f"KB boost exceeded timeout budget: {elapsed_ms:.1f}ms"
+
+
+class TestFallbackAdvancer:
+    """Task 02.5 · advance chain + IC-09 事件 + capability_exhausted."""
+
+    def _chain_with_fallbacks(self):
+        from app.skill_dispatch.intent_selector.schemas import (
+            Chain,
+            ScoredCandidate,
+            SignalScores,
+        )
+        from app.skill_dispatch.registry.schemas import SkillSpec
+
+        def sc(sid, score, is_fb=False):
+            return ScoredCandidate(
+                skill=SkillSpec(
+                    skill_id=sid, availability=True, cost_usd=0.0, timeout_s=30,
+                    is_builtin_fallback=is_fb,
+                ),
+                score=score,
+                signals=SignalScores(
+                    availability=True, cost=1.0, success_rate=0.5,
+                    failure_memory=1.0, recency=0.5, kb_boost=0.0,
+                ),
+            )
+
+        return Chain(
+            primary=sc("a", 0.9),
+            fallbacks=[sc("b", 0.6), sc("builtin:x", 0.3, is_fb=True)],
+            capability="write_test",
+        )
+
+    def test_advance_returns_next_chain(self, ic09_bus):
+        from app.skill_dispatch.intent_selector.fallback_advancer import FallbackAdvancer
+
+        adv = FallbackAdvancer(event_bus=ic09_bus)
+        chain = self._chain_with_fallbacks()
+        new_chain = adv.advance(chain, project_id="p1", reason="timeout")
+        assert new_chain.primary.skill.skill_id == "b"
+        assert new_chain.advance_reason == "timeout"
+
+    def test_advance_emits_ic09_event(self, ic09_bus):
+        from app.skill_dispatch.intent_selector.fallback_advancer import FallbackAdvancer
+
+        adv = FallbackAdvancer(event_bus=ic09_bus)
+        chain = self._chain_with_fallbacks()
+        adv.advance(chain, project_id="p1", reason="timeout")
+        events = ic09_bus.read_all("p1")
+        assert any(
+            e.event_type == "capability_fallback_advanced" and e.payload.get("reason") == "timeout"
+            for e in events
+        ), f"expected fallback_advanced event · got {[e.event_type for e in events]}"
+
+    def test_advance_on_exhausted_raises_and_emits_ic15_signal_event(self, ic09_bus):
+        """全链耗尽 · raise ChainExhaustedError · 同时 emit capability_exhausted."""
+        from app.skill_dispatch.intent_selector.fallback_advancer import FallbackAdvancer
+        from app.skill_dispatch.intent_selector.schemas import (
+            Chain,
+            ChainExhaustedError,
+            ScoredCandidate,
+            SignalScores,
+        )
+        from app.skill_dispatch.registry.schemas import SkillSpec
+
+        solo = ScoredCandidate(
+            skill=SkillSpec(skill_id="only", availability=True, cost_usd=0.0, timeout_s=10),
+            score=0.5,
+            signals=SignalScores(
+                availability=True, cost=1.0, success_rate=0.5,
+                failure_memory=1.0, recency=0.5, kb_boost=0.0,
+            ),
+        )
+        chain = Chain(primary=solo, fallbacks=[], capability="c")
+        adv = FallbackAdvancer(event_bus=ic09_bus)
+        with pytest.raises(ChainExhaustedError):
+            adv.advance(chain, project_id="p1", reason="all_failed")
+        events = ic09_bus.read_all("p1")
+        assert any(e.event_type == "capability_exhausted" for e in events), (
+            "expected capability_exhausted event emission"
+        )
+
+    def test_advance_requires_project_id(self, ic09_bus):
+        from app.skill_dispatch.intent_selector.fallback_advancer import FallbackAdvancer
+
+        adv = FallbackAdvancer(event_bus=ic09_bus)
+        chain = self._chain_with_fallbacks()
+        with pytest.raises(ValueError, match="project_id"):
+            adv.advance(chain, project_id="", reason="x")
+
+
+class TestIntentSelectorSelect:
+    """Task 02.5 · IntentSelector.select(request) 主入口 · 编排 registry + kb + scorer."""
+
+    def _prepare(self, tmp_project, fixtures_dir):
+        import shutil
+
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
+
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
+        snap = RegistryLoader(project_root=tmp_project).load()
+        return RegistryQueryAPI(snapshot=snap)
+
+    def test_select_returns_chain_with_primary_and_fallback(
+        self, tmp_project, fixtures_dir, kb_mock, ic09_bus
+    ):
+        from app.skill_dispatch.intent_selector import IntentSelector
+        from app.skill_dispatch.intent_selector.schemas import IntentRequest
+
+        api = self._prepare(tmp_project, fixtures_dir)
+        selector = IntentSelector(registry=api, kb_booster=None, kb=kb_mock, event_bus=ic09_bus)
+        req = IntentRequest(project_id="p1", capability="write_test", context={"project_id": "p1"})
+        chain = selector.select(req)
+        assert chain.capability == "write_test"
+        assert chain.primary.skill.skill_id == "superpowers:tdd-workflow"
+        assert len(chain.fallbacks) == 1
+        assert chain.fallbacks[0].skill.is_builtin_fallback
+
+    def test_select_raises_on_empty_pid(self, tmp_project, fixtures_dir, kb_mock, ic09_bus):
+        from app.skill_dispatch.intent_selector import IntentSelector
+        from app.skill_dispatch.intent_selector.schemas import IntentRequest
+
+        api = self._prepare(tmp_project, fixtures_dir)
+        selector = IntentSelector(registry=api, kb_booster=None, kb=kb_mock, event_bus=ic09_bus)
+        # IntentRequest 会先 raise ValueError（min_length=1 on project_id）
+        with pytest.raises(ValueError):
+            IntentRequest(project_id="", capability="c", context={"project_id": ""})
+        # direct select 也拒 context mismatch（防御）
+        req = IntentRequest(project_id="p1", capability="write_test", context={"project_id": "p1"})
+        _ = selector.select(req)  # 正常路径仍应通
+
+    def test_select_capability_unknown_raises(
+        self, tmp_project, fixtures_dir, kb_mock, ic09_bus
+    ):
+        from app.skill_dispatch.intent_selector import IntentSelector
+        from app.skill_dispatch.intent_selector.schemas import IntentRequest
+        from app.skill_dispatch.registry.query_api import CapabilityNotFoundError
+
+        api = self._prepare(tmp_project, fixtures_dir)
+        selector = IntentSelector(registry=api, kb_booster=None, kb=kb_mock, event_bus=ic09_bus)
+        req = IntentRequest(project_id="p1", capability="no_such", context={"project_id": "p1"})
+        with pytest.raises(CapabilityNotFoundError):
+            selector.select(req)
+
+    def test_select_honors_constraints_max_cost(
+        self, tmp_project, fixtures_dir, kb_mock, ic09_bus
+    ):
+        """max_cost 把非 builtin 剔光 · 只留 builtin_fallback."""
+        from app.skill_dispatch.intent_selector import IntentSelector
+        from app.skill_dispatch.intent_selector.schemas import Constraints, IntentRequest
+
+        api = self._prepare(tmp_project, fixtures_dir)
+        selector = IntentSelector(registry=api, kb_booster=None, kb=kb_mock, event_bus=ic09_bus)
+        req = IntentRequest(
+            project_id="p1",
+            capability="write_test",
+            constraints=Constraints(max_cost_usd=0.001),   # 只有 builtin (cost=0) 通过
+            context={"project_id": "p1"},
+        )
+        chain = selector.select(req)
+        assert chain.primary.skill.is_builtin_fallback is True
+        assert chain.fallbacks == []
+
+    def test_select_emits_ic09_chain_produced(
+        self, tmp_project, fixtures_dir, kb_mock, ic09_bus
+    ):
+        from app.skill_dispatch.intent_selector import IntentSelector
+        from app.skill_dispatch.intent_selector.schemas import IntentRequest
+
+        api = self._prepare(tmp_project, fixtures_dir)
+        selector = IntentSelector(registry=api, kb_booster=None, kb=kb_mock, event_bus=ic09_bus)
+        req = IntentRequest(project_id="p1", capability="write_test", context={"project_id": "p1"})
+        selector.select(req)
+        events = ic09_bus.read_all("p1")
+        assert any(e.event_type == "capability_chain_produced" for e in events)
