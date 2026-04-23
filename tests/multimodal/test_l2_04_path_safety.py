@@ -260,3 +260,109 @@ def test_symlink_depth_within_limit(tmp_project_root: Path) -> None:
         os.symlink(prev, link)
         prev = link
     SymlinkCycleDetector().check(prev)  # should not raise
+
+
+# --- Task 01.5-01.7 DegradationRouter tests ---
+
+from app.multimodal.path_safety.router import DegradationRouter, RouteInput
+from app.multimodal.path_safety.schemas import RouteDecision
+
+
+# Task 01.5 · md routing
+def test_router_md_small_direct() -> None:
+    r = DegradationRouter()
+    assert r.route_md(RouteInput(realpath=Path("/x/a.md"), line_count=500)) == RouteDecision.DIRECT
+
+
+def test_router_md_at_threshold_direct() -> None:
+    r = DegradationRouter()
+    # boundary: exactly at threshold is still DIRECT (> threshold ⇒ PAGED)
+    assert r.route_md(RouteInput(realpath=Path("/x/a.md"), line_count=2000)) == RouteDecision.DIRECT
+
+
+def test_router_md_over_threshold_paged() -> None:
+    r = DegradationRouter()
+    assert r.route_md(RouteInput(realpath=Path("/x/a.md"), line_count=2001)) == RouteDecision.PAGED
+
+
+def test_router_md_big_paged() -> None:
+    r = DegradationRouter()
+    assert r.route_md(RouteInput(realpath=Path("/x/a.md"), line_count=50000)) == RouteDecision.PAGED
+
+
+def test_router_md_missing_line_count_raises() -> None:
+    r = DegradationRouter()
+    with pytest.raises(L108Error):
+        r.route_md(RouteInput(realpath=Path("/x/a.md")))
+
+
+# Task 01.6 · code routing
+def test_router_code_small_direct() -> None:
+    r = DegradationRouter()
+    assert r.route_code(RouteInput(realpath=Path("/x/repo"), line_count=10000)) == RouteDecision.DIRECT
+
+
+def test_router_code_at_threshold_direct() -> None:
+    r = DegradationRouter()
+    assert r.route_code(RouteInput(realpath=Path("/x/repo"), line_count=100_000)) == RouteDecision.DIRECT
+
+
+def test_router_code_over_threshold_delegate() -> None:
+    r = DegradationRouter()
+    assert r.route_code(RouteInput(realpath=Path("/x/repo"), line_count=100_001)) == RouteDecision.DELEGATE
+
+
+def test_router_code_very_large_delegate() -> None:
+    r = DegradationRouter()
+    assert r.route_code(RouteInput(realpath=Path("/x/repo"), line_count=1_000_000)) == RouteDecision.DELEGATE
+
+
+def test_router_code_missing_line_count_raises() -> None:
+    r = DegradationRouter()
+    with pytest.raises(L108Error):
+        r.route_code(RouteInput(realpath=Path("/x/repo")))
+
+
+# Task 01.7 · image routing
+def test_router_image_small_png_direct() -> None:
+    r = DegradationRouter()
+    result = r.route_image(RouteInput(realpath=Path("/x/a.png"), ext="png", size_bytes=1024))
+    assert result == RouteDecision.DIRECT
+
+
+def test_router_image_at_threshold_direct() -> None:
+    r = DegradationRouter()
+    size = 5 * 1024 * 1024
+    assert r.route_image(RouteInput(realpath=Path("/x/a.png"), ext="png", size_bytes=size)) == RouteDecision.DIRECT
+
+
+def test_router_image_oversized_raises() -> None:
+    r = DegradationRouter()
+    size = 5 * 1024 * 1024 + 1
+    with pytest.raises(L108Error) as ei:
+        r.route_image(RouteInput(realpath=Path("/x/a.png"), ext="png", size_bytes=size))
+    assert ei.value.code == "size_exceeded"
+
+
+def test_router_image_bad_format_raises() -> None:
+    r = DegradationRouter()
+    with pytest.raises(L108Error) as ei:
+        r.route_image(RouteInput(realpath=Path("/x/a.bmp"), ext="bmp", size_bytes=1024))
+    assert ei.value.code == "format_unsupported"
+
+
+def test_router_image_ext_normalization_case_insensitive() -> None:
+    """Ext check should be case-insensitive + tolerant of leading dot."""
+    r = DegradationRouter()
+    assert r.route_image(RouteInput(realpath=Path("/x/a.PNG"), ext=".PNG", size_bytes=1024)) == RouteDecision.DIRECT
+
+
+def test_router_image_jpeg_allowed() -> None:
+    r = DegradationRouter()
+    assert r.route_image(RouteInput(realpath=Path("/x/a.jpeg"), ext="jpeg", size_bytes=1024)) == RouteDecision.DIRECT
+
+
+def test_router_image_missing_fields_raises() -> None:
+    r = DegradationRouter()
+    with pytest.raises(L108Error):
+        r.route_image(RouteInput(realpath=Path("/x/a.png")))  # no ext / size
