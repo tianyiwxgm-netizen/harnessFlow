@@ -17,10 +17,12 @@ maintainer: 主会话
 
 - [ ] **Dev-α · L1-09 韧性+审计**
   - md: `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-α-L1-09-resilience-audit.md`
-  - 会话状态: 🟢 已启动（2026-04-23）
-  - WP 进度: 0/13
-  - DoD: 未勾
+  - 会话状态: 🟢 进行中（2026-04-23）
+  - WP 进度: **2/13**（WP00 骨架 + WP01 atomic_write 全绿 · 21/21 tests · 90.3% cov · commit `b550a23`）
+  - WP02: 🟡 进行中（append_atomic + hash chain · 今日启动）
+  - DoD: WP01 ✅
   - 阻塞: 无
+  - 自修正: 无（源文档对齐）
 
 - [ ] **Dev-β · L1-06 3 层 KB**
   - md: `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-β-L1-06-kb-3-layer.md`
