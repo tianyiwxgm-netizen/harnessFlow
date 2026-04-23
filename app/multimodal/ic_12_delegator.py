@@ -6,9 +6,18 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from app.multimodal.common.errors import L108Error
+
+
+def _utc_now_iso() -> str:
+    """Return current UTC time in ISO-8601 Z-suffixed format (RFC 3339).
+
+    Factored out for deterministic mocking in tests (monkeypatch this symbol).
+    """
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class L1_05_Client(Protocol):
@@ -47,7 +56,7 @@ async def delegate_codebase_onboarding(
         "repo_path": repo_path,
         "kb_write_back": kb_write_back,
         "timeout_s": timeout_s,
-        "ts": "2026-04-23T00:00:00Z",
+        "ts": _utc_now_iso(),
     }
     if focus_interfaces:
         cmd["focus"] = {"interfaces": focus_interfaces}
