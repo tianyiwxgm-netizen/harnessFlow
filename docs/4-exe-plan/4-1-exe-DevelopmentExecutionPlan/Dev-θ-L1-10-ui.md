@@ -43,7 +43,7 @@ estimated_duration: 8-10 天（θ1 · 3 天 + θ2 · 5 天）
 | L2 | 职责 | 估时 |
 |:---:|:---|:---:|
 | L2-01 11 主 Tab 主框架 | Vue3 + vue-router · 11 tab 路由 · 跨 project banner | 1.5 天 |
-| L2-06 裁剪档配置 | LIGHT/STANDARD/HEAVY 切换 · localStorage | 0.75 天 |
+| L2-06 裁剪档配置 | full/lean/custom 切换 · localStorage | 0.75 天 |
 | L2-07 Admin 子管理 | 8 子 tab（users/permissions/audit/health/...）| 0.75 天 |
 
 **θ2 批**（5 天 · 4 L2 · 后端真实集成）：
@@ -109,7 +109,7 @@ backend/bff/                 # FastAPI BFF for UI
 |:---:|:---:|:---:|:---|:---:|:---:|
 | θ-WP01 | θ1 | 基建 | Vue3 项目脚手架 + Pinia + router + API mock | 0.5 天 | - |
 | θ-WP02 | θ1 | L2-01 | 11 主 Tab 主框架（vue-router + banner）| 1.5 天 | 55 |
-| θ-WP03 | θ1 | L2-06 | 裁剪档 LIGHT/STANDARD/HEAVY 切换 | 0.75 天 | 44 |
+| θ-WP03 | θ1 | L2-06 | 裁剪档 full/lean/custom 切换 | 0.75 天 | 44 |
 | θ-WP04 | θ1 | L2-07 | Admin 8 子 tab | 0.75 天 | 61 |
 | θ-WP05 | θ2 | L2-04 | 用户干预 5 类 · panic ≤ 100ms | 1.5 天 | 75 |
 | θ-WP06 | θ2 | L2-03 | 进度流 SSE + heartbeat + 降级 | 1.5 天 | 60 |
@@ -138,7 +138,7 @@ backend/bff/                 # FastAPI BFF for UI
 
 ### 3.3 WP-θ-03 · L2-06 裁剪档
 
-- LIGHT/STANDARD/HEAVY 3 档切换
+- full/lean/custom 3 档切换
 - 存 localStorage + 同步到后端（PATCH /config/profile）
 - 动态切换影响：某些 tab 在 LIGHT 下隐藏
 

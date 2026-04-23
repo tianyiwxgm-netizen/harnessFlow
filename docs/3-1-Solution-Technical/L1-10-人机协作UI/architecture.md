@@ -31,15 +31,22 @@ traceability:
   ic_produced: [IC-17 (L1-10→L1-01), IC-18 (L1-10→L1-09), IC-06 (L1-10→L1-06), IC-11 (L1-10→L1-08)]
   ic_internal: [IC-L2-01..IC-L2-12 · 共 12 条]
 tech_stack:
-  - FastAPI 0.100+
-  - uvicorn 0.23+
-  - Vue 3.4+ (CDN)
-  - Element Plus 2.5+ (CDN)
-  - marked.js 11+ (CDN)
-  - Mermaid 10+ (CDN)
+  # Dev tooling (2026-04-23 修订 · Vite 作 Dev 侧 · 见 L0/tech-stack §1.4 修订)
+  - Vite 5.x                               # Dev build · Prod 产 dist/ 静态资产
+  - Vue 3.4+ (SFC · TypeScript)            # 从 CDN 迁到 Vite build
+  - Pinia 2.x                              # 状态管理
+  - vue-router 4.x                         # 路由
+  - Element Plus 2.5+ (unplugin-按需导入)
+  - Vitest                                 # FE 单元测试
+  # Backend
+  - FastAPI 0.110+
+  - uvicorn[standard] 0.30+
+  - httpx 0.27+
   - Python 3.11+ stdlib (pathlib / json / asyncio)
+  # Runtime
   - SSE (Server-Sent Events · 实时流主通道)
   - polling (5s · 降级通道)
+  - StaticFiles（FastAPI · 挂 frontend/dist/ 预编译资产 · End User 零 Node）
 open_source_refs:
   - Langfuse UI (Learn · trace list + detail view)
   - LangSmith UI (Learn · annotation queue + prompt playground)
@@ -55,7 +62,7 @@ open_source_refs:
 > **版本**：v1.0 · 覆盖 7 个 L2 总体架构 · 不含 L3 实现（代码 / 字段 schema / 路由 / 组件详情 留给各 L2 `tech-design.md`）
 > **定位**：HarnessFlow 与用户之间的**唯一交互面 BC-10**——消费 L1-09 事件总线 + 推用户输入回 L1-01 / L1-02；承载现有 UI mock（11 tab + admin 子模块）+ 新增 UI 缺口（Gate 决策 / 决策轨迹 / 红线告警角 / KB 浏览器 / 裁剪档配置 / Admin 管理）。
 > **严格遵循**：本文 **不得与** `docs/2-prd/L0/scope.md §5.10` / `docs/2-prd/L1-10 人机协作UI/prd.md` 冲突。如冲突以 PRD 为准。
-> **技术栈锁定**：FastAPI + Vue 3 CDN + Element Plus + Mermaid（引 L0/tech-stack §4，零 npm install，冷启动 ≤ 5s）。
+> **技术栈锁定（修订 2026-04-23）**：FastAPI + Vue 3 + Vite（Dev build · Prod 输出 frontend/dist/ 静态）+ Element Plus + Pinia + vue-router。End User 运行态 **零 Node**（pip install 后直接由 FastAPI StaticFiles 挂预编译资产）。仅贡献者/维护者需要 Node 20+ 做 build。详见 L0/tech-stack §1.4 修订。
 > **PM-14 项目上下文硬约束**：**所有 UI 视图（11 主 tab + admin 模块）严格按"当前 project"过滤** —— 用户切换 project 后，task-board / Gate 卡片 / progress stream / KB 浏览器 / 审计查询 / 事件流 全部自动换作用域；V1 单 project 活跃（同时刻一个）；V2+ 支持多 project 挂起 + UI 切换（切换动作是 L2-07 Admin 模块的职责）；Gate 卡片的 `gate_id` 必含 `project_id`。
 
 ---
@@ -475,7 +482,7 @@ Backend ..> FS : read-only
 | **AD-02** | L2-03 是事件流唯一订阅点 | 一个 SSE 连接服务所有 tab；否则每 tab 一个订阅 → N × 连接数 + 跨 tab 时间戳漂移 | 若每 tab 独立订阅：浏览器 HTTP/1.1 6 并发上限打爆 + server 压力 ×N |
 | **AD-03** | L2-04 是用户意图唯一出口 | 所有 `write` 走审计 + 幂等 + panic 锁 + schema 校验一处实现 | 若各 L2 独立发 IC-17：审计格式漂移 + 幂等逻辑 7 处实现 × 7 套 bug |
 | **AD-04** | UI backend 只读（禁写 task-boards / KB / failure-archive） | 继承 L0/tech-stack §4.5 + harnessFlow.md §4.1；single writer = 主 skill；防 UI 异常写坏 task-board | 若 UI 可写：两个写入者竞态 + 权限模型复杂化 + 安全面扩大 |
-| **AD-05** | 零 npm install（前端全 CDN） | 继承 L0/tech-stack §4.2；HarnessFlow 形态是 Skill，不能强制装 Node | 若走 Vite：冷启动 ≥ 30s + node_modules 300 MB + 用户门槛高 |
+| **AD-05**（修订 2026-04-23） | **Dev 用 Vite · Prod 出 dist/ 静态 · End User 零 Node** | 原"零 npm 全 CDN"导致 Vue 3 SFC + TS + 组件按需等生态能力用不上 · Dev 效率低；修订后 End User 装 pip + FastAPI StaticFiles 直接挂 dist/ · 依然零 Node；仅贡献者/维护者需 Node 20+ 做 build | 若完全放弃 Vite 回 CDN：160 FE TC 要重写 + 丧失 TS 类型安全 + 手写 3-5 倍 JS 长期维护成本高 |
 
 ---
 
