@@ -84,7 +84,7 @@ class TestSubagentSchemas:
         assert req.timeout_s == 600
 
     def test_ic20_verifier_request_strict_tool_whitelist(self):
-        from app.skill_dispatch.subagent.schemas import VerifierRequest
+        from app.skill_dispatch.subagent.schemas import AcceptanceCriteria, VerifierRequest
 
         req = VerifierRequest(
             delegation_id="d",
@@ -92,13 +92,17 @@ class TestSubagentSchemas:
             wp_id="wp1",
             blueprint_slice={"req": "do X"},
             s4_snapshot={"diff": "..."},
-            acceptance_criteria=["A", "B"],
+            acceptance_criteria=AcceptanceCriteria(
+                hard=["tests_pass", "coverage >= 0.85"],
+                soft=["no_duplicate_code"],
+                metric=[{"name": "latency_ms", "threshold": 200}],
+            ),
         )
         # 默认 tool_whitelist 严格限制
         assert set(req.allowed_tools) == {"Read", "Glob", "Grep", "Bash"}
 
     def test_ic20_rejects_extra_tool_in_whitelist(self):
-        from app.skill_dispatch.subagent.schemas import VerifierRequest
+        from app.skill_dispatch.subagent.schemas import AcceptanceCriteria, VerifierRequest
 
         with pytest.raises(ValueError, match="allowed_tools"):
             VerifierRequest(
@@ -107,7 +111,7 @@ class TestSubagentSchemas:
                 wp_id="wp1",
                 blueprint_slice={},
                 s4_snapshot={},
-                acceptance_criteria=[],
+                acceptance_criteria=AcceptanceCriteria(),   # 空但合法 object
                 allowed_tools=["Read", "Bash", "Write"],  # Write 禁用
             )
 
@@ -174,14 +178,55 @@ class TestSubagentSchemas:
 
     def test_ic20_ts_field_auto_populated(self):
         """P1-01 · §3.20.2 `ts` required · default_factory 补 UTC ISO-8601 Z."""
-        from app.skill_dispatch.subagent.schemas import VerifierRequest
+        from app.skill_dispatch.subagent.schemas import AcceptanceCriteria, VerifierRequest
 
         req = VerifierRequest(
             delegation_id="d", project_id="p1", wp_id="wp1",
             blueprint_slice={}, s4_snapshot={},
-            acceptance_criteria=[],
+            acceptance_criteria=AcceptanceCriteria(),
         )
         assert req.ts and req.ts.endswith("Z")
+
+    def test_ic20_acceptance_criteria_is_nested_object_not_list(self):
+        """P1-02 · `acceptance_criteria` 必须是 AcceptanceCriteria 嵌套模型（type: object）
+        · 不接受原来的 list[str] · 对齐合约 §3.20.2 quality_gates 子集.
+        """
+        from app.skill_dispatch.subagent.schemas import AcceptanceCriteria, VerifierRequest
+
+        # 正向：dict 传入（Pydantic 自动构造 AcceptanceCriteria）
+        req = VerifierRequest(
+            delegation_id="d", project_id="p1", wp_id="wp1",
+            blueprint_slice={}, s4_snapshot={},
+            acceptance_criteria={
+                "hard": ["tests_pass", "coverage >= 0.85"],
+                "soft": ["no_code_smell"],
+                "metric": [{"name": "latency_p99_ms", "threshold": 200}],
+            },
+        )
+        assert isinstance(req.acceptance_criteria, AcceptanceCriteria)
+        assert req.acceptance_criteria.hard == ["tests_pass", "coverage >= 0.85"]
+        assert req.acceptance_criteria.metric[0]["threshold"] == 200
+
+        # 反向：原来的 list[str] 必须被拒（type mismatch）
+        with pytest.raises((ValueError, TypeError)):
+            VerifierRequest(
+                delegation_id="d", project_id="p1", wp_id="wp1",
+                blueprint_slice={}, s4_snapshot={},
+                acceptance_criteria=["A", "B"],   # type: ignore[arg-type]
+            )
+
+    def test_ic20_acceptance_criteria_empty_object_accepted(self):
+        """P1-02 · 空 object 合法（hard/soft/metric 均可选）."""
+        from app.skill_dispatch.subagent.schemas import AcceptanceCriteria, VerifierRequest
+
+        req = VerifierRequest(
+            delegation_id="d", project_id="p1", wp_id="wp1",
+            blueprint_slice={}, s4_snapshot={},
+            acceptance_criteria=AcceptanceCriteria(),
+        )
+        assert req.acceptance_criteria.hard == []
+        assert req.acceptance_criteria.soft == []
+        assert req.acceptance_criteria.metric == []
 
 
 class TestContextScope:
@@ -673,7 +718,7 @@ class TestDelegator:
         assert ack.dispatched is True
 
     async def test_ic20_verifier_dispatch_with_strict_whitelist(self, ic09_bus):
-        from app.skill_dispatch.subagent.schemas import VerifierRequest
+        from app.skill_dispatch.subagent.schemas import AcceptanceCriteria, VerifierRequest
 
         recorded_tools = []
 
@@ -690,7 +735,7 @@ class TestDelegator:
         req = VerifierRequest(
             delegation_id="d_v", project_id="p1", wp_id="wp1",
             blueprint_slice={"req": "x"}, s4_snapshot={"diff": "y"},
-            acceptance_criteria=["A"],
+            acceptance_criteria=AcceptanceCriteria(hard=["A"]),
         )
         ack = await d.delegate_verifier(req)
         assert ack.dispatched is True

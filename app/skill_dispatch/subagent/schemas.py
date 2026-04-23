@@ -153,6 +153,25 @@ class OnboardingFinalReport(BaseModel):
 _VERIFIER_ALLOWED_TOOLS: frozenset[str] = frozenset({"Read", "Glob", "Grep", "Bash"})
 
 
+class AcceptanceCriteria(BaseModel):
+    """IC-20 §3.20.2 `acceptance_criteria` · type: object · quality_gates 子集结构.
+
+    与 L1-04 DoD 求值侧（Dev-ε / 主-1）类型对齐 · 三段：
+      - hard  : 硬门（DoD AST 表达式字符串）· PRD 必 pass · FAIL_L1 判定
+      - soft  : 软门（品质建议）· FAIL_L4 判定
+      - metric: 度量项（覆盖率 / 性能阈值）· 含表达式 + threshold
+
+    源：docs/3-1-Solution-Technical/integration/ic-contracts.md §3.20.2
+        `acceptance_criteria: {type: object, description: quality_gates 的 WP 子集}`
+    """
+
+    model_config = {"frozen": True}
+
+    hard: list[str] = Field(default_factory=list)
+    soft: list[str] = Field(default_factory=list)
+    metric: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class VerifierRequest(BaseModel):
     """IC-20 §3.20.2 · S5 独立验证 · allowed_tools 严格限制."""
 
@@ -163,7 +182,9 @@ class VerifierRequest(BaseModel):
     wp_id: str = Field(min_length=1)
     blueprint_slice: dict[str, Any]
     s4_snapshot: dict[str, Any]
-    acceptance_criteria: list[str]
+    # P1-02 修：合约 §3.20.2 要求 type: object · 原实现为 list[str] 与 quality_gates 不兼容.
+    # AcceptanceCriteria 嵌套模型对齐 hard/soft/metric 结构 · 波 4 L1-04 接入零阻力.
+    acceptance_criteria: AcceptanceCriteria
     allowed_tools: list[str] = Field(default_factory=lambda: ["Read", "Glob", "Grep", "Bash"])
     timeout_s: int = Field(default=1200, gt=0, le=3600)
     # IC-20 §3.20.2 ts: required string · default_factory 自动补 UTC ISO-8601

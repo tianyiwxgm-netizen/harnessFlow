@@ -60,6 +60,7 @@ class TestSubagentIsolation:
         """IC-04/05/12/20 入参 schema 必 reject 空 project_id."""
         from app.skill_dispatch.invoker.schemas import InvocationRequest
         from app.skill_dispatch.subagent.schemas import (
+            AcceptanceCriteria,
             CodebaseOnboardingRequest,
             DelegationRequest,
             VerifierRequest,
@@ -82,5 +83,6 @@ class TestSubagentIsolation:
         with pytest.raises(ValueError):
             VerifierRequest(
                 delegation_id="d", project_id="", wp_id="wp1",
-                blueprint_slice={}, s4_snapshot={}, acceptance_criteria=[],
+                blueprint_slice={}, s4_snapshot={},
+                acceptance_criteria=AcceptanceCriteria(),   # P1-02 · 对齐 type: object
             )

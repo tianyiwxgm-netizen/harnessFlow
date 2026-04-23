@@ -84,8 +84,12 @@ class TestICContracts:
         )
 
     def test_ic_20_verifier_matches_contract(self):
-        """VerifierRequest 对齐 §3.20.2 + allowed_tools 严格白名单."""
-        from app.skill_dispatch.subagent.schemas import VerifierRequest, VerifierVerdict
+        """VerifierRequest 对齐 §3.20.2 + allowed_tools 严格白名单 + acceptance_criteria type: object."""
+        from app.skill_dispatch.subagent.schemas import (
+            AcceptanceCriteria,
+            VerifierRequest,
+            VerifierVerdict,
+        )
 
         req_fields = set(VerifierRequest.model_fields.keys())
         required = {
@@ -99,7 +103,8 @@ class TestICContracts:
         with pytest.raises(ValueError):
             VerifierRequest(
                 delegation_id="d", project_id="p1", wp_id="wp1",
-                blueprint_slice={}, s4_snapshot={}, acceptance_criteria=[],
+                blueprint_slice={}, s4_snapshot={},
+                acceptance_criteria=AcceptanceCriteria(),   # P1-02 · 对齐 type: object
                 allowed_tools=["Read", "Write"],   # Write 禁用
             )
 

@@ -129,7 +129,7 @@ else:
 
 ```python
 from app.skill_dispatch.subagent.delegator import Delegator
-from app.skill_dispatch.subagent.schemas import VerifierRequest
+from app.skill_dispatch.subagent.schemas import AcceptanceCriteria, VerifierRequest
 
 ack = await delegator.delegate_verifier(VerifierRequest(
     delegation_id="ver-1",
@@ -137,7 +137,12 @@ ack = await delegator.delegate_verifier(VerifierRequest(
     wp_id="wp-12",
     blueprint_slice={...},
     s4_snapshot={...},
-    acceptance_criteria=["A", "B", "C"],
+    # §3.20.2 acceptance_criteria 是 object（quality_gates 子集 · hard/soft/metric）
+    acceptance_criteria=AcceptanceCriteria(
+        hard=["tests_pass", "coverage >= 0.85"],
+        soft=["no_duplicate_code"],
+        metric=[{"name": "latency_p99_ms", "threshold": 200}],
+    ),
 ))
 # ack.dispatched == True · 异步 final_report 通过 IC-09 event "subagent_final_report" 回推
 ```

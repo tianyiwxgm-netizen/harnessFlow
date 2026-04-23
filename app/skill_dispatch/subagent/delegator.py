@@ -107,7 +107,9 @@ class Delegator:
             context_copy={
                 "project_id": request.project_id,
                 "wp_id": request.wp_id,
-                "dod_exprs": request.acceptance_criteria,
+                # acceptance_criteria 是 AcceptanceCriteria 嵌套模型（type: object）·
+                # 以 dict 形式透传 · 含 hard/soft/metric 三段 · 对齐 L1-04 DoD 求值入参.
+                "dod_exprs": request.acceptance_criteria.model_dump(),
             },
             allowed_tools=list(request.allowed_tools),
             timeout_s=request.timeout_s,
