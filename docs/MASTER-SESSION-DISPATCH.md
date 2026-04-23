@@ -52,7 +52,7 @@ updated_at: 2026-04-22
 ## §2 23 会话总表 · 读哪份 md
 
 ### 2.1 波 1-3 · 底座 + 业务 + 监督（11 Dev · 独立分派）
-
+进行中：
 | # | 会话名        | L1 | md 路径 | 估时 | 波 |
 |:---:|:-----------|:---:|:---|:---:|:---:|
 | 1 | **Dev-α**  | L1-09 韧性+审计 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-α-L1-09-resilience-audit.md` | 5-7 天 | 1 |
@@ -64,7 +64,13 @@ updated_at: 2026-04-22
 | 7 | **Dev-η**  | L1-08 多模态 | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-η-L1-08-multimodal.md` | 5.5 天 | 3 |
 | 8 | **Dev-θ**  | L1-10 UI | `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-θ-L1-10-ui.md` | 8.5 天 | 3 |
 
+
+
+
 > **4-3 监督规约**：Dev-ζ 和主-1 会话内自行读 `docs/4-exe-plan/4-3-exe-monitoring&controlling/4-3-monitoring-impl-plan.md` · 作源导读 · 不单独开会话。
+
+
+
 
 **波 1-3 并发情况**：同波内的 Dev 组可并行（如 Dev-α + Dev-β 同时开）· 分 2-3 machine slot 共用。
 
