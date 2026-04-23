@@ -1,5 +1,12 @@
 """L2-05 崩溃安全层 · 公共导出."""
+from app.l1_09.crash_safety.appender import append_atomic
 from app.l1_09.crash_safety.atomic_writer import write_atomic
+from app.l1_09.crash_safety.canonical_json import canonical_json_without_hash
+from app.l1_09.crash_safety.hash_chain import (
+    GENESIS_HASH,
+    compute_hash_chain_link,
+    verify_chain_link,
+)
 from app.l1_09.crash_safety.schemas import (
     MAX_SNAPSHOT_SIZE_BYTES,
     PIPE_BUF_LIMIT,
@@ -32,7 +39,12 @@ from app.l1_09.crash_safety.schemas import (
 )
 
 __all__ = [
+    "append_atomic",
+    "canonical_json_without_hash",
+    "compute_hash_chain_link",
+    "verify_chain_link",
     "write_atomic",
+    "GENESIS_HASH",
     "MAX_SNAPSHOT_SIZE_BYTES",
     "PIPE_BUF_LIMIT",
     "RETRY_BACKOFF_MS",
