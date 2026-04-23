@@ -18,6 +18,8 @@ dependencies = [
     "zstandard>=0.22",
     "PyYAML>=6",
     "python-dateutil>=2.9",
+    # Dev-γ L1-05 (Skill+subagent)
+    "watchdog>=4.0",
     # Dev-ε L1-03 (WBS+WP 拓扑)
     "networkx>=3.2",
     # Dev-θ L1-10 BFF (FastAPI)
@@ -26,14 +28,14 @@ dependencies = [
     "httpx>=0.27",
     # Dev-η L1-08 多模态
     "tree-sitter>=0.25,<1.0",
-    "tree-sitter-python",          # 版本由 tree-sitter-language-pack 管理
+    "tree-sitter-python",
     "tree-sitter-typescript",
     "tree-sitter-go",
     "tree-sitter-rust",
     "tree-sitter-java",
     "python-frontmatter>=1.1",
-    "Pillow>=10.4",                # pin ≥ 10.4 (CVE surface)
-    "pytesseract>=0.3.10",         # 运行需额外 tesseract binary（docs 提示）
+    "Pillow>=10.4",
+    "pytesseract>=0.3.10",
 ]
 
 [project.optional-dependencies]
@@ -45,7 +47,12 @@ dev = [
     "pytest-timeout>=2.2",
     "ruff>=0.4",
     "mypy>=1.9",
-    "freezegun>=1.4",              # Dev-γ time-sensitive tests
+    "freezegun>=1.5",
+]
+
+# SDK for L2-04 子 Agent 委托（可选 · CI 默认跳过）
+sdk = [
+    "anthropic>=0.39",
 ]
 
 [tool.setuptools.packages.find]
@@ -66,6 +73,8 @@ markers = [
     "perf: performance benchmarks",
     "integration: integration tests across L2s",
     "e2e: end-to-end scenarios across multiple IC",
+    "pm03: PM-03 subagent independent session tests (Dev-γ L1-05)",
+    "pm09: PM-09 capability abstraction / hardcoded-skill ban (Dev-γ L1-05)",
     "pm14: PM-14 physical sharding tests",
     "fsync: fsync hard-constraint tests",
     "hash_chain: hash chain integrity tests",
@@ -73,9 +82,9 @@ markers = [
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["app/l1_09", "app/project_lifecycle"]
+source = ["app/l1_09", "app/project_lifecycle", "app/skill_dispatch"]
 branch = true
-omit = ["*/__init__.py", "*/schemas.py"]
+omit = ["*/__init__.py", "*/schemas.py", "app/skill_dispatch/_mocks/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -90,8 +99,8 @@ extend-exclude = ["archive", "docs", ".venv"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RET", "ARG"]
 ignore = [
-    "E501",  # line too long (handled by formatter)
-    "B008",  # do not perform function calls in argument defaults (pydantic Field)
+    "E501",
+    "B008",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -103,4 +112,4 @@ strict = false
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-packages = ["app.l1_09", "app.project_lifecycle"]
+packages = ["app.l1_09", "app.project_lifecycle", "app.skill_dispatch"]
