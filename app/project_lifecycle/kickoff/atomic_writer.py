@@ -16,6 +16,7 @@ from pathlib import Path
 
 from app.project_lifecycle.kickoff.errors import (
     E_ATOMIC_WRITE_FAILED,
+    E_CHART_ALREADY_EXISTS,
     E_CROSS_PROJECT_PATH,
     E_POST_WRITE_HASH_MISMATCH,
     KickoffError,
@@ -36,10 +37,11 @@ def _ensure_pm14_path(path: str) -> None:
         )
 
 
-def atomic_write_chart(path: str, content: str) -> WriteResult:
+def atomic_write_chart(path: str, content: str, *, exclusive: bool = False) -> WriteResult:
     """原子写章程文件 · 返 WriteResult（path + bytes_written + sha256）。
 
     - PM-14 路径前缀校验 → E_L102_L202_012
+    - exclusive=True 且目标已存在 → E_L102_L202_008 CHART_ALREADY_EXISTS（O_EXCL 语义）
     - tempfile → fsync → rename（同目录 · POSIX 原子）
     - 写后读回复核 sha256 → E_L102_L202_009 若不符
     - 任一 OSError → E_L102_L202_013
@@ -47,6 +49,12 @@ def atomic_write_chart(path: str, content: str) -> WriteResult:
     _ensure_pm14_path(path)
 
     target = Path(path).absolute()
+    if exclusive and target.exists():
+        raise KickoffError(
+            error_code=E_CHART_ALREADY_EXISTS,
+            message=f"chart target already exists (exclusive mode): {target}",
+            context={"path": str(target)},
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
     content_bytes = content.encode("utf-8")
     expected_sha = hashlib.sha256(content_bytes).hexdigest()

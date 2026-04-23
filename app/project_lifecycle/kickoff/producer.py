@@ -77,9 +77,11 @@ class StartupProducer:
                 latency_ms=int((time.perf_counter() - t0) * 1000),
             )
 
+        # 若 brainstorm 超 3 轮或未收敛 · 标 degraded（仍返章程 · 但 Gate 侧应显 incomplete）
+        status = "degraded" if success.clarification_incomplete else "ok"
         return KickoffResponse(
             trigger_id=req.trigger_id,
-            status="ok",
+            status=status,
             result=success,
             latency_ms=int((time.perf_counter() - t0) * 1000),
         )

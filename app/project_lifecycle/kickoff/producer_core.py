@@ -27,6 +27,8 @@ from app.project_lifecycle.kickoff.atomic_writer import atomic_write_chart
 from app.project_lifecycle.kickoff.errors import (
     E_BRAINSTORM_SUBAGENT_FAILED,
     E_PID_DUPLICATE,
+    E_SCOPE_NOT_LOCKED,
+    E_TEMPLATE_INVALID,
     KickoffError,
 )
 from app.project_lifecycle.kickoff.pid_gen import generate_pid
@@ -106,6 +108,7 @@ def produce_kickoff(
     project_root: str = ".",
     trim_level: TrimLevel = "full",
     prior_context: str | None = None,
+    strict_scope_lock: bool = False,
 ) -> KickoffSuccess:
     root = Path(project_root).absolute()
     root.mkdir(parents=True, exist_ok=True)
@@ -151,6 +154,16 @@ def produce_kickoff(
     bs_slots = dict(bs_result.get("slots", {}))
     clarification_incomplete = (rounds > 3) or (not is_confirmed)
 
+    # strict_scope_lock 模式：in_scope 必填 · 空拒
+    if strict_scope_lock:
+        in_scope = bs_slots.get("in_scope") or bs_slots.get("scope_items") or []
+        if not in_scope:
+            raise KickoffError(
+                error_code=E_SCOPE_NOT_LOCKED,
+                message="strict_scope_lock=True requires non-empty in_scope from brainstorm",
+                project_id=pid,
+            )
+
     # Step 5 · render 两份模板
     goal_render = template.render_template(
         request_id=f"kickoff-{pid}-goal",
@@ -167,11 +180,25 @@ def produce_kickoff(
         caller_l2="L2-02",
     )
 
-    # Step 6 · atomic_write 章程
+    # Step 6 · atomic_write 章程（先校验 render 结果非空）
+    goal_body = _render_body(goal_render)
+    scope_body = _render_body(scope_render)
+    if not goal_body or not goal_body.strip():
+        raise KickoffError(
+            error_code=E_TEMPLATE_INVALID,
+            message="kickoff.goal render returned empty body",
+            project_id=pid,
+        )
+    if not scope_body or not scope_body.strip():
+        raise KickoffError(
+            error_code=E_TEMPLATE_INVALID,
+            message="kickoff.scope render returned empty body",
+            project_id=pid,
+        )
     goal_path = dirs["chart"] / "HarnessFlowGoal.md"
     scope_path = dirs["chart"] / "HarnessFlowPrdScope.md"
-    atomic_write_chart(str(goal_path), _render_body(goal_render))
-    atomic_write_chart(str(scope_path), _render_body(scope_render))
+    atomic_write_chart(str(goal_path), goal_body)
+    atomic_write_chart(str(scope_path), scope_body)
 
     # Step 7 · anchor hash
     anchor = compute_anchor_hash(pid, root_dir=str(root))
