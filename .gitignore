@@ -24,3 +24,6 @@ audit-reports/*.json
 # UI runtime artifacts
 ui/.ui.pid
 ui/ui.log
+
+# Git worktrees (superpowers)
+.worktrees/
