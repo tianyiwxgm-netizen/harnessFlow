@@ -17,19 +17,22 @@ maintainer: 主会话
 
 - [ ] **Dev-α · L1-09 韧性+审计**
   - md: `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-α-L1-09-resilience-audit.md`
-  - 会话状态: 🟢 进行中（2026-04-23）
-  - WP 进度: **2/13**（WP00 骨架 + WP01 atomic_write 全绿 · 21/21 tests · 90.3% cov · commit `b550a23`）
-  - WP02: 🟡 进行中（append_atomic + hash chain · 今日启动）
-  - DoD: WP01 ✅
-  - 阻塞: 无
-  - 自修正: 无（源文档对齐）
+  - 会话状态: 🟡 α1 批完成（α1 WP00-06 · 2026-04-23）
+  - WP 进度: **7/13**（α1：WP00 骨架 + WP01 atomic_write + WP02 append+hash chain + WP03 verify+recover + WP04 EventBus.append IC-09 + WP05 register_subscriber + WP06 halt_guard+correlation_id · 135 TC · 92.1% cov）
+  - 已 merge: ✅ main（直接 push）
+  - Review: 🔴 未审（下一批派）
+  - 剩余: α2 WP07-13（L2-02 lock_manager / L2-03 audit / L2-04 checkpoint / L2-06 shutdown · 6 WP · 估 3-4 天）
+  - 里程碑: **Dev-α-M1 达成** · IC-09 `EventBus.append()` 对外可用 · 其他 Dev 组可切真实
 
 - [ ] **Dev-β · L1-06 3 层 KB**
   - md: `docs/4-exe-plan/4-1-exe-DevelopmentExecutionPlan/Dev-β-L1-06-kb-3-layer.md`
-  - 会话状态: 🟢 已启动（2026-04-23）
-  - WP 进度: 0/6
-  - DoD: 未勾
-  - 阻塞: 无
+  - 会话状态: 🟡 部分完成（2/6 WP · 2026-04-23）
+  - 包: `app/knowledge_base/**`（语义名）
+  - WP 进度: **2/6**（WP01 TierManager 51 TC / WP02 RerankService 55 TC · 合 106 TC · cov 87-89%）
+  - 已 merge: ✅ main（直接 push · 违反分支约定）
+  - Review: 🟡 跑中（agent aeab87024）
+  - 剩余: WP03 IC-06 kb_read / WP04 IC-07 kb_write / WP05 IC-08 kb_promote / WP06 集成
+  - 自修正: C · 算法分歧（plan §3.2 BM25 hybrid vs 3-1 5 信号线性 · 采真实设计 · 待 plan 文案同步）
 
 ### 波 2 · 业务层（ETA 2026-05-07 · 5-7 天 · 与波 1 重叠）
 

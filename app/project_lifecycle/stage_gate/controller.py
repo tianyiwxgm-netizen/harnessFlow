@@ -17,6 +17,7 @@ import os
 import time
 import uuid
 from dataclasses import replace
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from app.project_lifecycle.stage_gate.errors import (
@@ -26,6 +27,10 @@ from app.project_lifecycle.stage_gate.errors import (
     E_TRANSITION_FORBIDDEN,
     StageGateError,
     StartupConfigError,
+)
+from app.project_lifecycle.stage_gate.ic_16_stub import (
+    UIBridge,
+    build_push_stage_gate_card_command,
 )
 from app.project_lifecycle.stage_gate.schemas import (
     Decision,
@@ -65,11 +70,26 @@ class EventSink(Protocol):
 
 
 class L1_01_StateMachine(Protocol):
-    """L1-01 L2-03 主状态机 · authorize_transition 最终调它。"""
+    """L1-01 L2-03 主状态机 · authorize_transition 最终调它。
+
+    入参对齐 ic-contracts.md §3.1.2（state_transition_request）:
+      required: [transition_id, project_id, from, to, reason, trigger_tick,
+                 evidence_refs, ts]
+      optional: gate_id
+    """
 
     def request_state_transition(
-        self, *, project_id: str, from_state: str, to_state: str,
-        reason: str, gate_id: str,
+        self,
+        *,
+        transition_id: str,
+        project_id: str,
+        from_state: str,
+        to_state: str,
+        reason: str,
+        trigger_tick: str,
+        evidence_refs: tuple[str, ...],
+        ts: str,
+        gate_id: str,
     ) -> dict[str, Any]: ...
 
 
@@ -89,6 +109,7 @@ class StageGateController:
         event_bus: EventSink,
         l1_01_state_machine: L1_01_StateMachine,
         config: dict[str, Any] | None = None,
+        ui_bridge: UIBridge | None = None,
     ) -> None:
         config = config or {}
         # 硬约束：GATE_AUTO_TIMEOUT_ENABLED=true 启动 crash
@@ -104,6 +125,7 @@ class StageGateController:
 
         self._event_bus = event_bus
         self._l1_01 = l1_01_state_machine
+        self._ui_bridge = ui_bridge  # IC-16 · Dev-θ L1-10 真实 UI 接入前可为 None
         self._gate_history: dict[str, GateStateSnapshot] = {}
         self._re_open_counts: dict[tuple[str, Stage], int] = {}
         self._decisions_by_request: dict[str, GateDecision] = {}  # 幂等
@@ -166,6 +188,15 @@ class StageGateController:
             },
         )
 
+        # IC-16 § 3.16 · Gate pass 后推 UI 卡片
+        if dec.decision == "pass":
+            self._push_gate_card(
+                gate_id=dec.gate_id,
+                project_id=dec.project_id,
+                stage_name=dec.stage,
+                trim_level=self._trim_level_from(evidence),
+            )
+
         self._enforce_history_quota()
         return dec
 
@@ -180,7 +211,18 @@ class StageGateController:
         gate_id: str,
         reason: str,
         caller: str = "L2-01",  # PM-14 硬锁 · 只内部调
+        trigger_tick: str | None = None,
+        evidence_refs: tuple[str, ...] | None = None,
     ) -> TransitionResult:
+        """IC-01 §3.1.2 · 发送 state_transition_request。
+
+        ic-contracts.md §3.1.2 必填字段：
+          - transition_id: 本方法生成 trans-{uuid} · 幂等键
+          - project_id / from / to / reason / gate_id（optional）
+          - trigger_tick: 若调用方未传 · 从 gate_id 派生
+          - evidence_refs: minItems=1 · 若未传 · 默认 (gate_id,)
+          - ts: ISO-8601 utc · 本方法自动生成
+        """
         if caller != "L2-01":
             raise StageGateError(
                 error_code=E_PM14_OWNERSHIP_VIOLATION,
@@ -194,14 +236,38 @@ class StageGateController:
                 message=f"reason too short (< 20 chars): {reason!r}",
                 project_id=project_id,
             )
+        # §3.1.2 evidence_refs minItems=1 · 默认填 (gate_id,)
+        if evidence_refs is None:
+            evidence_refs = (gate_id,)
+        if not evidence_refs or len(evidence_refs) < 1:
+            raise StageGateError(
+                error_code=E_TRANSITION_FORBIDDEN,
+                message="evidence_refs minItems=1 violated (§3.1.2)",
+                project_id=project_id,
+            )
         validate_transition(from_state, to_state, project_id=project_id)
 
-        # 发 IC-01
+        # §3.1.2 必填字段生成
+        transition_id = f"trans-{uuid.uuid4()}"
+        ts = (
+            datetime.now(timezone.utc)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z")
+        )
+        # trigger_tick 若未传 · 从 gate_id 派生保证追溯链非空
+        if trigger_tick is None:
+            trigger_tick = f"tick-{gate_id}"
+
+        # 发 IC-01 · §3.1.2 9 字段完整
         ic01_result = self._l1_01.request_state_transition(
+            transition_id=transition_id,
             project_id=project_id,
             from_state=from_state,
             to_state=to_state,
             reason=reason,
+            trigger_tick=trigger_tick,
+            evidence_refs=tuple(evidence_refs),
+            ts=ts,
             gate_id=gate_id,
         )
         ok = bool(ic01_result.get("ok", True))
@@ -337,6 +403,40 @@ class StageGateController:
     def _compute_missing_signals(self, evidence: EvidenceBundle) -> tuple[str, ...]:
         required = set(_REQUIRED_SIGNALS_BY_STAGE.get(evidence.stage, ()))
         return tuple(sorted(required - set(evidence.signals)))
+
+    @staticmethod
+    def _trim_level_from(evidence: EvidenceBundle) -> str:
+        """EvidenceBundle.trim_level (full|minimal|custom) → §3.16 enum (minimal|standard|full)。"""
+        mapping = {"full": "full", "minimal": "minimal", "custom": "standard"}
+        return mapping.get(evidence.trim_level, "standard")
+
+    def _push_gate_card(
+        self,
+        *,
+        gate_id: str,
+        project_id: str,
+        stage_name: str,
+        trim_level: str,
+    ) -> None:
+        """IC-16 § 3.16 · Gate pass 后推 UI 卡片。
+
+        - ui_bridge 注入（Dev-θ L1-10 真实 UI 可用）→ delegate
+        - 未注入 → 降级为 IC-09 事件 ic_16_push_stage_gate_card（审计可追溯）
+        """
+        command = build_push_stage_gate_card_command(
+            gate_id=gate_id,
+            project_id=project_id,
+            stage_name=stage_name,
+            trim_level=trim_level,
+        )
+        if self._ui_bridge is not None:
+            self._ui_bridge.push_stage_gate_card_to_ui(command=command)
+        # 无论 ui_bridge 是否存在 · 审计事件都发（§3.16.7 IC-09 审计路径）
+        self._event_bus.append_event(
+            project_id=project_id,
+            event_type="ic_16_push_stage_gate_card",
+            payload=command,
+        )
 
     @staticmethod
     def _mint_gate_id(project_id: str, stage: Stage) -> str:

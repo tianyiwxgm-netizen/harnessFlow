@@ -13,6 +13,10 @@ from app.project_lifecycle.stage_gate.errors import (
     StageGateError,
     StartupConfigError,
 )
+from app.project_lifecycle.stage_gate.ic_16_stub import (
+    UIBridge,
+    build_push_stage_gate_card_command,
+)
 from app.project_lifecycle.stage_gate.schemas import (
     ALLOWED_TRANSITIONS,
     EvidenceBundle,
@@ -44,4 +48,6 @@ __all__ = [
     "ALLOWED_TRANSITIONS",
     "is_allowed",
     "validate_transition",
+    "UIBridge",
+    "build_push_stage_gate_card_command",
 ]

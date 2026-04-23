@@ -58,7 +58,7 @@ estimated_duration: 5-7 天
 | **L2-02** KB 读 | `kb_read(kind, scope, filter)` · IC-06 入口 · 默认 session+project+global merge · rerank | 2102 | ~3800 | 1 天 | **IC-06** |
 | **L2-03** 观察累积器 | `kb_write_session` · IC-07 入口 · session 层写 · dedup + schema 校验 | 2006 | ~3600 | 1 天 | **IC-07** |
 | **L2-04** KB 晋升仪式执行器 | `kb_promote` · IC-08 入口 · session→project→global 晋升 · 用户审核 | 2301 | ~4200 | 1.5 天 | **IC-08** |
-| **L2-05** 检索+Rerank | BM25 + embedding 混合打分 · LRU cache · 跨 L2 打分统一 | 2297 | ~4000 | 1 天 | 内部 · 被 L2-02 调 |
+| **L2-05** 检索+Rerank | **5 信号线性加权**（context_match + stage_match + observed_count + recency + kind_priority）· LRU cache · 跨 L2 打分统一 · BM25 延至 V2 · 向量延至 V3（3-1 L2-05 §1.5 D1/D2） | 2297 | ~4000 | 1 天 | 内部 · 被 L2-02 调 |
 | **合计** | 5 | **10800** | **~19400** | **6 天** | 3 全局 IC |
 
 ### 1.2 Out-of-scope
@@ -133,7 +133,7 @@ app/l1_06/
 | WP | L2 | 主题 | 前置 | 估时 | 对应 TC |
 |:---:|:---:|:---|:---|:---:|:---:|
 | β-WP01 | L2-01 | 3 层分层守门 + scope resolver + slot allocator | 无（α IC-09 mock）| 1.5 天 | ~52 |
-| β-WP02 | L2-05 | BM25 + embedding + rerank 引擎 | 无（独立）| 1 天 | ~56 |
+| β-WP02 | L2-05 | 5 信号线性加权（BM25 延至 V2） + rerank 引擎 | 无（独立）| 1 天 | ~56 |
 | β-WP03 | L2-02 | kb_read 主入口 · IC-06 · 多 tier merge | WP01 + WP02 | 1 天 | ~49 |
 | β-WP04 | L2-03 | 观察累积器 · IC-07 · dedup · session 写 | WP01 | 1 天 | ~55 |
 | β-WP05 | L2-04 | KB 晋升仪式 · IC-08 · approval gate | WP01 + WP04 | 1.5 天 | ~50 |
