@@ -17,6 +17,7 @@ dependencies = [
     "zstandard>=0.22",
     "PyYAML>=6",
     "python-dateutil>=2.9",
+    "watchdog>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,12 @@ dev = [
     "pytest-timeout>=2.2",
     "ruff>=0.4",
     "mypy>=1.9",
+    "freezegun>=1.5",
+]
+
+# SDK for L2-04 子 Agent 委托（可选 · CI 默认跳过）
+sdk = [
+    "anthropic>=0.39",
 ]
 
 [tool.setuptools.packages.find]
@@ -48,6 +55,8 @@ markers = [
     "perf: performance benchmarks",
     "integration: integration tests across L2s",
     "e2e: end-to-end scenarios across multiple IC",
+    "pm03: PM-03 subagent independent session tests (Dev-γ L1-05)",
+    "pm09: PM-09 capability abstraction / hardcoded-skill ban (Dev-γ L1-05)",
     "pm14: PM-14 physical sharding tests",
     "fsync: fsync hard-constraint tests",
     "hash_chain: hash chain integrity tests",
@@ -55,9 +64,9 @@ markers = [
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["app/l1_09", "app/l1_02"]
+source = ["app/l1_09", "app/l1_02", "app/l1_05"]
 branch = true
-omit = ["*/__init__.py", "*/schemas.py"]
+omit = ["*/__init__.py", "*/schemas.py", "app/l1_05/_mocks/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -85,4 +94,4 @@ strict = false
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-packages = ["app.l1_09", "app.l1_02"]
+packages = ["app.l1_09", "app.l1_02", "app.l1_05"]
