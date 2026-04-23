@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import re
 import threading
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 import jinja2
 import jinja2.sandbox
@@ -29,7 +30,7 @@ try:
 except ImportError:  # pragma: no cover
     from yaml import SafeDumper as _YamlSafeDumper  # type: ignore[assignment]
 
-from app.l1_02.template_engine.errors import (
+from app.project_lifecycle.template_engine.errors import (
     E_CALLER_NOT_WHITELISTED,
     E_FRONTMATTER_PARSE_FAIL,
     E_HASH_COMPUTE_FAIL,
@@ -44,14 +45,13 @@ from app.l1_02.template_engine.errors import (
     E_VERSION_MISMATCH,
     TemplateEngineError,
 )
-from app.l1_02.template_engine.hashing import (
+from app.project_lifecycle.template_engine.hashing import (
     canonical_slots_hash,
     compute_output_hash,
     split_frontmatter,
 )
-from app.l1_02.template_engine.registry import TemplateRegistry
-from app.l1_02.template_engine.schemas import RenderedOutput, TemplateEntry
-
+from app.project_lifecycle.template_engine.registry import TemplateRegistry
+from app.project_lifecycle.template_engine.schemas import RenderedOutput, TemplateEntry
 
 ENGINE_VERSION = "1.0.0"
 KIND_PATTERN = re.compile(r"^[a-z0-9._-]+$")
@@ -63,7 +63,7 @@ MAX_OUTPUT_BYTES = 204800  # 200KB
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _inject_metadata(

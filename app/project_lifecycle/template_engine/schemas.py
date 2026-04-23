@@ -46,9 +46,9 @@ class ValidationResult:
         return self.ok
 
     @classmethod
-    def success(cls) -> "ValidationResult":
+    def success(cls) -> ValidationResult:
         return cls(ok=True)
 
     @classmethod
-    def fail(cls, error: str, details: Any = None) -> "ValidationResult":
+    def fail(cls, error: str, details: Any = None) -> ValidationResult:
         return cls(ok=False, error_code=error, details=details)

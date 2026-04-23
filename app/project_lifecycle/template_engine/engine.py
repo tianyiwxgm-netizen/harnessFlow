@@ -12,22 +12,22 @@ from typing import Any
 
 import jsonschema
 
-from app.l1_02.common.event_emitter import EventEmitter
-from app.l1_02.template_engine.errors import (
+from app.project_lifecycle.common.event_emitter import EventEmitter
+from app.project_lifecycle.template_engine.errors import (
     E_SLOT_REQUIRED_MISSING,
     E_SLOT_SCHEMA_VIOLATION,
     E_TEMPLATE_CODE_EXEC,
     E_TEMPLATE_NOT_FOUND,
     TemplateEngineError,
 )
-from app.l1_02.template_engine.hashing import canonical_slots_hash, compute_output_hash
-from app.l1_02.template_engine.registry import (
+from app.project_lifecycle.template_engine.hashing import canonical_slots_hash, compute_output_hash
+from app.project_lifecycle.template_engine.registry import (
     REQUIRED_KINDS_DEFAULT,
     TemplateLoader,
     TemplateRegistry,
 )
-from app.l1_02.template_engine.renderer import ENGINE_VERSION, render_core
-from app.l1_02.template_engine.schemas import RenderedOutput, ValidationResult
+from app.project_lifecycle.template_engine.renderer import ENGINE_VERSION, render_core
+from app.project_lifecycle.template_engine.schemas import RenderedOutput, ValidationResult
 
 
 class TemplateEngine:
@@ -50,7 +50,7 @@ class TemplateEngine:
         event_emitter: EventEmitter | None = None,
         required_kinds: list[str] | tuple[str, ...] | None = None,
         validate_slot_schemas: bool = False,
-    ) -> "TemplateEngine":
+    ) -> TemplateEngine:
         loader = TemplateLoader(
             template_dir=template_dir,
             required_kinds=(

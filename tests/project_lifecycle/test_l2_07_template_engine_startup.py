@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from app.l1_02.template_engine.errors import (
+from app.project_lifecycle.template_engine.errors import (
     E_TEMPLATE_SYNTAX_ERROR,
     StartupError,
     TemplateEngineError,
 )
-from app.l1_02.template_engine.registry import REQUIRED_KINDS_DEFAULT, TemplateLoader
+from app.project_lifecycle.template_engine.registry import REQUIRED_KINDS_DEFAULT, TemplateLoader
 
 
 def _write_minimal_tpl(fp: Path, kind: str) -> None:

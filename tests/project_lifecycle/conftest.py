@@ -9,8 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from app.l1_02.common.event_emitter import EventEmitter
-
+from app.project_lifecycle.common.event_emitter import EventEmitter
 
 _CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 

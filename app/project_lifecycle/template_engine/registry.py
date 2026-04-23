@@ -25,14 +25,13 @@ try:
 except ImportError:  # pragma: no cover
     from yaml import SafeLoader as _YamlSafeLoader  # type: ignore[assignment]
 
-from app.l1_02.template_engine.errors import (
+from app.project_lifecycle.template_engine.errors import (
     E_TEMPLATE_SYNTAX_ERROR,
     StartupError,
     TemplateEngineError,
 )
-from app.l1_02.template_engine.sandbox import build_sandbox_env
-from app.l1_02.template_engine.schemas import TemplateEntry
-
+from app.project_lifecycle.template_engine.sandbox import build_sandbox_env
+from app.project_lifecycle.template_engine.schemas import TemplateEntry
 
 # 29 必需 kind（2 kickoff + 4 fourset + 9 pmp + 11 togaf + 3 closing）
 REQUIRED_KINDS_DEFAULT: tuple[str, ...] = (

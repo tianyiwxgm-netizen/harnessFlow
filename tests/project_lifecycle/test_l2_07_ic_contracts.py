@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from app.l1_02.template_engine.engine import TemplateEngine
+from app.project_lifecycle.template_engine.engine import TemplateEngine
 
 
 @pytest.fixture
@@ -161,8 +161,8 @@ class TestL2_07_IcContracts:
         self, tmp_path, mock_project_id: str, mock_request_id: str,
     ) -> None:
         """IC-09 CRITICAL event · sandbox 拦截时 template_code_exec_attempt 事件契约。"""
-        from app.l1_02.common.event_emitter import EventEmitter
-        from app.l1_02.template_engine.errors import TemplateEngineError
+        from app.project_lifecycle.common.event_emitter import EventEmitter
+        from app.project_lifecycle.template_engine.errors import TemplateEngineError
 
         bus = EventEmitter()
         # 建含恶意模板的独立 engine

@@ -1,7 +1,7 @@
 """L2-07 错误码定义。对齐 L2-07 tech §3.4（14 条）。"""
 from __future__ import annotations
 
-from app.l1_02.common.errors import L102Error
+from app.project_lifecycle.common.errors import L102Error
 
 
 class TemplateEngineError(L102Error):

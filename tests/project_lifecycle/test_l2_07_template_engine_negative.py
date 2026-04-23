@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from app.l1_02.common.event_emitter import EventEmitter
-from app.l1_02.template_engine.engine import TemplateEngine
-from app.l1_02.template_engine.errors import TemplateEngineError
+from app.project_lifecycle.common.event_emitter import EventEmitter
+from app.project_lifecycle.template_engine.engine import TemplateEngine
+from app.project_lifecycle.template_engine.errors import TemplateEngineError
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ def sut_with_broken_frontmatter_tpl(tmp_path: Path, mock_event_bus) -> TemplateE
     # 但拦截 inject_metadata，通过包装 render_template 触发 E008 路径。
     # 采用最干净的 Path：使用 env var / private attr 注入 "force_fm_fail" flag。
     # 为避免污染生产代码，此 fixture 直接替换 renderer 内的内部函数。
-    from app.l1_02.template_engine import renderer as _r
+    from app.project_lifecycle.template_engine import renderer as _r
 
     _orig_inject = _r._inject_metadata
 
@@ -149,7 +149,7 @@ def sut_with_broken_frontmatter_tpl(tmp_path: Path, mock_event_bus) -> TemplateE
 @pytest.fixture
 def _restore_inject_metadata():
     """teardown 专用 · 与 sut_with_broken_frontmatter_tpl 配对使用确保 monkey-patch 还原。"""
-    from app.l1_02.template_engine import renderer as _r
+    from app.project_lifecycle.template_engine import renderer as _r
 
     _orig = _r._inject_metadata
     yield
@@ -199,7 +199,7 @@ class TestL2_07_TemplateEngineNegative:
     def test_TC_L102_L207_104_template_syntax_error_at_startup(
         self, tmp_path: Path,
     ) -> None:
-        from app.l1_02.template_engine.registry import TemplateLoader
+        from app.project_lifecycle.template_engine.registry import TemplateLoader
         bad_tpl = tmp_path / "kickoff" / "goal.md"
         bad_tpl.parent.mkdir(parents=True)
         bad_tpl.write_text(

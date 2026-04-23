@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from app.l1_02.template_engine.engine import TemplateEngine
-from app.l1_02.template_engine.schemas import RenderedOutput, ValidationResult
+from app.project_lifecycle.template_engine.engine import TemplateEngine
+from app.project_lifecycle.template_engine.schemas import RenderedOutput, ValidationResult
 
 
 @pytest.fixture

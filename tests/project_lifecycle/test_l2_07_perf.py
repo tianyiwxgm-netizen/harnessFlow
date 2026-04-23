@@ -20,8 +20,8 @@ from typing import Any
 
 import pytest
 
-from app.l1_02.template_engine.engine import TemplateEngine
-from app.l1_02.template_engine.hashing import compute_output_hash
+from app.project_lifecycle.template_engine.engine import TemplateEngine
+from app.project_lifecycle.template_engine.hashing import compute_output_hash
 
 
 @pytest.fixture
@@ -170,7 +170,7 @@ class TestL2_07_Performance:
         self, template_dir_real,
     ) -> None:
         """启动加载二次冷启（新实例 · 已 warm module import）· hard ≤ 1000ms。"""
-        from app.l1_02.template_engine.registry import TemplateLoader
+        from app.project_lifecycle.template_engine.registry import TemplateLoader
 
         # 预热 import
         loader0 = TemplateLoader(template_dir=str(template_dir_real))
