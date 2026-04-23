@@ -366,3 +366,113 @@ def test_router_image_missing_fields_raises() -> None:
     r = DegradationRouter()
     with pytest.raises(L108Error):
         r.route_image(RouteInput(realpath=Path("/x/a.png")))  # no ext / size
+
+
+# --- Task 01.8 ConcurrencyLockKeeper tests ---
+
+import asyncio
+
+from app.multimodal.path_safety.lock_keeper import ConcurrencyLockKeeper
+
+
+async def test_lock_serializes_same_path() -> None:
+    keeper = ConcurrencyLockKeeper(timeout_s=1.0)
+    trace: list[str] = []
+
+    async def writer(tag: str) -> None:
+        async with keeper.acquire("docs/a.md"):
+            trace.append(f"{tag}-in")
+            await asyncio.sleep(0.02)
+            trace.append(f"{tag}-out")
+
+    await asyncio.gather(writer("A"), writer("B"))
+    # Strictly serialized · one finishes before the other begins.
+    assert trace in (["A-in", "A-out", "B-in", "B-out"], ["B-in", "B-out", "A-in", "A-out"])
+
+
+async def test_lock_different_paths_not_serialized() -> None:
+    keeper = ConcurrencyLockKeeper(timeout_s=1.0)
+    order: list[str] = []
+    gate = asyncio.Event()
+
+    async def holder() -> None:
+        async with keeper.acquire("docs/a.md"):
+            order.append("a-in")
+            await gate.wait()
+            order.append("a-out")
+
+    async def other() -> None:
+        async with keeper.acquire("docs/b.md"):
+            order.append("b-in")
+            gate.set()  # lets holder exit
+
+    await asyncio.gather(holder(), other())
+    assert order[0] == "a-in"
+    assert "b-in" in order[:2]  # b acquired while a still holding
+
+
+async def test_lock_timeout_raises() -> None:
+    keeper = ConcurrencyLockKeeper(timeout_s=0.05)
+
+    async def holder() -> None:
+        async with keeper.acquire("docs/a.md"):
+            await asyncio.sleep(0.2)
+
+    async def waiter() -> None:
+        await asyncio.sleep(0.01)  # let holder win the lock first
+        with pytest.raises(L108Error) as ei:
+            async with keeper.acquire("docs/a.md"):
+                pass
+        assert ei.value.code == "concurrency_lock_timeout"
+
+    await asyncio.gather(holder(), waiter())
+
+
+def test_lock_keeper_rejects_nonpositive_timeout() -> None:
+    with pytest.raises(ValueError):
+        ConcurrencyLockKeeper(timeout_s=0)
+    with pytest.raises(ValueError):
+        ConcurrencyLockKeeper(timeout_s=-1)
+
+
+# --- Task 01.9 ContentAuditor tests ---
+
+from app.multimodal.common.event_bus_stub import EventBusStub
+from app.multimodal.path_safety.auditor import ContentAuditor
+
+
+def test_auditor_chain_genesis_and_link() -> None:
+    bus = EventBusStub()
+    aud = ContentAuditor(bus=bus)
+    r1 = aud.emit("content_read", {"path": "docs/a.md"})
+    r2 = aud.emit("content_written", {"path": "docs/a.md", "bytes": 42})
+    assert r1["prev_hash"] == "0" * 64
+    assert r2["prev_hash"] == r1["body_hash"]
+    assert len(bus.events) == 2
+
+
+def test_auditor_chain_three_events_sequential() -> None:
+    bus = EventBusStub()
+    aud = ContentAuditor(bus=bus)
+    r1 = aud.emit("content_read", {"path": "a"})
+    r2 = aud.emit("content_written", {"path": "a"})
+    r3 = aud.emit("path_rejected", {"path": "x", "code": "path_escape"})
+    assert r2["prev_hash"] == r1["body_hash"]
+    assert r3["prev_hash"] == r2["body_hash"]
+    assert all(e["body_hash"] != "0" * 64 for e in bus.events)
+
+
+def test_auditor_rejects_unknown_event_type() -> None:
+    bus = EventBusStub()
+    aud = ContentAuditor(bus=bus)
+    with pytest.raises(ValueError):
+        aud.emit("unknown_event", {})
+
+
+def test_auditor_body_hash_depends_on_content() -> None:
+    bus = EventBusStub()
+    aud1 = ContentAuditor(bus=EventBusStub())
+    aud2 = ContentAuditor(bus=EventBusStub())
+    e1 = aud1.emit("content_read", {"path": "a"})
+    e2 = aud2.emit("content_read", {"path": "b"})
+    assert e1["body_hash"] != e2["body_hash"]
