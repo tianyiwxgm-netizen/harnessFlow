@@ -152,3 +152,89 @@ class TestSubagentSchemas:
 
         vals = {v.value for v in VerdictOutcome}
         assert vals == {"PASS", "FAIL_L1", "FAIL_L2", "FAIL_L3", "FAIL_L4"}
+
+
+class TestContextScope:
+    """Task 04.2 · Context COW + PM-03 隔离 + checksum + 跨 project 拒绝."""
+
+    def test_make_child_context_whitelists_only_public_fields(self):
+        from app.skill_dispatch.subagent.context_scope import make_child_context
+
+        parent = {
+            "project_id": "p1",
+            "wp_id": "wp1",
+            "related_artifacts": ["a.md"],
+            "dod_exprs": ["x>0"],
+            "correlation_id": "c1",
+            "task_board": {"secret": 1},    # NOT public
+            "api_token": "sk-xxx",           # NOT public
+        }
+        child, checksum = make_child_context(parent, child_project_id="p1")
+        assert child["project_id"] == "p1"
+        assert "wp_id" in child
+        assert "related_artifacts" in child
+        assert "dod_exprs" in child
+        assert "correlation_id" in child
+        assert "task_board" not in child
+        assert "api_token" not in child
+
+    def test_child_context_is_read_only(self):
+        """MappingProxyType · 试图写 → TypeError."""
+        from app.skill_dispatch.subagent.context_scope import make_child_context
+
+        child, _ = make_child_context({"project_id": "p1"}, child_project_id="p1")
+        with pytest.raises(TypeError):
+            child["injected"] = "nope"   # type: ignore[index]
+
+    def test_checksum_changes_when_parent_changes(self):
+        from app.skill_dispatch.subagent.context_scope import make_child_context
+
+        _, c1 = make_child_context({"project_id": "p1", "wp_id": "wp1"}, child_project_id="p1")
+        _, c2 = make_child_context({"project_id": "p1", "wp_id": "wp2"}, child_project_id="p1")
+        assert c1 != c2
+
+    def test_checksum_is_sha256_hex(self):
+        from app.skill_dispatch.subagent.context_scope import make_child_context
+
+        _, checksum = make_child_context({"project_id": "p1"}, child_project_id="p1")
+        assert len(checksum) == 64
+        assert all(c in "0123456789abcdef" for c in checksum)
+
+    def test_cross_project_delegate_rejected_pm14(self):
+        from app.skill_dispatch.subagent.context_scope import (
+            ContextIsolationViolation,
+            make_child_context,
+        )
+
+        with pytest.raises(ContextIsolationViolation):
+            make_child_context({"project_id": "p1"}, child_project_id="p2")
+
+    def test_empty_child_project_id_rejected(self):
+        from app.skill_dispatch.subagent.context_scope import make_child_context
+
+        with pytest.raises(ValueError, match="project_id"):
+            make_child_context({"project_id": "p1"}, child_project_id="")
+
+    def test_context_overflow_rejects_huge_payload(self):
+        from app.skill_dispatch.subagent.context_scope import (
+            ContextOverflow,
+            make_child_context,
+        )
+
+        big = {"project_id": "p1", "related_artifacts": ["x" * 1_000_000] * 20}
+        with pytest.raises(ContextOverflow):
+            make_child_context(big, child_project_id="p1", max_bytes=1024 * 1024)
+
+    def test_verify_checksum_detects_tamper(self):
+        from app.skill_dispatch.subagent.context_scope import (
+            make_child_context,
+            verify_checksum,
+        )
+
+        ctx, chk = make_child_context({"project_id": "p1", "wp_id": "wp1"}, child_project_id="p1")
+        # Original matches
+        assert verify_checksum(dict(ctx), chk) is True
+        # Tampered copy
+        tampered = dict(ctx)
+        tampered["wp_id"] = "altered"
+        assert verify_checksum(tampered, chk) is False
