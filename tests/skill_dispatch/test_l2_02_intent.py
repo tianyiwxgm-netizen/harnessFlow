@@ -426,3 +426,59 @@ class TestScorer:
         durations.sort()
         p99 = durations[98]
         assert p99 < 30.0, f"rank p99 exceeded 30ms SLO: {p99:.2f}ms"
+
+
+class TestKBBoost:
+    """Task 02.4 · KB boost (IC-06 旁路) + 150ms 超时降级 (不阻排序)."""
+
+    def test_kb_boost_maps_recipes_to_success_rate(self, kb_mock):
+        from app.skill_dispatch._mocks.ic06_mock import KBRecipe
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
+
+        kb_mock._recipes = [
+            KBRecipe(capability="write_test", skill_id="s1", success_rate=0.9, last_seen_ts=0),
+            KBRecipe(capability="write_test", skill_id="s2", success_rate=0.7, last_seen_ts=0),
+            KBRecipe(capability="other", skill_id="s3", success_rate=0.8, last_seen_ts=0),
+        ]
+        booster = KBBooster(kb=kb_mock, timeout_ms=150)
+        hits = booster.fetch(project_id="p1", capability="write_test")
+        assert hits == {"s1": 0.9, "s2": 0.7}
+        assert "s3" not in hits
+
+    def test_kb_timeout_degrades_to_empty_dict(self):
+        """KB 调用超时 · 返 {} · 不 raise · 不阻 rank."""
+        from app.skill_dispatch._mocks.ic06_mock import IC06KBMock
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
+
+        slow = IC06KBMock(read_latency_ms=400)
+        booster = KBBooster(kb=slow, timeout_ms=150)
+        hits = booster.fetch(project_id="p1", capability="c")
+        assert hits == {}
+
+    def test_kb_empty_recipes_returns_empty(self, kb_mock):
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
+
+        booster = KBBooster(kb=kb_mock, timeout_ms=150)
+        assert booster.fetch(project_id="p1", capability="c") == {}
+
+    def test_kb_requires_project_id(self, kb_mock):
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
+
+        booster = KBBooster(kb=kb_mock, timeout_ms=150)
+        with pytest.raises(ValueError, match="project_id"):
+            booster.fetch(project_id="", capability="c")
+
+    def test_kb_boost_latency_bounded_even_on_timeout(self):
+        """超时场景下 · fetch 自身耗时不能大幅超过 timeout_ms."""
+        import time
+
+        from app.skill_dispatch._mocks.ic06_mock import IC06KBMock
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
+
+        slow = IC06KBMock(read_latency_ms=5000)
+        booster = KBBooster(kb=slow, timeout_ms=150)
+        t0 = time.perf_counter()
+        booster.fetch(project_id="p1", capability="c")
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        # 允许一点 overhead · 但不能到 5s
+        assert elapsed_ms < 500, f"KB boost exceeded timeout budget: {elapsed_ms:.1f}ms"
