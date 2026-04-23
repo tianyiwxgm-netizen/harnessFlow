@@ -476,3 +476,184 @@ def test_auditor_body_hash_depends_on_content() -> None:
     e1 = aud1.emit("content_read", {"path": "a"})
     e2 = aud2.emit("content_read", {"path": "b"})
     assert e1["body_hash"] != e2["body_hash"]
+
+
+# --- Task 01.10 / 01.11 / 01.12 facade integration tests ---
+
+from typing import Any
+
+from app.multimodal.common.pid_guard import assert_same_project
+from app.multimodal.path_safety.facade import PathSafetyFacade
+from app.multimodal.path_safety.halted_state import HaltedState
+from app.multimodal.path_safety.startup_validator import validate_startup_config
+from app.multimodal.path_safety.schemas import ProcessContentCommand
+
+
+def _dummy_dispatch(cmd: Any, validation: Any, route: Any) -> dict[str, Any]:
+    return {"stub": True, "route": route.value}
+
+
+def _cmd_kwargs(path: str = "docs/a.md", ctype: str = "md", task: str = "summarize") -> dict:
+    return dict(
+        command_id="pc-01HYA1TEST",
+        project_id="p-001",
+        content_type=ctype,
+        target_path=path,
+        task=task,
+        caller_l1="L1-01",
+        ts="2026-04-23T10:00:00Z",
+    )
+
+
+def _make_facade(tmp_project_root: Path, dispatch=_dummy_dispatch) -> PathSafetyFacade:
+    return PathSafetyFacade(
+        project_root=tmp_project_root,
+        project_id="p-001",
+        allowlist=["docs/", "tests/"],
+        bus=EventBusStub(),
+        dispatch_fn=dispatch,
+    )
+
+
+# --- Task 01.12 PM-14 guard ---
+def test_pid_guard_passes_same_pid() -> None:
+    assert_same_project("p-001", "p-001")  # no raise
+
+
+def test_pid_guard_rejects_different_pid() -> None:
+    with pytest.raises(L108Error) as ei:
+        assert_same_project("p-001", "p-002")
+    assert ei.value.code == "invalid_project_id"
+
+
+def test_pid_guard_rejects_empty_pid() -> None:
+    with pytest.raises(L108Error) as ei:
+        assert_same_project("p-001", "   ")
+    assert ei.value.code == "invalid_project_id"
+
+
+def test_facade_rejects_cross_project_pid(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    (tmp_project_root / "docs" / "a.md").write_text("hi")
+    facade = _make_facade(tmp_project_root)
+    cmd = ProcessContentCommand(**{**_cmd_kwargs(), "project_id": "p-999"})
+    result = facade.handle_process_content(cmd)
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "E_PC_NO_PROJECT_ID"  # mapped from invalid_project_id
+
+
+# --- Task 01.10 facade happy path ---
+def test_facade_md_direct_happy(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    (tmp_project_root / "docs" / "a.md").write_text("# hi\nline2\nline3\n")
+    facade = _make_facade(tmp_project_root)
+    cmd = ProcessContentCommand(**_cmd_kwargs())
+    result = facade.handle_process_content(cmd)
+    assert result.success is True
+    assert result.error is None
+    assert result.structured_output is not None
+    assert result.structured_output["stub"] is True
+    assert result.duration_ms >= 0
+
+
+def test_facade_md_large_paged(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    big = "\n".join(f"line {i}" for i in range(2500))
+    (tmp_project_root / "docs" / "big.md").write_text(big)
+    facade = _make_facade(tmp_project_root)
+    cmd = ProcessContentCommand(**{**_cmd_kwargs(), "target_path": "docs/big.md"})
+    result = facade.handle_process_content(cmd)
+    assert result.success is True
+    assert result.structured_output["route"] == "PAGED"
+
+
+def test_facade_image_small_direct(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    img = tmp_project_root / "docs" / "pic.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 100)
+    facade = _make_facade(tmp_project_root)
+    cmd = ProcessContentCommand(**{
+        **_cmd_kwargs("docs/pic.png", "image", "vision_describe")
+    })
+    result = facade.handle_process_content(cmd)
+    assert result.success is True
+
+
+# --- Task 01.11 remaining error codes ---
+def test_facade_not_found(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    facade = _make_facade(tmp_project_root)
+    cmd = ProcessContentCommand(**{**_cmd_kwargs(), "target_path": "docs/missing.md"})
+    result = facade.handle_process_content(cmd)
+    assert result.success is False
+    assert result.error.code == "E_PC_PATH_NOT_FOUND"
+
+
+def test_facade_not_a_file_directory(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    (tmp_project_root / "docs" / "subdir").mkdir()
+    facade = _make_facade(tmp_project_root)
+    cmd = ProcessContentCommand(**{**_cmd_kwargs(), "target_path": "docs/subdir"})
+    result = facade.handle_process_content(cmd)
+    assert result.success is False
+    assert result.error.code == "not_a_file"
+
+
+def test_facade_permission_denied(tmp_project_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_project_root / "docs").mkdir()
+    target = tmp_project_root / "docs" / "locked.md"
+    target.write_text("secret")
+
+    import os as _os
+    real_stat = _os.stat
+
+    def fake_stat(path, *args, **kwargs):
+        # Only intercept follow_symlinks=True (or default) stat calls on locked.md.
+        # When follow_symlinks=False, this is a lstat used by is_symlink() — let it pass.
+        follow_symlinks = kwargs.get("follow_symlinks", True)
+        if str(path).endswith("locked.md") and follow_symlinks:
+            raise PermissionError(13, "denied")
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(_os, "stat", fake_stat)
+
+    facade = _make_facade(tmp_project_root)
+    cmd = ProcessContentCommand(**{**_cmd_kwargs(), "target_path": "docs/locked.md"})
+    result = facade.handle_process_content(cmd)
+    assert result.success is False
+    assert result.error.code == "permission_denied"
+
+
+def test_facade_binary_unsupported(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    (tmp_project_root / "docs" / "blob.md").write_bytes(b"text\x00binary")
+    facade = _make_facade(tmp_project_root)
+    cmd = ProcessContentCommand(**_cmd_kwargs(path="docs/blob.md"))
+    result = facade.handle_process_content(cmd)
+    assert result.success is False
+    assert result.error.code == "binary_unsupported"
+
+
+def test_facade_halted_denied(tmp_project_root: Path) -> None:
+    (tmp_project_root / "docs").mkdir()
+    (tmp_project_root / "docs" / "a.md").write_text("hi")
+    facade = _make_facade(tmp_project_root)
+    HaltedState.set(True)
+    try:
+        result = facade.handle_process_content(ProcessContentCommand(**_cmd_kwargs()))
+        assert result.success is False
+        assert result.error.code == "halted_denied"
+    finally:
+        HaltedState.set(False)
+
+
+def test_startup_config_rejects_external_endpoints() -> None:
+    with pytest.raises(L108Error) as ei:
+        validate_startup_config({"endpoints": ["https://evil.example.com"]})
+    assert ei.value.code == "external_endpoint_blocked"
+
+
+def test_startup_config_accepts_empty_endpoints() -> None:
+    validate_startup_config({"endpoints": []})  # no raise
+    validate_startup_config({})  # no raise
