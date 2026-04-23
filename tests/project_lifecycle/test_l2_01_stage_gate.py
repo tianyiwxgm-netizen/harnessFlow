@@ -255,3 +255,121 @@ class TestL2_01_IcContracts:
                 reason="user decision path test with enough chars here",
             )
             assert result["user_decision"] == ud
+
+
+class TestL2_01_IC01_Payload:
+    """IC-01 §3.1.2 入参字段完整性 · fix-2026-04-23 P1-01。
+
+    §3.1.2 required: [transition_id, project_id, from, to, reason,
+                      trigger_tick, evidence_refs, ts]
+    """
+
+    def test_TC_L102_L201_410_ic_01_payload_contains_transition_id(
+        self, sut: StageGateController, l1_01: MagicMock,
+    ) -> None:
+        """§3.1.2 · transition_id 必填 · 格式 trans-{uuid}."""
+        sut.authorize_transition(
+            project_id="p_payload0-1234-5678-9abc-def012345678",
+            from_state="PLANNING", to_state="TDD_PLANNING",
+            gate_id="g-payload-1",
+            reason="P1-01 fix · IC-01 required field test transition_id",
+            trigger_tick="tick-018f4a3b-7c1e-7000-8b2a-9d5e1c8f3a20",
+            evidence_refs=("gate-payload-1",),
+        )
+        kw = l1_01.request_state_transition.call_args.kwargs
+        assert "transition_id" in kw, "missing transition_id"
+        assert kw["transition_id"].startswith("trans-"), \
+            f"bad transition_id format: {kw['transition_id']!r}"
+
+    def test_TC_L102_L201_411_ic_01_payload_contains_trigger_tick(
+        self, sut: StageGateController, l1_01: MagicMock,
+    ) -> None:
+        """§3.1.2 · trigger_tick 必填 · 审计追溯链。"""
+        sut.authorize_transition(
+            project_id="p_payload1-1234-5678-9abc-def012345678",
+            from_state="PLANNING", to_state="TDD_PLANNING",
+            gate_id="g-payload-2",
+            reason="P1-01 fix · IC-01 required field test trigger_tick here",
+            trigger_tick="tick-018f4a3b-7c1e-7000-8b2a-9d5e1c8f3a20",
+            evidence_refs=("g-payload-2",),
+        )
+        kw = l1_01.request_state_transition.call_args.kwargs
+        assert "trigger_tick" in kw, "missing trigger_tick"
+        assert kw["trigger_tick"] == "tick-018f4a3b-7c1e-7000-8b2a-9d5e1c8f3a20"
+
+    def test_TC_L102_L201_412_ic_01_payload_contains_evidence_refs(
+        self, sut: StageGateController, l1_01: MagicMock,
+    ) -> None:
+        """§3.1.2 · evidence_refs minItems=1."""
+        sut.authorize_transition(
+            project_id="p_payload2-1234-5678-9abc-def012345678",
+            from_state="PLANNING", to_state="TDD_PLANNING",
+            gate_id="g-payload-3",
+            reason="P1-01 fix · IC-01 required evidence_refs test path here",
+            trigger_tick="tick-018f4a3b-7c1e-7000-8b2a-9d5e1c8f3a21",
+            evidence_refs=("g-payload-3", "artifact-abc-1"),
+        )
+        kw = l1_01.request_state_transition.call_args.kwargs
+        assert "evidence_refs" in kw
+        assert isinstance(kw["evidence_refs"], (list, tuple))
+        assert len(kw["evidence_refs"]) >= 1
+        assert "g-payload-3" in kw["evidence_refs"]
+
+    def test_TC_L102_L201_413_ic_01_payload_contains_ts_iso8601(
+        self, sut: StageGateController, l1_01: MagicMock,
+    ) -> None:
+        """§3.1.2 · ts ISO-8601 utc · Z 后缀。"""
+        sut.authorize_transition(
+            project_id="p_payload3-1234-5678-9abc-def012345678",
+            from_state="PLANNING", to_state="TDD_PLANNING",
+            gate_id="g-payload-4",
+            reason="P1-01 fix · IC-01 required ts iso8601 test path here",
+            trigger_tick="tick-018f4a3b-7c1e-7000-8b2a-9d5e1c8f3a22",
+            evidence_refs=("g-payload-4",),
+        )
+        kw = l1_01.request_state_transition.call_args.kwargs
+        assert "ts" in kw
+        ts = kw["ts"]
+        # ISO-8601 粗校验
+        assert "T" in ts
+        assert ts.endswith("Z"), f"ts should end with Z: {ts!r}"
+
+    def test_TC_L102_L201_414_ic_01_payload_reject_empty_evidence_refs(
+        self, sut: StageGateController,
+    ) -> None:
+        """§3.1.2 minItems:1 · evidence_refs 为空 raise（schema 校验）."""
+        with pytest.raises(StageGateError):
+            sut.authorize_transition(
+                project_id="p_payload4-1234-5678-9abc-def012345678",
+                from_state="PLANNING", to_state="TDD_PLANNING",
+                gate_id="g-payload-5",
+                reason="P1-01 fix · IC-01 schema check empty evidence_refs",
+                trigger_tick="tick-018f4a3b-7c1e-7000-8b2a-9d5e1c8f3a23",
+                evidence_refs=(),  # 空 → 拒
+            )
+
+    def test_TC_L102_L201_415_ic_01_transition_id_unique_per_call(
+        self, sut: StageGateController, l1_01: MagicMock,
+    ) -> None:
+        """幂等键 transition_id · 同 instance 两次 call 得两个 transition_id（不缓存）。"""
+        sut.authorize_transition(
+            project_id="p_payload5-1234-5678-9abc-def012345678",
+            from_state="PLANNING", to_state="TDD_PLANNING",
+            gate_id="g-payload-6",
+            reason="P1-01 fix · IC-01 transition_id uniqueness test 1",
+            trigger_tick="tick-018f4a3b-7c1e-7000-8b2a-9d5e1c8f3a24",
+            evidence_refs=("g-payload-6",),
+        )
+        sut.authorize_transition(
+            project_id="p_payload5-1234-5678-9abc-def012345678",
+            from_state="PLANNING", to_state="TDD_PLANNING",
+            gate_id="g-payload-7",
+            reason="P1-01 fix · IC-01 transition_id uniqueness test 2",
+            trigger_tick="tick-018f4a3b-7c1e-7000-8b2a-9d5e1c8f3a25",
+            evidence_refs=("g-payload-7",),
+        )
+        calls = l1_01.request_state_transition.call_args_list
+        assert len(calls) == 2
+        t1 = calls[0].kwargs["transition_id"]
+        t2 = calls[1].kwargs["transition_id"]
+        assert t1 != t2, "transition_id should be unique per invocation"
