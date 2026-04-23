@@ -165,3 +165,70 @@ class TestIC04Schemas:
         )
         assert sig.validate_status == "pending"
         assert sig.duration_ms is None
+
+
+class TestContextInjector:
+    """Task 03.2 · 白名单注入 · 防上游 context 字段泄漏到 skill."""
+
+    def test_inject_passes_whitelisted_keys(self):
+        from app.skill_dispatch.invoker.context_injector import inject
+
+        out = inject(
+            {
+                "project_id": "p1",
+                "wp_id": "wp1",
+                "loop_session_id": "ls1",
+                "decision_id": "d1",
+                "correlation_id": "c1",
+            }
+        )
+        assert out == {
+            "project_id": "p1",
+            "wp_id": "wp1",
+            "loop_session_id": "ls1",
+            "decision_id": "d1",
+            "correlation_id": "c1",
+        }
+
+    def test_inject_drops_sensitive_fields(self):
+        from app.skill_dispatch.invoker.context_injector import inject
+
+        out = inject(
+            {
+                "project_id": "p1",
+                "anthropic_api_token": "sk-xxx",
+                "internal_password": "hunter2",
+                "session_secret": "very-secret",
+            }
+        )
+        assert "anthropic_api_token" not in out
+        assert "internal_password" not in out
+        assert "session_secret" not in out
+        assert out["project_id"] == "p1"
+
+    def test_inject_returns_new_dict_not_in_place(self):
+        from app.skill_dispatch.invoker.context_injector import inject
+
+        upstream = {"project_id": "p1", "wp_id": "wp1", "extra": "dropped"}
+        out = inject(upstream)
+        assert out is not upstream
+        assert "extra" in upstream   # 上游未被污染
+        assert "extra" not in out
+
+    def test_inject_rejects_missing_project_id(self):
+        from app.skill_dispatch.invoker.context_injector import (
+            ContextInjectionError,
+            inject,
+        )
+
+        with pytest.raises(ContextInjectionError):
+            inject({"wp_id": "wp1"})
+
+    def test_inject_rejects_empty_project_id(self):
+        from app.skill_dispatch.invoker.context_injector import (
+            ContextInjectionError,
+            inject,
+        )
+
+        with pytest.raises(ContextInjectionError):
+            inject({"project_id": "", "wp_id": "wp1"})
