@@ -252,13 +252,20 @@ class TestCoordinatorFailedPath:
         advice = c.escalator.captured_routes[0].advice
         assert advice.evidence_refs == ["artifacts/wp-a-fail.tar.gz"]
 
-    def test_fourth_failure_keeps_escalated(self, project_id: str) -> None:
-        """第 4 次失败仍在 ESCALATED 状态 · 再触发一次 IC-14（粘性 · 每次都报）。"""
+    def test_fourth_failure_keeps_escalated_state_but_no_reemit(
+        self, project_id: str,
+    ) -> None:
+        """第 4 次失败 counter 仍粘在 ESCALATED · 但 IC-14 只 fire 过一次。
+
+        修复 P1-02 · dedup 由 `_escalated_wps` set 保证（见 TestEscalationDedup）。
+        counter 状态仍 ESCALATED（粘性 · 语义正确）· 只是不再重复推 route。
+        """
         c = RollbackCoordinator(project_id=project_id)
-        for i in range(4):
+        for _ in range(4):
             c.on_wp_failed("wp-a")
-        # RETRY_3 (第3次) → ESCALATED (第4次) · 每次都 emit 一个 route
-        assert len(c.escalator.captured_routes) == 2
+        assert c.counter.state_of("wp-a") == FailureCounterState.ESCALATED
+        # 首次到 RETRY_3 时 emit 一个 route · 第 4 次走 dedup 分支
+        assert len(c.escalator.captured_routes) == 1
 
 
 # =====================================================================
@@ -426,3 +433,68 @@ class TestSnapshotAndPM14:
     def test_coordinator_requires_project_id(self) -> None:
         with pytest.raises(ValueError, match="PM-14"):
             RollbackCoordinator(project_id="")
+
+
+# =====================================================================
+# §12 Escalation dedup · 同 wp_id 不重复 fire IC-14
+# =====================================================================
+# 修复 P1-02（Dev-ε review）：ESCALATION_STATES = {RETRY_3, ESCALATED}
+# 导致 RETRY_3 及后续每次 on_wp_failed 都重复 escalate。
+# 要求：同一 wp_id 的 IC-14 advice 最多 fire 一次 · reset 后可重新计。
+
+
+class TestEscalationDedup:
+    def test_TC_L103_L205_401_only_fires_once_across_10_failures(
+        self, project_id: str, event_bus: EventBusStub,
+    ) -> None:
+        """连续 10 次 on_wp_failed · IC-14 route + advice_issued event 各只 1 次。"""
+        c = RollbackCoordinator(project_id=project_id, event_bus=event_bus)
+        for _ in range(10):
+            c.on_wp_failed("wp-a", reason="explosion")
+        # IC-14 push_rollback_route 只调 1 次
+        assert len(c.escalator.captured_routes) == 1
+        # 对应 L1-03:rollback_advice_issued event 只 1 条
+        ev = event_bus.filter(event_type="L1-03:rollback_advice_issued")
+        assert len(ev) == 1
+        # counter 状态来到 ESCALATED（stickiness）
+        assert c.counter.state_of("wp-a") == FailureCounterState.ESCALATED
+
+    def test_escalation_dedup_per_wp_not_global(
+        self, project_id: str, event_bus: EventBusStub,
+    ) -> None:
+        """dedup 是 per-wp · 两个不同 wp 各自能 fire 一次。"""
+        c = RollbackCoordinator(project_id=project_id, event_bus=event_bus)
+        for _ in range(5):
+            c.on_wp_failed("wp-a")
+        for _ in range(5):
+            c.on_wp_failed("wp-b")
+        assert len(c.escalator.captured_routes) == 2
+        wp_ids = {r.advice.wp_id for r in c.escalator.captured_routes}
+        assert wp_ids == {"wp-a", "wp-b"}
+
+    def test_escalation_dedup_resets_after_reset(
+        self, project_id: str, event_bus: EventBusStub,
+    ) -> None:
+        """on_wp_done_reset 清 dedup · 之后该 wp 若再连续失败可重新 fire。"""
+        c = RollbackCoordinator(project_id=project_id, event_bus=event_bus)
+        for _ in range(3):
+            c.on_wp_failed("wp-a")
+        assert len(c.escalator.captured_routes) == 1
+        # 成功后 reset
+        c.on_wp_done_reset("wp-a")
+        # 又连续失败 3 次 · 应再 fire 一次（新 cycle）
+        for _ in range(3):
+            c.on_wp_failed("wp-a")
+        assert len(c.escalator.captured_routes) == 2
+
+    def test_escalation_dedup_mock_append_called_once(
+        self, project_id: str,
+    ) -> None:
+        """用 mock 精确 assert：escalator.push_rollback_route 只调一次。"""
+        from unittest.mock import MagicMock
+        mock_escalator = MagicMock(spec=Escalator)
+        mock_escalator.captured_routes = []
+        c = RollbackCoordinator(project_id=project_id, escalator=mock_escalator)
+        for _ in range(10):
+            c.on_wp_failed("wp-a")
+        mock_escalator.push_rollback_route.assert_called_once()

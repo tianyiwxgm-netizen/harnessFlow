@@ -55,6 +55,11 @@ class RollbackCoordinator:
         self._manager = manager
         self._event_bus = event_bus
         self._lock = threading.RLock()
+        # 修复 P1-02（Dev-ε review）· 同一 wp 到升级态后 · 只 fire 一次 IC-14
+        # `ESCALATION_STATES = {RETRY_3, ESCALATED}` 原本会让每次后续失败都
+        # 走升级分支 · 用 set 去重；`on_wp_done_reset` 把 wp 从 set 移除，
+        # 下轮若再连 3 次失败可重新 fire（符合 Quality Loop 重跑后再坏再升级的语义）
+        self._escalated_wps: set[str] = set()
 
     # --- WP04 Protocol ---
 
@@ -65,20 +70,35 @@ class RollbackCoordinator:
         fail_level: str = "L2",
         evidence_ref: str | None = None,
     ) -> None:
-        """收到失败信号 · 推进 counter · 达 RETRY_3 触发升级。"""
+        """收到失败信号 · 推进 counter · 达 RETRY_3 触发升级（per-wp 去重 · 只 fire 一次）。"""
         with self._lock:
             new_state = self.counter.on_failed(wp_id)
             count = self.counter.count_of(wp_id)
+            # dedup：同 wp 已升级过 → 静默吃掉后续失败（IC-14 不重复 fire）
+            if wp_id in self._escalated_wps:
+                return
+            should_escalate = new_state in (
+                FailureCounterState.RETRY_3,
+                FailureCounterState.ESCALATED,
+            )
+            if should_escalate:
+                self._escalated_wps.add(wp_id)
 
-        if new_state in (FailureCounterState.RETRY_3, FailureCounterState.ESCALATED):
+        if should_escalate:
             self._escalate(
                 wp_id=wp_id, reason=reason, fail_level=fail_level,
                 evidence_ref=evidence_ref, failure_count=count,
             )
 
     def on_wp_done_reset(self, wp_id: str) -> None:
-        """幂等 · 清零该 wp 的连续失败计数。"""
-        self.counter.on_done_reset(wp_id)
+        """幂等 · 清零该 wp 的连续失败计数 · 解除升级去重标记。
+
+        语义：Quality Loop 重跑成功（或外部强 reset）后 · 如果该 wp 之后又进入
+        连续 3 次失败 · 应当重新升级（重走 IC-14）· 不因首轮已升级过而永远静默。
+        """
+        with self._lock:
+            self.counter.on_done_reset(wp_id)
+            self._escalated_wps.discard(wp_id)
 
     # --- IC-15 halt 入口 ---
 
