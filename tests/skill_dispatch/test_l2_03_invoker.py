@@ -426,3 +426,266 @@ class TestAudit:
             assert secret_value not in str(e.payload), (
                 f"secret leaked to payload: {e.payload}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Executor test helpers
+# ---------------------------------------------------------------------------
+
+def _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, skill_runner):
+    """构造一个完整的 SkillExecutor · 用 fixtures/registry_valid.yaml + 本地 mock."""
+    import shutil
+
+    from app.skill_dispatch.intent_selector import IntentSelector
+    from app.skill_dispatch.invoker.executor import SkillExecutor
+    from app.skill_dispatch.registry.ledger import LedgerWriter
+    from app.skill_dispatch.registry.loader import RegistryLoader
+    from app.skill_dispatch.registry.query_api import RegistryQueryAPI
+
+    cache = tmp_project / "skills" / "registry-cache"
+    shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
+    snap = RegistryLoader(project_root=tmp_project).load()
+    api = RegistryQueryAPI(snapshot=snap)
+    selector = IntentSelector(registry=api, event_bus=ic09_bus, kb=kb_mock)
+    ledger = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+    return SkillExecutor(
+        selector=selector,
+        event_bus=ic09_bus,
+        ledger=ledger,
+        skill_runner=skill_runner,
+    )
+
+
+class TestSkillExecutorHappyPath:
+    """Task 03.6 · IC-04 invoke_skill 主入口 · happy path + primary/fallback + 审计."""
+
+    def test_happy_path_returns_success(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            return {"ok": True, "echo": params.get("x")}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="inv1", project_id="p1", capability="write_test",
+            params={"x": 42}, caller_l1="L1-04",
+            context={"project_id": "p1", "wp_id": "wp1"},
+        )
+        rsp = exe.invoke(req)
+        assert rsp.success is True
+        assert rsp.result == {"ok": True, "echo": 42}
+        assert rsp.fallback_used is False
+        assert rsp.skill_id == "superpowers:tdd-workflow"
+
+    def test_primary_fail_falls_back_to_next(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        calls = []
+
+        def runner(skill, params, ctx):
+            calls.append(skill.skill_id)
+            if skill.skill_id == "superpowers:tdd-workflow":
+                raise ValueError("primary dead")
+            return {"ok_from": skill.skill_id}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="inv2", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04",
+            context={"project_id": "p1"},
+        )
+        rsp = exe.invoke(req)
+        assert rsp.success is True
+        assert rsp.fallback_used is True
+        assert rsp.skill_id == "builtin:write_test_min"
+        assert calls == ["superpowers:tdd-workflow", "builtin:write_test_min"]
+
+    def test_all_candidates_fail_returns_success_false_not_raises(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        """契约红线 · 全链失败必须返 success=false · 不能 raise."""
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            raise ValueError(f"{skill.skill_id} always dies")
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="inv3", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04",
+            context={"project_id": "p1"},
+        )
+        rsp = exe.invoke(req)
+        assert rsp.success is False
+        assert rsp.error["code"] == "E_SKILL_ALL_FALLBACK_FAIL"
+        assert len(rsp.fallback_trace) == 2
+
+    def test_capability_unknown_returns_success_false_E_SKILL_NO_CAPABILITY(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            return {"unreached": True}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="inv4", project_id="p1", capability="no_such_capability",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        rsp = exe.invoke(req)
+        assert rsp.success is False
+        assert rsp.error["code"] == "E_SKILL_NO_CAPABILITY"
+
+    def test_audit_emits_started_and_finished_events(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            return {"ok": True}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="inv5", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        exe.invoke(req)
+        types = [e.event_type for e in ic09_bus.read_all("p1")]
+        assert "skill_invocation_started" in types
+        assert "skill_invocation_finished" in types
+
+    def test_context_injected_not_raw_passed_to_skill(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        """ContextInjector 应过滤掉敏感 context 字段 · 只有白名单 5 字段到 skill."""
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        seen_ctx: list[dict] = []
+
+        def runner(skill, params, ctx):
+            seen_ctx.append(ctx)
+            return {"ok": True}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="inv6", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04",
+            context={
+                "project_id": "p1", "wp_id": "wp1",
+                "api_token": "sk-BAD", "task_board": {"secret": 1},
+            },
+        )
+        exe.invoke(req)
+        assert seen_ctx, "runner never called"
+        ctx = seen_ctx[0]
+        assert "api_token" not in ctx
+        assert "task_board" not in ctx
+        assert ctx["project_id"] == "p1"
+
+    def test_ledger_records_success(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        import json
+
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            return {"ok": True}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="invL", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        exe.invoke(req)
+        lines = (tmp_project / "skills" / "registry-cache" / "ledger.jsonl").read_text().splitlines()
+        recs = [json.loads(x) for x in lines if x.strip()]
+        assert any(r["success_count"] == 1 for r in recs)
+
+    def test_ledger_records_failure(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        import json
+
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            raise ValueError("dead")
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="invLF", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        exe.invoke(req)
+        lines = (tmp_project / "skills" / "registry-cache" / "ledger.jsonl").read_text().splitlines()
+        recs = [json.loads(x) for x in lines if x.strip()]
+        assert any(r["failure_count"] == 1 for r in recs)
+
+    def test_retry_happens_for_idempotent_transient(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        """idempotent skill · 首次 SkillTimeout · 应 retry 1 次."""
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+        from app.skill_dispatch.invoker.timeout_manager import SkillTimeout
+
+        attempts = {"n": 0}
+
+        def runner(skill, params, ctx):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise SkillTimeout("transient")
+            return {"ok": True}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="invR", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        rsp = exe.invoke(req)
+        assert rsp.success is True
+        assert attempts["n"] == 2
+
+    def test_dispatch_latency_under_200ms_slo(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        """SLO: dispatch (选链 + 调用) ≤ 200ms (使用快 skill)."""
+        import time
+
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            return {"ok": True}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="invS", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        t0 = time.perf_counter()
+        exe.invoke(req)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert elapsed_ms < 200, f"dispatch SLO breach: {elapsed_ms:.1f}ms"
+
+    def test_skill_id_unknown_error_code_on_capability_no_route(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        """未知 capability 响应的 skill_id 应为 sentinel（非真实 skill 名）."""
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            return {}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+        req = InvocationRequest(
+            invocation_id="i", project_id="p1", capability="no_cap",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        rsp = exe.invoke(req)
+        assert rsp.success is False
+        assert rsp.skill_id in ("unknown", "<no-route>", "E_SKILL_NO_CAPABILITY")
