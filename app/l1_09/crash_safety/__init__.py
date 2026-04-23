@@ -7,6 +7,12 @@ from app.l1_09.crash_safety.hash_chain import (
     compute_hash_chain_link,
     verify_chain_link,
 )
+from app.l1_09.crash_safety.integrity_checker import (
+    HEADER_SIZE,
+    compose_header,
+    recover_partial_write,
+    verify_integrity,
+)
 from app.l1_09.crash_safety.schemas import (
     MAX_SNAPSHOT_SIZE_BYTES,
     PIPE_BUF_LIMIT,
@@ -41,10 +47,14 @@ from app.l1_09.crash_safety.schemas import (
 __all__ = [
     "append_atomic",
     "canonical_json_without_hash",
+    "compose_header",
     "compute_hash_chain_link",
+    "recover_partial_write",
     "verify_chain_link",
+    "verify_integrity",
     "write_atomic",
     "GENESIS_HASH",
+    "HEADER_SIZE",
     "MAX_SNAPSHOT_SIZE_BYTES",
     "PIPE_BUF_LIMIT",
     "RETRY_BACKOFF_MS",
