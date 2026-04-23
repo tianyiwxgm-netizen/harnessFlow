@@ -58,3 +58,25 @@ class ResourceLimiter:
         finally:
             async with self._lock:
                 self._in_flight -= 1
+
+    async def try_reserve(self) -> bool:
+        """Non-blocking reserve · 保留 in_flight slot (不取 sem · 不阻塞).
+
+        为 Delegator 场景设计：dispatch 需要立即决定 dispatched=True/False ·
+        后台 task 再实际跑 · run 结束调 release_reservation().
+
+        Returns:
+            True 成功预留 · 调用方负责最终 release_reservation()
+            False 容量满 · 调用方处理 SessionLimit 降级
+        """
+        async with self._lock:
+            if self._in_flight >= self._max_total:
+                return False
+            self._in_flight += 1
+        return True
+
+    async def release_reservation(self) -> None:
+        """释放之前 try_reserve 预留的 slot."""
+        async with self._lock:
+            if self._in_flight > 0:
+                self._in_flight -= 1

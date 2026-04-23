@@ -522,3 +522,199 @@ class TestClaudeSDKClient:
         await client.kill(session_id=sid)
         await client.kill(session_id=sid)   # 幂等 · 不 raise
         assert adapter.sigterm_count + adapter.sigkill_count >= 1
+
+
+class TestDelegator:
+    """Task 04.5 · Delegator IC-05/12/20 路由 + 降级链."""
+
+    def _build_delegator(self, adapter, ic09_bus):
+        from app.skill_dispatch.subagent.claude_sdk_client import ClaudeSDKClient
+        from app.skill_dispatch.subagent.delegator import Delegator
+        from app.skill_dispatch.subagent.resource_limiter import ResourceLimiter
+
+        client = ClaudeSDKClient(adapter=adapter, sigterm_grace_s=0.01)
+        limiter = ResourceLimiter(max_concurrent=3, max_queue=10)
+        return Delegator(sdk_client=client, limiter=limiter, event_bus=ic09_bus)
+
+    async def test_ic05_dispatch_returns_ack(self, ic09_bus):
+        from app.skill_dispatch.subagent.delegator import Delegator
+        from app.skill_dispatch.subagent.schemas import DelegationRequest
+
+        adapter = _FakeAdapter()
+        d = self._build_delegator(adapter, ic09_bus)
+        req = DelegationRequest(
+            delegation_id="d1", project_id="p1", role="researcher",
+            task_brief="Research best LLM eval frameworks and summarize top 3 in detail",
+            context_copy={"project_id": "p1"}, caller_l1="L1-04",
+        )
+        ack = await d.delegate_subagent(req)
+        assert ack.dispatched is True
+        assert ack.subagent_session_id is not None
+        assert ack.delegation_id == "d1"
+
+    async def test_ic05_spawn_event_emitted_to_ic09(self, ic09_bus):
+        from app.skill_dispatch.subagent.schemas import DelegationRequest
+
+        adapter = _FakeAdapter()
+        d = self._build_delegator(adapter, ic09_bus)
+        req = DelegationRequest(
+            delegation_id="d2", project_id="p1", role="researcher",
+            task_brief="Research best LLM eval frameworks and summarize top 3 in detail",
+            context_copy={"project_id": "p1"}, caller_l1="L1-04",
+        )
+        await d.delegate_subagent(req)
+        types_seen = [e.event_type for e in ic09_bus.read_all("p1")]
+        assert "subagent_spawned" in types_seen
+
+    async def test_ic05_dispatch_latency_under_200ms(self, ic09_bus):
+        import time
+
+        from app.skill_dispatch.subagent.schemas import DelegationRequest
+
+        adapter = _FakeAdapter()
+        adapter.spawn_delay_s = 1.0   # run 慢 · 但 dispatch 只等 spawn · 快
+        d = self._build_delegator(adapter, ic09_bus)
+        req = DelegationRequest(
+            delegation_id="d3", project_id="p1", role="researcher",
+            task_brief="Research best LLM eval frameworks and summarize top 3 in detail",
+            context_copy={"project_id": "p1"}, caller_l1="L1-04",
+        )
+        t0 = time.perf_counter()
+        await d.delegate_subagent(req)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert elapsed_ms < 200, f"dispatch SLO breach: {elapsed_ms:.1f}ms"
+
+    async def test_ic05_spawn_retry_exhausted_degrades(self, ic09_bus):
+        """spawn 2 次都失败 → E_SUB_SPAWN_FAILED · 返 ack.dispatched=False."""
+        from app.skill_dispatch.subagent.schemas import DelegationRequest
+
+        adapter = _FakeAdapter()
+        adapter.fail_first_n_spawns = 10  # 总是失败
+        d = self._build_delegator(adapter, ic09_bus)
+        req = DelegationRequest(
+            delegation_id="d4", project_id="p1", role="researcher",
+            task_brief="Research best LLM eval frameworks and summarize top 3 in detail",
+            context_copy={"project_id": "p1"}, caller_l1="L1-04",
+        )
+        ack = await d.delegate_subagent(req)
+        assert ack.dispatched is False
+        types_seen = [e.event_type for e in ic09_bus.read_all("p1")]
+        assert "subagent_spawn_failed" in types_seen
+
+    async def test_ic05_cross_project_rejected(self, ic09_bus):
+        from app.skill_dispatch.subagent.schemas import DelegationRequest
+
+        adapter = _FakeAdapter()
+        d = self._build_delegator(adapter, ic09_bus)
+        # schema 层会直接拒（PM-14 mirror check）
+        with pytest.raises(ValueError):
+            DelegationRequest(
+                delegation_id="d",
+                project_id="p1",
+                role="researcher",
+                task_brief="Research best LLM eval frameworks and summarize top 3",
+                context_copy={"project_id": "p_other"},
+                caller_l1="L1-04",
+            )
+
+    async def test_ic12_rejects_invalid_repo_path(self, ic09_bus):
+        from app.skill_dispatch.subagent.delegator import OnboardingRepoError
+        from app.skill_dispatch.subagent.schemas import CodebaseOnboardingRequest
+
+        adapter = _FakeAdapter()
+        d = self._build_delegator(adapter, ic09_bus)
+        req = CodebaseOnboardingRequest(
+            delegation_id="d", project_id="p1", repo_path="/nonexistent/path",
+            kb_write_back=True,
+        )
+        with pytest.raises(OnboardingRepoError):
+            await d.delegate_codebase_onboarding(req)
+
+    async def test_ic12_happy_path_dispatch(self, tmp_project, ic09_bus):
+        from app.skill_dispatch.subagent.schemas import CodebaseOnboardingRequest
+
+        adapter = _FakeAdapter()
+        d = self._build_delegator(adapter, ic09_bus)
+        req = CodebaseOnboardingRequest(
+            delegation_id="d_ob", project_id="p1", repo_path=str(tmp_project),
+            kb_write_back=True,
+        )
+        ack = await d.delegate_codebase_onboarding(req)
+        assert ack.dispatched is True
+
+    async def test_ic20_verifier_dispatch_with_strict_whitelist(self, ic09_bus):
+        from app.skill_dispatch.subagent.schemas import VerifierRequest
+
+        recorded_tools = []
+
+        class RecordingAdapter(_FakeAdapter):
+            async def spawn_session(self, *, role, allowed_tools, context, timeout_s):
+                recorded_tools.append(list(allowed_tools))
+                return await super().spawn_session(
+                    role=role, allowed_tools=allowed_tools,
+                    context=context, timeout_s=timeout_s,
+                )
+
+        adapter = RecordingAdapter()
+        d = self._build_delegator(adapter, ic09_bus)
+        req = VerifierRequest(
+            delegation_id="d_v", project_id="p1", wp_id="wp1",
+            blueprint_slice={"req": "x"}, s4_snapshot={"diff": "y"},
+            acceptance_criteria=["A"],
+        )
+        ack = await d.delegate_verifier(req)
+        assert ack.dispatched is True
+        assert set(recorded_tools[0]) <= {"Read", "Glob", "Grep", "Bash"}
+
+    async def test_resource_limiter_enforced(self, ic09_bus):
+        """超 max_concurrent + max_queue · 排队 · queue 满 raise."""
+        import asyncio
+
+        from app.skill_dispatch.subagent.claude_sdk_client import ClaudeSDKClient
+        from app.skill_dispatch.subagent.delegator import Delegator
+        from app.skill_dispatch.subagent.resource_limiter import (
+            ResourceLimiter,
+            SessionLimitError,
+        )
+        from app.skill_dispatch.subagent.schemas import DelegationRequest
+
+        adapter = _FakeAdapter()
+        adapter.spawn_delay_s = 5.0
+        client = ClaudeSDKClient(adapter=adapter, sigterm_grace_s=0.01)
+        limiter = ResourceLimiter(max_concurrent=1, max_queue=0)   # 超紧
+        d = Delegator(sdk_client=client, limiter=limiter, event_bus=ic09_bus)
+
+        async def send(i):
+            req = DelegationRequest(
+                delegation_id=f"d_{i}", project_id="p1", role="researcher",
+                task_brief="Research best LLM eval frameworks and summarize top 3 in detail",
+                context_copy={"project_id": "p1"}, caller_l1="L1-04",
+            )
+            return await d.delegate_subagent(req)
+
+        # 同时发 3 个 · 只有 1 能 dispatched=True · 其余 false
+        results = await asyncio.gather(send(1), send(2), send(3), return_exceptions=True)
+        dispatched_count = sum(
+            1 for r in results if not isinstance(r, Exception) and r.dispatched
+        )
+        assert dispatched_count <= 1
+
+    async def test_final_report_emitted_via_ic09(self, ic09_bus):
+        """dispatch 后台跑完 · emit subagent_final_report · artifacts 齐."""
+        import asyncio
+
+        from app.skill_dispatch.subagent.schemas import DelegationRequest
+
+        adapter = _FakeAdapter()
+        d = self._build_delegator(adapter, ic09_bus)
+        req = DelegationRequest(
+            delegation_id="d_final", project_id="p1", role="researcher",
+            task_brief="Research best LLM eval frameworks and summarize top 3 in detail",
+            context_copy={"project_id": "p1"}, caller_l1="L1-04",
+        )
+        ack = await d.delegate_subagent(req)
+        assert ack.dispatched is True
+        # 等后台 task 完
+        await asyncio.sleep(0.2)
+        types_seen = [e.event_type for e in ic09_bus.read_all("p1")]
+        assert "subagent_final_report" in types_seen
