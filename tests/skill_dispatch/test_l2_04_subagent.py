@@ -334,3 +334,191 @@ class TestResourceLimiter:
         # 如果没释放 · 下一次 slot 会 hang
         async with limiter.slot():
             pass   # 应该立即进入
+
+
+# ---------------------------------------------------------------------------
+# SDK Client test helpers
+# ---------------------------------------------------------------------------
+
+
+class _FakeSession:
+    """In-process fake subagent session · 可配置 behavior."""
+
+    def __init__(self, session_id: str, behavior: str = "success", delay_s: float = 0.0):
+        self.session_id = session_id
+        self.behavior = behavior   # success / timeout / crash
+        self.delay_s = delay_s
+        self.terminated = False
+        self.kill_force = False
+        self.state = "provisioning"
+
+
+class _FakeAdapter:
+    """Fake SDKAdapter for testing · 不依赖真实 Claude SDK."""
+
+    def __init__(self):
+        self._sessions: dict[str, _FakeSession] = {}
+        self.spawn_count = 0
+        self.spawn_failures = 0
+        self.sigterm_count = 0
+        self.sigkill_count = 0
+        # 配置项
+        self.fail_first_n_spawns = 0
+        self.spawn_behavior = "success"
+        self.spawn_delay_s = 0.0
+
+    async def spawn_session(self, *, role, allowed_tools, context, timeout_s):
+        import uuid
+
+        self.spawn_count += 1
+        if self.spawn_count <= self.fail_first_n_spawns:
+            self.spawn_failures += 1
+            raise RuntimeError("spawn failed")
+        sid = f"sub-{uuid.uuid4().hex[:16]}"
+        sess = _FakeSession(
+            session_id=sid, behavior=self.spawn_behavior, delay_s=self.spawn_delay_s,
+        )
+        sess.state = "running"
+        self._sessions[sid] = sess
+        return sid
+
+    async def await_result(self, session_id: str, timeout_s: float) -> dict:
+        import asyncio
+
+        sess = self._sessions[session_id]
+        if sess.behavior == "timeout":
+            raise asyncio.TimeoutError("fake timeout")
+        if sess.behavior == "crash":
+            raise RuntimeError("fake crash")
+        if sess.delay_s > 0:
+            await asyncio.sleep(sess.delay_s)
+        sess.state = "completed"
+        return {"artifacts": [{"path": "fake.md"}], "final_message": "ok"}
+
+    async def terminate(self, session_id: str, *, force: bool = False) -> None:
+        sess = self._sessions.get(session_id)
+        if sess is None:
+            return
+        if force:
+            self.sigkill_count += 1
+            sess.kill_force = True
+        else:
+            self.sigterm_count += 1
+            sess.terminated = True
+        sess.state = "killed"
+
+
+class TestClaudeSDKClient:
+    """Task 04.4 · ClaudeSDKClient · spawn / run / heartbeat / kill lifecycle."""
+
+    async def test_spawn_returns_unique_session_id(self):
+        from app.skill_dispatch.subagent.claude_sdk_client import ClaudeSDKClient
+
+        adapter = _FakeAdapter()
+        client = ClaudeSDKClient(adapter=adapter)
+        sids = set()
+        for _ in range(100):
+            sid = await client.spawn(
+                role="researcher", allowed_tools=["Read"],
+                context={"project_id": "p1"}, timeout_s=60,
+            )
+            sids.add(sid)
+        assert len(sids) == 100
+
+    async def test_run_returns_artifacts_on_success(self):
+        from app.skill_dispatch.subagent.claude_sdk_client import ClaudeSDKClient
+
+        adapter = _FakeAdapter()
+        client = ClaudeSDKClient(adapter=adapter)
+        sid = await client.spawn(
+            role="researcher", allowed_tools=["Read"],
+            context={"project_id": "p1"}, timeout_s=60,
+        )
+        result = await client.await_result(session_id=sid, timeout_s=5.0)
+        assert result["final_message"] == "ok"
+        assert len(result["artifacts"]) == 1
+
+    async def test_run_timeout_triggers_sigterm_then_sigkill(self):
+        """超时 · SIGTERM → (5s grace expected · 本测 shrunk) → SIGKILL."""
+        import asyncio
+
+        from app.skill_dispatch.subagent.claude_sdk_client import (
+            ClaudeSDKClient,
+            SubagentTimeoutError,
+        )
+
+        adapter = _FakeAdapter()
+        adapter.spawn_behavior = "timeout"
+        client = ClaudeSDKClient(adapter=adapter, sigterm_grace_s=0.05)
+        sid = await client.spawn(
+            role="researcher", allowed_tools=["Read"],
+            context={"project_id": "p1"}, timeout_s=60,
+        )
+        with pytest.raises(SubagentTimeoutError):
+            await client.await_result(session_id=sid, timeout_s=0.01)
+        # 超时后 · client 主动 terminate · 应有 SIGTERM (+ SIGKILL)
+        assert adapter.sigterm_count >= 1
+
+    async def test_spawn_retry_once_then_degrade(self):
+        """首次 spawn 失败 · retry 1 次 · 再失败 → E_SUB_SPAWN_FAILED."""
+        from app.skill_dispatch.subagent.claude_sdk_client import (
+            ClaudeSDKClient,
+            SpawnFailedError,
+        )
+
+        adapter = _FakeAdapter()
+        adapter.fail_first_n_spawns = 2   # 2 次都失败
+        client = ClaudeSDKClient(adapter=adapter)
+        with pytest.raises(SpawnFailedError):
+            await client.spawn(
+                role="researcher", allowed_tools=["Read"],
+                context={"project_id": "p1"}, timeout_s=60,
+            )
+        assert adapter.spawn_count == 2
+
+    async def test_spawn_retry_succeeds_on_second_attempt(self):
+        from app.skill_dispatch.subagent.claude_sdk_client import ClaudeSDKClient
+
+        adapter = _FakeAdapter()
+        adapter.fail_first_n_spawns = 1
+        client = ClaudeSDKClient(adapter=adapter)
+        sid = await client.spawn(
+            role="researcher", allowed_tools=["Read"],
+            context={"project_id": "p1"}, timeout_s=60,
+        )
+        assert sid.startswith("sub-")
+        assert adapter.spawn_count == 2
+        assert adapter.spawn_failures == 1
+
+    async def test_allowed_tools_propagated_to_adapter(self):
+        from app.skill_dispatch.subagent.claude_sdk_client import ClaudeSDKClient
+
+        recorded: dict = {}
+
+        class RecordingAdapter(_FakeAdapter):
+            async def spawn_session(self, *, role, allowed_tools, context, timeout_s):
+                recorded["allowed_tools"] = allowed_tools
+                return await super().spawn_session(
+                    role=role, allowed_tools=allowed_tools,
+                    context=context, timeout_s=timeout_s,
+                )
+
+        client = ClaudeSDKClient(adapter=RecordingAdapter())
+        await client.spawn(
+            role="verifier", allowed_tools=["Read", "Grep"],
+            context={"project_id": "p1"}, timeout_s=120,
+        )
+        assert recorded["allowed_tools"] == ["Read", "Grep"]
+
+    async def test_kill_idempotent(self):
+        from app.skill_dispatch.subagent.claude_sdk_client import ClaudeSDKClient
+
+        adapter = _FakeAdapter()
+        client = ClaudeSDKClient(adapter=adapter, sigterm_grace_s=0.01)
+        sid = await client.spawn(
+            role="researcher", allowed_tools=["Read"],
+            context={"project_id": "p1"}, timeout_s=60,
+        )
+        await client.kill(session_id=sid)
+        await client.kill(session_id=sid)   # 幂等 · 不 raise
+        assert adapter.sigterm_count + adapter.sigkill_count >= 1
