@@ -513,6 +513,102 @@ class TestLedgerWrite:
         p99 = durations[98]
         assert p99 < 50.0, f"p99 write latency exceeded 50ms SLO: {p99:.2f}ms"
 
+    def test_ledger_writer_record_load_cycle_accumulates_counts(
+        self, tmp_project, lock_mock
+    ):
+        """P1-03 红线 · LedgerWriter 写 N 次 · Loader Stage 4 加载后必须累加 · 非 last-write-wins.
+
+        修复前：`_stage4_load_ledger()` `idx[key] = rec` 覆盖 · success_count 永远最多 1 · Scorer
+               的 success_rate / failure_memory 信号系统性失真.
+        修复后：同 (capability, skill_id) 累加 · last_attempt_ts 取 max · failure_reason 保留最新.
+
+        场景：同一 (capability, skill_id) 记录 10 次 · 5 成功 5 失败 · 加载后 success_rate 应 == 0.5.
+        """
+        import shutil
+
+        from app.skill_dispatch.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.schemas import SkillSpec
+        from app.skill_dispatch.intent_selector.scorer import Scorer
+
+        # 需要一个有效 registry.yaml（非 ledger）
+        fixtures_dir = tmp_project.parent.parent / "fixtures"
+        # 用 test local fixtures_dir（test_l2_01_registry 里已用 fixtures_dir fixture · 这里重建）
+        # 简化：复制默认 fixture
+        import pathlib
+        actual_fixtures = pathlib.Path(__file__).parent / "fixtures"
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(actual_fixtures / "registry_valid.yaml", cache / "registry.yaml")
+
+        writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+        # 连续写 10 次 · 5 success + 5 fail · 同 (capability, skill_id)
+        for _ in range(5):
+            writer.record(
+                project_id="p1", capability="write_test",
+                skill_id="plugin:foo", success=True,
+            )
+        for _ in range(5):
+            writer.record(
+                project_id="p1", capability="write_test",
+                skill_id="plugin:foo", success=False, failure_reason="timeout",
+            )
+
+        # 加载 · 验证累加
+        snap = RegistryLoader(project_root=tmp_project).load()
+        rec = snap.ledger_get("write_test", "plugin:foo")
+        assert rec is not None, "record 应被加载"
+        assert rec.success_count == 5, (
+            f"success_count 应累加到 5 · 实际 {rec.success_count} "
+            f"（last-write-wins bug 下会是 0 或 1）"
+        )
+        assert rec.failure_count == 5, (
+            f"failure_count 应累加到 5 · 实际 {rec.failure_count}"
+        )
+
+        # 用 Scorer 的 laplace smoothing 验证 success_rate ≈ 0.5
+        scorer = Scorer()
+        skill = SkillSpec(skill_id="plugin:foo", availability=True, cost_usd=0.01, timeout_s=30)
+        sc = scorer.score_candidate(skill, ledger=rec, kb_hit_value=0.0)
+        # (5+1)/(5+5+2) = 6/12 = 0.5
+        assert abs(sc.signals.success_rate - 0.5) < 0.01, (
+            f"success_rate 应 ≈ 0.5 · 实际 {sc.signals.success_rate} "
+            f"（last-write-wins bug 下 fixture 预聚合掩盖 · 实际会退化到 2/3 或 1/3）"
+        )
+
+    def test_ledger_loader_preserves_last_failure_reason_and_max_ts(
+        self, tmp_project, lock_mock
+    ):
+        """P1-03 · 累加合并时 · last_attempt_ts 取最大 · failure_reason 优先取新记录的非空值."""
+        import shutil
+        import time as _t
+
+        from app.skill_dispatch.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        import pathlib
+        actual_fixtures = pathlib.Path(__file__).parent / "fixtures"
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(actual_fixtures / "registry_valid.yaml", cache / "registry.yaml")
+
+        writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
+        # 早期：失败 reason=A
+        writer.record(
+            project_id="p1", capability="write_test", skill_id="plugin:bar",
+            success=False, failure_reason="reason_A",
+        )
+        _t.sleep(1.001)   # 保证 last_attempt_ts 跨秒
+        # 后期：失败 reason=B (should be the preserved one)
+        writer.record(
+            project_id="p1", capability="write_test", skill_id="plugin:bar",
+            success=False, failure_reason="reason_B",
+        )
+
+        snap = RegistryLoader(project_root=tmp_project).load()
+        rec = snap.ledger_get("write_test", "plugin:bar")
+        assert rec is not None
+        assert rec.failure_count == 2
+        # 最新的 failure_reason 应被保留（便于 Scorer 的 failure_memory 信号）
+        assert rec.failure_reason == "reason_B"
+
 
 class TestFsWatcher:
     """Task 01.5 · fs_watcher 热更新 · throttle 10s · 原子 swap."""

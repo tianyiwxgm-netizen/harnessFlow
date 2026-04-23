@@ -127,13 +127,26 @@ class RegistryLoader:
 
     # ------------------------------------------------------------------ Stage 4
     def _stage4_load_ledger(self) -> dict[str, "LedgerEntry"]:
-        """从 ledger.jsonl 恢复 success/failure 历史 · key = 'capability|skill_id'."""
+        """从 ledger.jsonl 恢复 success/failure 历史 · key = 'capability|skill_id'.
+
+        P1-03 修：LedgerWriter 每次 append 一行（success/failure 各占 0/1）· Loader 必须
+        对同 (capability, skill_id) 做累加合并 · 否则 Scorer 的 success_rate / failure_memory
+        信号会基于单次调用而非历史累计 · 系统性失真.
+
+        合并策略：
+          - success_count / failure_count: 累加
+          - last_attempt_ts: 取最大（最近一次尝试时间）
+          - failure_reason: 优先保留 last_attempt_ts 最大的记录里非空的 reason（便于 scorer 的
+            failure_memory 信号取近期失败原因）
+        """
         import json
 
         from .schemas import LedgerEntry
 
         path = self.project_root / "skills" / "registry-cache" / "ledger.jsonl"
         idx: dict[str, LedgerEntry] = {}
+        # 记录每 key 最近一次 (last_attempt_ts, failure_reason) · 用于 reason 的时间优先合并
+        latest_reason_ts: dict[str, int] = {}
         if not path.exists():
             return idx
         for ln_no, raw_line in enumerate(
@@ -148,8 +161,28 @@ class RegistryLoader:
                     "E_REG_VALIDATION",
                     f"ledger.jsonl line {ln_no}: {e}",
                 ) from e
-            # 若同 (capability, skill_id) 多条 · 后写覆盖前写（最新 attempt）.
-            idx[f"{rec.capability}|{rec.skill_id}"] = rec
+            key = f"{rec.capability}|{rec.skill_id}"
+            existing = idx.get(key)
+            if existing is None:
+                idx[key] = rec
+                if rec.failure_reason:
+                    latest_reason_ts[key] = rec.last_attempt_ts
+                continue
+            # 累加合并
+            # failure_reason 取 last_attempt_ts 最大的那条里非空的
+            new_reason = existing.failure_reason
+            if rec.failure_reason and rec.last_attempt_ts >= latest_reason_ts.get(key, 0):
+                new_reason = rec.failure_reason
+                latest_reason_ts[key] = rec.last_attempt_ts
+            merged = LedgerEntry(
+                capability=existing.capability,
+                skill_id=existing.skill_id,
+                success_count=existing.success_count + rec.success_count,
+                failure_count=existing.failure_count + rec.failure_count,
+                last_attempt_ts=max(existing.last_attempt_ts, rec.last_attempt_ts),
+                failure_reason=new_reason,
+            )
+            idx[key] = merged
         return idx
 
     # ------------------------------------------------------------------ Stage 5
