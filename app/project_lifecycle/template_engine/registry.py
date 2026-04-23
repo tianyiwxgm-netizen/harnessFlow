@@ -33,10 +33,15 @@ from app.project_lifecycle.template_engine.errors import (
 from app.project_lifecycle.template_engine.sandbox import build_sandbox_env
 from app.project_lifecycle.template_engine.schemas import TemplateEntry
 
-# 29 必需 kind（2 kickoff + 4 fourset + 9 pmp + 11 togaf + 3 closing）
+# 33 必需 kind（2 kickoff + 8 fourset + 9 pmp + 11 togaf + 3 closing）
+# 注：fourset 双命名并存：
+#   - scope/prd/plan/tdd · Dev-δ dispatch md 兼容命名
+#   - requirements/goals/acceptance_criteria/quality_standards · L2-03 tech/TDD 契约命名
 REQUIRED_KINDS_DEFAULT: tuple[str, ...] = (
     "kickoff.goal", "kickoff.scope",
     "fourset.scope", "fourset.prd", "fourset.plan", "fourset.tdd",
+    "fourset.requirements", "fourset.goals",
+    "fourset.acceptance_criteria", "fourset.quality_standards",
     "pmp.integration", "pmp.scope", "pmp.schedule", "pmp.cost", "pmp.quality",
     "pmp.resource", "pmp.communication", "pmp.risk", "pmp.procurement",
     "togaf.preliminary",
