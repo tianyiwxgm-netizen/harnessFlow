@@ -689,3 +689,40 @@ class TestSkillExecutorHappyPath:
         rsp = exe.invoke(req)
         assert rsp.success is False
         assert rsp.skill_id in ("unknown", "<no-route>", "E_SKILL_NO_CAPABILITY")
+
+    def test_all_constraints_filter_returns_success_false_not_raises(
+        self, tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock,
+    ):
+        """P0 契约红线 · 所有候选被 Constraints 过滤后（availability=False / 紧约束）
+        · IntentSelector 抛 NoAvailableCapabilityError（CapabilityNotFoundError 子类）
+        · SkillExecutor Phase 1 捕获 · 返 success=false · 不向调用方 raise.
+
+        修复前：IntentSelector raise RuntimeError("E_INTENT_NO_AVAILABLE") · SkillExecutor
+        未捕 · RuntimeError 逃逸到调用方 · 打穿"全链失败不 raise"红线.
+        """
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
+
+        def runner(skill, params, ctx):
+            return {"unreached": True}
+
+        exe = _wire_executor(tmp_project, fixtures_dir, ic09_bus, kb_mock, lock_mock, runner)
+
+        # 手动替换 selector 的内部行为 · 让 select() 返空 ranked（模拟所有候选被约束剔光）
+        # 通过 monkeypatching Scorer · 让 rank 总返回空列表
+        class _EmptyScorer:
+            def rank(self, *, skills, ledger_idx, kb_hits, constraints):
+                return []
+
+        exe.selector._scorer = _EmptyScorer()
+
+        req = InvocationRequest(
+            invocation_id="inv_no_avail", project_id="p1", capability="write_test",
+            params={}, caller_l1="L1-04", context={"project_id": "p1"},
+        )
+        # 关键红线：无论如何不能 raise · 必须返 success=false
+        rsp = exe.invoke(req)
+        assert rsp.success is False, "全链无候选 · 必须返 success=false · 不能 raise"
+        assert rsp.error is not None
+        # IntentSelector empty-ranked 走的是 E_SKILL_NO_CAPABILITY 分支（共享 except 路径）
+        assert rsp.error["code"] == "E_SKILL_NO_CAPABILITY"
+        assert "E_INTENT_NO_AVAILABLE" in rsp.error["detail"]

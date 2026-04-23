@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..registry.query_api import RegistryQueryAPI
+from ..registry.query_api import NoAvailableCapabilityError, RegistryQueryAPI
 from .fallback_advancer import FallbackAdvancer
 from .kb_boost import KBBooster
 from .schemas import (
@@ -62,7 +62,10 @@ class IntentSelector:
             constraints=request.constraints,
         )
         if not ranked:
-            raise RuntimeError(
+            # P0 契约红线：全链失败不 raise 泛型 RuntimeError · 改抛
+            # NoAvailableCapabilityError（CapabilityNotFoundError 子类）· 让
+            # SkillExecutor Phase 1 原有捕获路径直接落 success=false · 不逃逸给调用方.
+            raise NoAvailableCapabilityError(
                 f"E_INTENT_NO_AVAILABLE: no candidate passed constraints · "
                 f"capability={request.capability}"
             )

@@ -19,6 +19,15 @@ class CapabilityNotFoundError(KeyError):
     """E_REG_MISSING_CAPABILITY."""
 
 
+class NoAvailableCapabilityError(CapabilityNotFoundError):
+    """E_INTENT_NO_AVAILABLE · 候选存在但全部被 Constraints 过滤（availability/cost/timeout）.
+
+    继承自 `CapabilityNotFoundError` · 使 SkillExecutor Phase 1 原有
+    `except CapabilityNotFoundError` 捕获路径直接覆盖"无候选可选"场景 · 落 success=false
+    · 不向调用方 raise（契约红线：IC-04 全链失败不 raise）.
+    """
+
+
 class SubagentNotFoundError(KeyError):
     """E_REG_MISSING_SUBAGENT."""
 

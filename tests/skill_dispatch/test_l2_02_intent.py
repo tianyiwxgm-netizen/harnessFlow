@@ -658,3 +658,39 @@ class TestIntentSelectorSelect:
         selector.select(req)
         events = ic09_bus.read_all("p1")
         assert any(e.event_type == "capability_chain_produced" for e in events)
+
+    def test_select_no_available_raises_capability_not_found_not_runtime(
+        self, tmp_project, fixtures_dir, kb_mock, ic09_bus
+    ):
+        """P0 · 所有候选被 Constraints 过滤后 · 应 raise NoAvailableCapabilityError
+        （CapabilityNotFoundError 子类）· 绝不 raise 泛型 RuntimeError.
+
+        修复前：RuntimeError("E_INTENT_NO_AVAILABLE") 逃逸 · SkillExecutor 不捕 · 打穿红线.
+        修复后：NoAvailableCapabilityError 被 except CapabilityNotFoundError 捕 · 返 success=false.
+        """
+        from app.skill_dispatch.intent_selector import IntentSelector
+        from app.skill_dispatch.intent_selector.schemas import Constraints, IntentRequest
+        from app.skill_dispatch.registry.query_api import (
+            CapabilityNotFoundError,
+            NoAvailableCapabilityError,
+        )
+
+        api = self._prepare(tmp_project, fixtures_dir)
+        selector = IntentSelector(registry=api, kb_booster=None, kb=kb_mock, event_bus=ic09_bus)
+        # 极紧约束 · max_cost=-1 把所有候选（包括 builtin cost=0）剔光
+        req = IntentRequest(
+            project_id="p1",
+            capability="write_test",
+            constraints=Constraints(max_cost_usd=-1.0),
+            context={"project_id": "p1"},
+        )
+        # 核心断言：不是 RuntimeError · 必须是 CapabilityNotFoundError 子类
+        with pytest.raises(NoAvailableCapabilityError, match="E_INTENT_NO_AVAILABLE"):
+            selector.select(req)
+        # 同时验证继承关系 · SkillExecutor except CapabilityNotFoundError 能捕
+        try:
+            selector.select(req)
+        except CapabilityNotFoundError as e:
+            assert isinstance(e, NoAvailableCapabilityError)
+        else:
+            pytest.fail("should have raised")
