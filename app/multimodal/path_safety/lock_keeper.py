@@ -30,8 +30,10 @@ class ConcurrencyLockKeeper:
         lock = self._get_or_create(path)
         try:
             await asyncio.wait_for(lock.acquire(), timeout=self._timeout_s)
-        except TimeoutError:
-            raise L108Error("concurrency_lock_timeout", f"lock wait > {self._timeout_s}s for {path}")
+        except TimeoutError as e:
+            raise L108Error(
+                "concurrency_lock_timeout", f"lock wait > {self._timeout_s}s for {path}"
+            ) from e
         try:
             yield
         finally:

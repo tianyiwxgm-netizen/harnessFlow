@@ -41,8 +41,8 @@ class MDWriter:
 
         try:
             expected_hash = atomic_write_text(real, content)
-        except PermissionError:
-            raise L108Error("permission_denied", str(real))
+        except PermissionError as e:
+            raise L108Error("permission_denied", str(real)) from e
 
         # Post-write hash verification
         actual_bytes = real.read_bytes()
@@ -78,12 +78,12 @@ class MDWriter:
 
         try:
             current = real.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            raise L108Error("not_found", str(real))
-        except PermissionError:
-            raise L108Error("permission_denied", str(real))
-        except UnicodeDecodeError:
-            raise L108Error("binary_unsupported", str(real))
+        except FileNotFoundError as e:
+            raise L108Error("not_found", str(real)) from e
+        except PermissionError as e:
+            raise L108Error("permission_denied", str(real)) from e
+        except UnicodeDecodeError as e:
+            raise L108Error("binary_unsupported", str(real)) from e
 
         occurrences = current.count(old_string)
         if occurrences == 0:

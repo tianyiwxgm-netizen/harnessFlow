@@ -56,11 +56,11 @@ class PathWhitelistValidator:
         # Step 3: Try to make relative to project_root
         try:
             rel = real.relative_to(self.project_root)
-        except ValueError:
+        except ValueError as e:
             # Not under project_root; check if cross_project or path_escape
             if self._is_cross_project(real):
-                raise L108Error("cross_project", str(real))
-            raise L108Error("path_escape", str(real))
+                raise L108Error("cross_project", str(real)) from e
+            raise L108Error("path_escape", str(real)) from e
 
         # Step 4: Check if path is allowed
         if not rel.parts or (rel.parts[0] + "/") not in self.allowlist:

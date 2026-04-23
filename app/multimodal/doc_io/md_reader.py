@@ -34,14 +34,14 @@ class MDReader:
         real = Path(validation.realpath)
         try:
             raw_bytes = real.read_bytes()
-        except FileNotFoundError:
-            raise L108Error("not_found", str(real))
-        except PermissionError:
-            raise L108Error("permission_denied", str(real))
+        except FileNotFoundError as e:
+            raise L108Error("not_found", str(real)) from e
+        except PermissionError as e:
+            raise L108Error("permission_denied", str(real)) from e
         try:
             raw_text = raw_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            raise L108Error("binary_unsupported", str(real))
+        except UnicodeDecodeError as e:
+            raise L108Error("binary_unsupported", str(real)) from e
 
         metadata, body = frontmatter_parser.parse(raw_text)
         total_lines = len(body.splitlines())

@@ -81,10 +81,10 @@ class PathSafetyFacade:
             # --- os.stat guard: not_found / permission_denied / not_a_file ---
             try:
                 st = os.stat(real)
-            except FileNotFoundError:
-                raise L108Error("not_found", str(real))
-            except PermissionError:
-                raise L108Error("permission_denied", str(real))
+            except FileNotFoundError as e:
+                raise L108Error("not_found", str(real)) from e
+            except PermissionError as e:
+                raise L108Error("permission_denied", str(real)) from e
 
             import stat as _stat
             if _stat.S_ISDIR(st.st_mode):

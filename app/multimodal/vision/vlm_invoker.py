@@ -26,8 +26,8 @@ class VLMInvoker:
         t_s = timeout_s if timeout_s is not None else self.default_timeout_s
         try:
             data = image_path.read_bytes()
-        except FileNotFoundError:
-            raise L108Error("not_found", str(image_path))
+        except FileNotFoundError as e:
+            raise L108Error("not_found", str(image_path)) from e
         try:
             result = await asyncio.wait_for(self.client.call(data, task, timeout_s=t_s), timeout=t_s)
         except TimeoutError as e:
