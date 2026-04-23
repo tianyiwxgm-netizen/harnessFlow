@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.project_lifecycle.kickoff.anchor_hash import compute_anchor_hash
@@ -22,7 +22,6 @@ from app.project_lifecycle.kickoff.errors import (
     KickoffError,
 )
 from app.project_lifecycle.kickoff.schemas import ActivateRequest, ActivateResponse
-
 
 _PM14_AUTHORIZED_CALLER = "L2-01"
 
@@ -86,7 +85,7 @@ def activate_project_id(
         )
 
     # 5. 状态转换 + 写 created.json
-    activated_at = datetime.now(timezone.utc).isoformat()
+    activated_at = datetime.now(UTC).isoformat()
     state_data["state"] = "INITIALIZED"
     state_data["activated_at"] = activated_at
     state_path.write_text(json.dumps(state_data), encoding="utf-8")

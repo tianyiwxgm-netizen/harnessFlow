@@ -4,7 +4,6 @@ StartupProducer 是 L2-01 调用的入口 · 包装 produce_kickoff + validate_t
 """
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 

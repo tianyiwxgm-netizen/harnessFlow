@@ -5,7 +5,6 @@ TDD · RED 阶段：期望 `app.project_lifecycle.kickoff.algo.produce_kickoff` 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest

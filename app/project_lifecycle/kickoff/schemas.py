@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-
 TrimLevel = Literal["full", "minimal", "custom"]
 KickoffState = Literal[
     "DRAFT", "CLARIFYING", "CHARTER_GEN", "STAKEHOLDERS_GEN",

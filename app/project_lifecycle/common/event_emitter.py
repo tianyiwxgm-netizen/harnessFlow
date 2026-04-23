@@ -12,7 +12,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-
 EventSeverity = Literal["INFO", "WARN", "CRITICAL"]
 
 

@@ -20,7 +20,6 @@ from app.project_lifecycle.kickoff.schemas import (
     KickoffResponse,
 )
 
-
 _INVALID_REQUEST_ERR = "E_L102_L202_TRIGGER_INVALID"
 
 

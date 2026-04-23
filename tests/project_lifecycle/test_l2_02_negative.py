@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,9 +17,6 @@ from app.project_lifecycle.kickoff.algo import (
 from app.project_lifecycle.kickoff.errors import (
     E_ATOMIC_WRITE_FAILED,
     E_CHART_ALREADY_EXISTS,
-    E_CLARIFICATION_EXCEEDED,
-    E_GOAL_ANCHOR_TAMPERING,
-    E_GOAL_MISSING_SECTIONS,
     E_PID_DUPLICATE,
     E_POST_WRITE_HASH_MISMATCH,
     E_SCOPE_NOT_LOCKED,
@@ -28,7 +24,7 @@ from app.project_lifecycle.kickoff.errors import (
     KickoffError,
 )
 from app.project_lifecycle.kickoff.producer import StartupProducer
-from app.project_lifecycle.kickoff.schemas import KickoffErr, KickoffRequest
+from app.project_lifecycle.kickoff.schemas import KickoffRequest
 
 
 @pytest.fixture

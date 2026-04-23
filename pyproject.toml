@@ -55,7 +55,7 @@ markers = [
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["app/l1_09", "app/l1_02"]
+source = ["app/l1_09", "app/project_lifecycle"]
 branch = true
 omit = ["*/__init__.py", "*/schemas.py"]
 
@@ -85,4 +85,4 @@ strict = false
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-packages = ["app.l1_09", "app.l1_02"]
+packages = ["app.l1_09", "app.project_lifecycle"]

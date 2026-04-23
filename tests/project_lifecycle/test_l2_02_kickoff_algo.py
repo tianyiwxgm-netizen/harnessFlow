@@ -14,9 +14,7 @@ from app.project_lifecycle.kickoff.algo import (
     compute_anchor_hash,
 )
 from app.project_lifecycle.kickoff.errors import (
-    E_ATOMIC_WRITE_FAILED,
     E_CROSS_PROJECT_PATH,
-    E_POST_WRITE_HASH_MISMATCH,
     KickoffError,
 )
 
