@@ -64,9 +64,9 @@ markers = [
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["app/l1_09", "app/l1_02", "app/l1_05"]
+source = ["app/l1_09", "app/l1_02", "app/skill_dispatch"]
 branch = true
-omit = ["*/__init__.py", "*/schemas.py", "app/l1_05/_mocks/*"]
+omit = ["*/__init__.py", "*/schemas.py", "app/skill_dispatch/_mocks/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -94,4 +94,4 @@ strict = false
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-packages = ["app.l1_09", "app.l1_02", "app.l1_05"]
+packages = ["app.l1_09", "app.l1_02", "app.skill_dispatch"]

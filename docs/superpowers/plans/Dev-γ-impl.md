@@ -34,9 +34,9 @@ updated_at: 2026-04-23
 
 **状态盘点（v1.1 修订 · 2026-04-23 · worktree 隔离后复核）：**
 - ✅ 源文档齐：`2-prd/L1-05/prd.md` · `3-1/L1-05/architecture.md + L2-01~05` · `integration/ic-contracts.md §3.4/3.5/3.12/3.20` · `3-2/L1-05/L2-01~05-tests.md`
-- ✅ `pyproject.toml` 已存在（Dev-δ 基线 HEAD `ce8fd51`）· 本 session 已 amend：追加 `watchdog` 主依赖 · `freezegun` dev · 新 `[sdk]` optional (`anthropic`) · markers `pm03`/`pm09` · coverage `app/l1_05` · mypy `app.l1_05`
+- ✅ `pyproject.toml` 已存在（Dev-δ 基线 HEAD `ce8fd51`）· 本 session 已 amend：追加 `watchdog` 主依赖 · `freezegun` dev · 新 `[sdk]` optional (`anthropic`) · markers `pm03`/`pm09` · coverage `app/skill_dispatch` · mypy `app.skill_dispatch`
 - ✅ `app/__init__.py` · `tests/__init__.py` · `app/l1_02/*` / `app/l1_09/*` 骨架已提交（Dev-δ / Dev-α 占位）· 不再新建根级基建
-- ✅ `app/l1_05/` 不存在 · clean slate（领域完全独立 · 不碰 L1-02/06/09 代码）
+- ✅ `app/skill_dispatch/` 不存在 · clean slate（领域完全独立 · 不碰 L1-02/06/09 代码）
 - ❌ 波1 Dev-α L1-09 event_bus 为空 `__init__.py`（无 runnable 实现）· Dev-β L1-06 TierManager 是 RED-phase stub（`raise NotImplementedError`）· **4 个 mock 必须本地打**
 - ✅ Worktree `.worktrees/dev-gamma-l1-05/` 已建 · 分支 `feat/dev-gamma-l1-05` · 与其他 Dev 物理隔离
 
@@ -44,10 +44,10 @@ updated_at: 2026-04-23
 
 | Mock | 位置 | 真实来源 | 切换时机 |
 |---|---|---|---|
-| `IC09EventBusMock.append_event` | `app/l1_05/_mocks/ic09_mock.py` | Dev-α L2-02 | α WP04 交付后 |
-| `IC06KBMock.kb_read` | `app/l1_05/_mocks/ic06_mock.py` | Dev-β L2-02 | β WP03 交付后 |
-| `IC_L2_07_AccountLockMock` | `app/l1_05/_mocks/lock_mock.py` | Dev-α L1-09 L2-02 | α WP07 交付后 |
-| `DoDGateMock.dod_gate_check` | `app/l1_05/_mocks/dod_gate_mock.py` | 主-1 L1-04 L2-02 | 主-1 交付后 |
+| `IC09EventBusMock.append_event` | `app/skill_dispatch/_mocks/ic09_mock.py` | Dev-α L2-02 | α WP04 交付后 |
+| `IC06KBMock.kb_read` | `app/skill_dispatch/_mocks/ic06_mock.py` | Dev-β L2-02 | β WP03 交付后 |
+| `IC_L2_07_AccountLockMock` | `app/skill_dispatch/_mocks/lock_mock.py` | Dev-α L1-09 L2-02 | α WP07 交付后 |
+| `DoDGateMock.dod_gate_check` | `app/skill_dispatch/_mocks/dod_gate_mock.py` | 主-1 L1-04 L2-02 | 主-1 交付后 |
 
 ---
 
@@ -150,17 +150,17 @@ harnessFlow/
 
 ## §2 WP-γ-00 · Bootstrap（Python 骨架 + 4 mock）
 
-**目标：** 搭出最小可跑的 `pytest tests/l1_05/ -v`（0 collection errors · 骨架就位即可）。
+**目标：** 搭出最小可跑的 `pytest tests/skill_dispatch/ -v`（0 collection errors · 骨架就位即可）。
 
-**v1.1 修订：** 根级基建（`pyproject.toml` / `app/__init__.py` / `tests/__init__.py` / `.gitignore`）都由 Dev-δ 的 `ce8fd51` 提交到 HEAD。本 WP 只做两件事：**(1) 对 pyproject.toml 做 L1-05 加量 amend**（本 session 已完成）· **(2) 创建 `app/l1_05/` + `tests/l1_05/` 领域内所有新文件**。
+**v1.1 修订：** 根级基建（`pyproject.toml` / `app/__init__.py` / `tests/__init__.py` / `.gitignore`）都由 Dev-δ 的 `ce8fd51` 提交到 HEAD。本 WP 只做两件事：**(1) 对 pyproject.toml 做 L1-05 加量 amend**（本 session 已完成）· **(2) 创建 `app/skill_dispatch/` + `tests/skill_dispatch/` 领域内所有新文件**。
 
 **Files（领域独立 · 不触碰其他 L1 代码）：**
 - ✅ Amend: `pyproject.toml`（L1-05 依赖 + markers + coverage · 已完成）
-- Create: `app/l1_05/__init__.py` + 5 子模块 `__init__.py` + `_mocks/__init__.py`
-- Create: `app/l1_05/_mocks/{ic09_mock,ic06_mock,lock_mock,dod_gate_mock}.py`
-- Create: `tests/l1_05/__init__.py` + `integration/__init__.py` + `perf/__init__.py`
-- Create: `tests/l1_05/conftest.py`
-- Create: `tests/l1_05/fixtures/registry_valid.yaml` · `ledger_sample.jsonl`
+- Create: `app/skill_dispatch/__init__.py` + 5 子模块 `__init__.py` + `_mocks/__init__.py`
+- Create: `app/skill_dispatch/_mocks/{ic09_mock,ic06_mock,lock_mock,dod_gate_mock}.py`
+- Create: `tests/skill_dispatch/__init__.py` + `integration/__init__.py` + `perf/__init__.py`
+- Create: `tests/skill_dispatch/conftest.py`
+- Create: `tests/skill_dispatch/fixtures/registry_valid.yaml` · `ledger_sample.jsonl`
 
 ### Task 00.1 — ✅ Amend pyproject.toml（本 session 已完成）
 
@@ -169,49 +169,49 @@ harnessFlow/
 - `[project.optional-dependencies.dev]` 追加 `freezegun>=1.5`（L2-02 decay test）
 - 新 `[project.optional-dependencies.sdk]` 含 `anthropic>=0.39`（WP-γ-04 装）
 - `[tool.pytest.ini_options].markers` 追加 `pm03` / `pm09`
-- `[tool.coverage.run].source` 追加 `app/l1_05` · `omit` 追加 `app/l1_05/_mocks/*`
-- `[tool.mypy].packages` 追加 `app.l1_05`
+- `[tool.coverage.run].source` 追加 `app/skill_dispatch` · `omit` 追加 `app/skill_dispatch/_mocks/*`
+- `[tool.mypy].packages` 追加 `app.skill_dispatch`
 
 - [ ] **Step 1: 验证 amend**
 
-Run: `grep -cE "watchdog|freezegun|pm03|pm09|app/l1_05|app\.l1_05" pyproject.toml`
+Run: `grep -cE "watchdog|freezegun|pm03|pm09|app/skill_dispatch|app\.l1_05" pyproject.toml`
 Expected: ≥ 6
 
 Commit 与 Task 00.3 一起（见 00.3 step 4）。
 
 ### Task 00.2 — 局部 conftest（根 conftest.py 不建 · 避免干扰他 Dev）
 
-- [ ] **Step 1: 确认根 `conftest.py` 不存在**（存在则跳过；不存在则**仍然不建** · 所有 fixtures 放 `tests/l1_05/conftest.py` 局部化）
+- [ ] **Step 1: 确认根 `conftest.py` 不存在**（存在则跳过；不存在则**仍然不建** · 所有 fixtures 放 `tests/skill_dispatch/conftest.py` 局部化）
 
 Run: `ls -la conftest.py 2>/dev/null && echo EXISTS || echo ABSENT`
 
-- [ ] **Step 2: `tmp_project` / `fake_pid` fixtures 合并进 `tests/l1_05/conftest.py`**（见 Task 00.6）
+- [ ] **Step 2: `tmp_project` / `fake_pid` fixtures 合并进 `tests/skill_dispatch/conftest.py`**（见 Task 00.6）
 
 本 Task 不出独立 commit · 工作合并到 Task 00.6。
 
-### Task 00.3 — 建 `app/l1_05/` + `tests/l1_05/` 领域骨架（合并 Task 00.1 commit）
+### Task 00.3 — 建 `app/skill_dispatch/` + `tests/skill_dispatch/` 领域骨架（合并 Task 00.1 commit）
 
 - [ ] **Step 1: Create L1-05 directory tree**
 
 Run:
 ```bash
 cd /Users/zhongtianyi/work/code/harnessFlow/.worktrees/dev-gamma-l1-05
-mkdir -p app/l1_05/{registry,intent_selector,invoker,subagent,async_receiver,_mocks}
-mkdir -p tests/l1_05/{integration,perf,fixtures}
+mkdir -p app/skill_dispatch/{registry,intent_selector,invoker,subagent,async_receiver,_mocks}
+mkdir -p tests/skill_dispatch/{integration,perf,fixtures}
 ```
 
 - [ ] **Step 2: Create `__init__.py` ONLY for new L1-05 dirs (不碰 app/ 或 tests/ 根 __init__.py)**
 
 Run:
 ```bash
-for d in app/l1_05 app/l1_05/registry app/l1_05/intent_selector app/l1_05/invoker app/l1_05/subagent app/l1_05/async_receiver app/l1_05/_mocks tests/l1_05 tests/l1_05/integration tests/l1_05/perf; do
+for d in app/skill_dispatch app/skill_dispatch/registry app/skill_dispatch/intent_selector app/skill_dispatch/invoker app/skill_dispatch/subagent app/skill_dispatch/async_receiver app/skill_dispatch/_mocks tests/skill_dispatch tests/skill_dispatch/integration tests/skill_dispatch/perf; do
   touch "$d/__init__.py"
 done
 ```
 
 - [ ] **Step 3: Verify**
 
-Run: `find app/l1_05 tests/l1_05 -name "__init__.py" | wc -l`
+Run: `find app/skill_dispatch tests/skill_dispatch -name "__init__.py" | wc -l`
 Expected: `10`
 
 `git diff --stat app/__init__.py tests/__init__.py`
@@ -220,13 +220,13 @@ Expected: （空 · 根 __init__.py 未改）
 - [ ] **Step 4: Commit（合并 00.1 + 00.3）**
 
 ```bash
-git add pyproject.toml app/l1_05 tests/l1_05
-git commit -m "feat(harnessFlow-code): γ-WP00.1+00.3 pyproject amend (watchdog/freezegun/sdk/pm03/pm09/coverage) + app/l1_05 + tests/l1_05 骨架（10 __init__.py）"
+git add pyproject.toml app/skill_dispatch tests/skill_dispatch
+git commit -m "feat(harnessFlow-code): γ-WP00.1+00.3 pyproject amend (watchdog/freezegun/sdk/pm03/pm09/coverage) + app/skill_dispatch + tests/skill_dispatch 骨架（10 __init__.py）"
 ```
 
 ### Task 00.4 — IC-09 event bus mock
 
-- [ ] **Step 1: Write `app/l1_05/_mocks/ic09_mock.py`**
+- [ ] **Step 1: Write `app/skill_dispatch/_mocks/ic09_mock.py`**
 
 ```python
 """IC-09 append_event mock — 波4 替换为 Dev-α L1-09 L2-05 真实事件总线.
@@ -328,7 +328,7 @@ def get_default_bus() -> IC09EventBusMock:
 Run:
 ```bash
 python -c "
-from app.l1_05._mocks.ic09_mock import IC09EventBusMock
+from app.skill_dispatch._mocks.ic09_mock import IC09EventBusMock
 b = IC09EventBusMock()
 r1 = b.append_event(project_id='p1', l1='L1-05', event_type='test', payload={'x':1})
 r2 = b.append_event(project_id='p1', l1='L1-05', event_type='test', payload={'x':2})
@@ -342,13 +342,13 @@ Expected: `IC09 mock OK`
 - [ ] **Step 3: Commit**
 
 ```bash
-git add app/l1_05/_mocks/ic09_mock.py
+git add app/skill_dispatch/_mocks/ic09_mock.py
 git commit -m "feat(harnessFlow-code): γ-WP00.4 IC-09 event bus mock（hash chain + PM-14 校验）"
 ```
 
 ### Task 00.5 — IC-06 KB mock + Lock mock + DoD gate mock
 
-- [ ] **Step 1: Write `app/l1_05/_mocks/ic06_mock.py`**
+- [ ] **Step 1: Write `app/skill_dispatch/_mocks/ic06_mock.py`**
 
 ```python
 """IC-06 kb_read mock — 波4 替换为 Dev-β L1-06 L2-02 真实 KB.
@@ -384,7 +384,7 @@ class IC06KBMock:
         return [r for r in self._recipes if r.capability == capability]
 ```
 
-- [ ] **Step 2: Write `app/l1_05/_mocks/lock_mock.py`**
+- [ ] **Step 2: Write `app/skill_dispatch/_mocks/lock_mock.py`**
 
 ```python
 """IC-L2-07 account lock mock — 波4 替换为 Dev-α L1-09 真实锁.
@@ -424,7 +424,7 @@ class AccountLockMock:
             lock.release()
 ```
 
-- [ ] **Step 3: Write `app/l1_05/_mocks/dod_gate_mock.py`**
+- [ ] **Step 3: Write `app/skill_dispatch/_mocks/dod_gate_mock.py`**
 
 ```python
 """L1-04 DoD gate mock — 波5 替换为主-1 L1-04 L2-02 真实 DoD evaluator.
@@ -475,13 +475,13 @@ class DoDGateMock:
 - [ ] **Step 4: Commit**
 
 ```bash
-git add app/l1_05/_mocks/ic06_mock.py app/l1_05/_mocks/lock_mock.py app/l1_05/_mocks/dod_gate_mock.py
+git add app/skill_dispatch/_mocks/ic06_mock.py app/skill_dispatch/_mocks/lock_mock.py app/skill_dispatch/_mocks/dod_gate_mock.py
 git commit -m "feat(harnessFlow-code): γ-WP00.5 IC-06 KB / L2-07 lock / L1-04 DoD gate mock（打占位）"
 ```
 
-### Task 00.6 — tests/l1_05 conftest + 初始 fixture yaml
+### Task 00.6 — tests/skill_dispatch conftest + 初始 fixture yaml
 
-- [ ] **Step 1: Write `tests/l1_05/conftest.py`**
+- [ ] **Step 1: Write `tests/skill_dispatch/conftest.py`**
 
 ```python
 """L1-05 测试局部 fixtures · 导出 mock 单例."""
@@ -492,10 +492,10 @@ from collections.abc import Iterator
 
 import pytest
 
-from app.l1_05._mocks.dod_gate_mock import DoDGateMock
-from app.l1_05._mocks.ic06_mock import IC06KBMock
-from app.l1_05._mocks.ic09_mock import IC09EventBusMock
-from app.l1_05._mocks.lock_mock import AccountLockMock
+from app.skill_dispatch._mocks.dod_gate_mock import DoDGateMock
+from app.skill_dispatch._mocks.ic06_mock import IC06KBMock
+from app.skill_dispatch._mocks.ic09_mock import IC09EventBusMock
+from app.skill_dispatch._mocks.lock_mock import AccountLockMock
 
 
 @pytest.fixture
@@ -525,7 +525,7 @@ def fixtures_dir() -> pathlib.Path:
     return pathlib.Path(__file__).parent / "fixtures"
 ```
 
-- [ ] **Step 2: Write `tests/l1_05/fixtures/registry_valid.yaml`**
+- [ ] **Step 2: Write `tests/skill_dispatch/fixtures/registry_valid.yaml`**
 
 ```yaml
 # L2-01 Registry 启动加载样例 · 符合 registry.yaml 契约.
@@ -577,14 +577,14 @@ tools:
 
 - [ ] **Step 3: Smoke test — `pytest --collect-only` should not error**
 
-Run: `python -m pytest tests/l1_05/ --collect-only 2>&1 | tail -5`
+Run: `python -m pytest tests/skill_dispatch/ --collect-only 2>&1 | tail -5`
 Expected: `0 tests collected` 或类似（不应有 collection error）
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/l1_05/conftest.py tests/l1_05/fixtures/registry_valid.yaml
-git commit -m "feat(harnessFlow-code): γ-WP00.6 tests/l1_05 conftest + 样例 registry.yaml fixture"
+git add tests/skill_dispatch/conftest.py tests/skill_dispatch/fixtures/registry_valid.yaml
+git commit -m "feat(harnessFlow-code): γ-WP00.6 tests/skill_dispatch conftest + 样例 registry.yaml fixture"
 ```
 
 ### Task 00.7 — 安装依赖 + 骨架烟测
@@ -605,12 +605,12 @@ WP-γ-04 启动时：`pip install -e ".[dev,sdk]"`。WP-γ-00~03 用 mock · 不
 
 - [ ] **Step 3: 跑 collect-only 验证 pytest 可启动**
 
-Run: `pytest tests/l1_05/ --collect-only`
+Run: `pytest tests/skill_dispatch/ --collect-only`
 Expected: `0 tests collected`（无 error）
 
 - [ ] **Step 4: Ruff 初扫（不 fail build）**
 
-Run: `ruff check app/l1_05 tests/l1_05 || true`
+Run: `ruff check app/skill_dispatch tests/skill_dispatch || true`
 Expected: 只对 mock 文件有少量告警（可接受）
 
 - [ ] **Step 5: Commit**
@@ -626,10 +626,10 @@ git commit -m "feat(harnessFlow-code): γ-WP00.7 venv + 依赖安装 + pytest �
 
 检查：
 - [ ] `pyproject.toml` amend 生效（`grep` 命中 ≥ 6）
-- [ ] `tests/l1_05/conftest.py` 可 import 4 个 mock
-- [ ] `app/l1_05/_mocks/*.py` 4 个 mock 全就位 · 烟测通过
-- [ ] `tests/l1_05/fixtures/registry_valid.yaml` 可读
-- [ ] `pytest tests/l1_05/ --collect-only` 无 error
+- [ ] `tests/skill_dispatch/conftest.py` 可 import 4 个 mock
+- [ ] `app/skill_dispatch/_mocks/*.py` 4 个 mock 全就位 · 烟测通过
+- [ ] `tests/skill_dispatch/fixtures/registry_valid.yaml` 可读
+- [ ] `pytest tests/skill_dispatch/ --collect-only` 无 error
 - [ ] 4-5 个 commit 全部 prefix `feat(harnessFlow-code): γ-WP00.* ...`（v1.1 合并后比 v1.0 少了 00.1/00.2 独立 commit）
 
 - [ ] **Step 2: 写 standup**
@@ -646,7 +646,7 @@ Create `docs/4-exe-plan/standup-logs/Dev-γ-2026-04-23.md`:
 ### 完成
 - Python 3.11 骨架（pyproject + pytest + conftest）
 - 4 个跨 L1 mock（IC-09/IC-06/L2-07 lock/DoD gate）
-- tests/l1_05/ 包 + conftest + fixture yaml
+- tests/skill_dispatch/ 包 + conftest + fixture yaml
 - `pytest --collect-only` 0 errors
 
 ### Mock 替换清单
@@ -676,19 +676,19 @@ git commit -m "docs(harnessFlow): Dev-γ Day 1 standup — WP-γ-00 bootstrap �
 ## §3 WP-γ-01 · L2-01 Skill 注册表（~40 TC · ~980 行）
 
 **Files:**
-- Create: `app/l1_05/registry/schemas.py` (~200 行)
-- Create: `app/l1_05/registry/loader.py` (~250 行 · 5 阶段)
-- Create: `app/l1_05/registry/query_api.py` (~200 行)
-- Create: `app/l1_05/registry/ledger.py` (~180 行)
-- Create: `app/l1_05/registry/fs_watcher.py` (~150 行)
-- Test: `tests/l1_05/test_l2_01_registry.py`
-- Test fixtures: `tests/l1_05/fixtures/registry_missing_schema.yaml`, `ledger_sample.jsonl`
+- Create: `app/skill_dispatch/registry/schemas.py` (~200 行)
+- Create: `app/skill_dispatch/registry/loader.py` (~250 行 · 5 阶段)
+- Create: `app/skill_dispatch/registry/query_api.py` (~200 行)
+- Create: `app/skill_dispatch/registry/ledger.py` (~180 行)
+- Create: `app/skill_dispatch/registry/fs_watcher.py` (~150 行)
+- Test: `tests/skill_dispatch/test_l2_01_registry.py`
+- Test fixtures: `tests/skill_dispatch/fixtures/registry_missing_schema.yaml`, `ledger_sample.jsonl`
 
 **TDD 执行模型：每 task 一个测试类 → 先 red → 再实现 → 再 refactor → commit。**
 
 ### Task 01.1 — Registry schemas（Pydantic v2）
 
-- [ ] **Step 1: Write `tests/l1_05/test_l2_01_registry.py` · TestSchemas 类（5 red tests）**
+- [ ] **Step 1: Write `tests/skill_dispatch/test_l2_01_registry.py` · TestSchemas 类（5 red tests）**
 
 ```python
 """L2-01 Skill 注册表 · 共 ~40 TC.
@@ -702,12 +702,12 @@ import pytest
 
 class TestRegistrySchemas:
     def test_skill_spec_requires_skill_id(self):
-        from app.l1_05.registry.schemas import SkillSpec
+        from app.skill_dispatch.registry.schemas import SkillSpec
         with pytest.raises(ValueError):
             SkillSpec(skill_id="", availability=True, cost_usd=0.0, timeout_s=30)
 
     def test_capability_point_rejects_single_candidate(self):
-        from app.l1_05.registry.schemas import CapabilityPoint, SkillSpec
+        from app.skill_dispatch.registry.schemas import CapabilityPoint, SkillSpec
         with pytest.raises(ValueError, match="at_least_2_candidates"):
             CapabilityPoint(
                 name="x", description="d", schema_pointer="s.json",
@@ -715,7 +715,7 @@ class TestRegistrySchemas:
             )
 
     def test_capability_point_rejects_missing_builtin_fallback(self):
-        from app.l1_05.registry.schemas import CapabilityPoint, SkillSpec
+        from app.skill_dispatch.registry.schemas import CapabilityPoint, SkillSpec
         with pytest.raises(ValueError, match="builtin_fallback_required"):
             CapabilityPoint(
                 name="x", description="d", schema_pointer="s.json",
@@ -726,12 +726,12 @@ class TestRegistrySchemas:
             )
 
     def test_subagent_entry_role_enum(self):
-        from app.l1_05.registry.schemas import SubagentEntry
+        from app.skill_dispatch.registry.schemas import SubagentEntry
         e = SubagentEntry(role="verifier", tool_whitelist=["Read"], timeout_s=1200, schema_pointer="v.json")
         assert e.role == "verifier"
 
     def test_ledger_entry_rejects_negative_counts(self):
-        from app.l1_05.registry.schemas import LedgerEntry
+        from app.skill_dispatch.registry.schemas import LedgerEntry
         with pytest.raises(ValueError):
             LedgerEntry(capability="x", skill_id="y", success_count=-1, failure_count=0,
                         last_attempt_ts=0, failure_reason=None)
@@ -739,10 +739,10 @@ class TestRegistrySchemas:
 
 - [ ] **Step 2: Run red — expect ImportError**
 
-Run: `pytest tests/l1_05/test_l2_01_registry.py::TestRegistrySchemas -v`
-Expected: 5 ERRORs on `from app.l1_05.registry.schemas import ...`
+Run: `pytest tests/skill_dispatch/test_l2_01_registry.py::TestRegistrySchemas -v`
+Expected: 5 ERRORs on `from app.skill_dispatch.registry.schemas import ...`
 
-- [ ] **Step 3: Implement `app/l1_05/registry/schemas.py`**
+- [ ] **Step 3: Implement `app/skill_dispatch/registry/schemas.py`**
 
 ```python
 """L2-01 Pydantic v2 schemas · 注册表数据结构."""
@@ -814,13 +814,13 @@ class RegistrySnapshot(BaseModel):
 
 - [ ] **Step 4: Run green**
 
-Run: `pytest tests/l1_05/test_l2_01_registry.py::TestRegistrySchemas -v`
+Run: `pytest tests/skill_dispatch/test_l2_01_registry.py::TestRegistrySchemas -v`
 Expected: 5 PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/l1_05/registry/schemas.py tests/l1_05/test_l2_01_registry.py
+git add app/skill_dispatch/registry/schemas.py tests/skill_dispatch/test_l2_01_registry.py
 git commit -m "feat(harnessFlow-code): γ-WP01.1 L2-01 Registry schemas (Pydantic v2 · PM-09 ≥2候选+兜底)"
 ```
 
@@ -831,13 +831,13 @@ git commit -m "feat(harnessFlow-code): γ-WP01.1 L2-01 Registry schemas (Pydanti
 ```python
 class TestLoaderStages1to3:
     def test_stage1_load_registry_yaml_missing_file_raises_E_REG_FILE_NOT_FOUND(self, tmp_project):
-        from app.l1_05.registry.loader import RegistryLoader, RegistryLoadError
+        from app.skill_dispatch.registry.loader import RegistryLoader, RegistryLoadError
         loader = RegistryLoader(project_root=tmp_project)
         with pytest.raises(RegistryLoadError, match="E_REG_FILE_NOT_FOUND"):
             loader.load()
 
     def test_stage2_parses_capability_points_from_fixtures(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
         import shutil
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
@@ -847,7 +847,7 @@ class TestLoaderStages1to3:
         assert "review_code" in snap.capability_points
 
     def test_stage3_reject_capability_without_schema_pointer(self, tmp_path):
-        from app.l1_05.registry.loader import RegistryLoader, RegistryLoadError
+        from app.skill_dispatch.registry.loader import RegistryLoader, RegistryLoadError
         cache = tmp_path / "skills" / "registry-cache"
         cache.mkdir(parents=True)
         (cache / "registry.yaml").write_text(
@@ -859,7 +859,7 @@ class TestLoaderStages1to3:
 
     def test_stage3_inject_builtin_fallback_when_missing(self, tmp_project, fixtures_dir):
         """INFO-level: 缺兜底时自动注入 · 不 crash（仅启动期 · E_REG_SINGLE_CANDIDATE 处理路径）."""
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
         import shutil
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
@@ -871,7 +871,7 @@ class TestLoaderStages1to3:
     def test_load_startup_within_500ms_slo(self, tmp_project, fixtures_dir):
         """SLO: 启动加载 P99 ≤ 500ms."""
         import shutil, time
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         loader = RegistryLoader(project_root=tmp_project)
@@ -881,7 +881,7 @@ class TestLoaderStages1to3:
         assert elapsed_ms < 500, f"startup load exceeded 500ms SLO: {elapsed_ms:.1f}ms"
 
     def test_stage2_invalid_yaml_raises(self, tmp_path):
-        from app.l1_05.registry.loader import RegistryLoader, RegistryLoadError
+        from app.skill_dispatch.registry.loader import RegistryLoader, RegistryLoadError
         cache = tmp_path / "skills" / "registry-cache"
         cache.mkdir(parents=True)
         (cache / "registry.yaml").write_text("version: 1.0\n  bad indent: :\n")
@@ -892,10 +892,10 @@ class TestLoaderStages1to3:
 
 - [ ] **Step 2: Red**
 
-Run: `pytest tests/l1_05/test_l2_01_registry.py::TestLoaderStages1to3 -v`
+Run: `pytest tests/skill_dispatch/test_l2_01_registry.py::TestLoaderStages1to3 -v`
 Expected: 6 ERROR (ImportError)
 
-- [ ] **Step 3: Implement `app/l1_05/registry/loader.py`**
+- [ ] **Step 3: Implement `app/skill_dispatch/registry/loader.py`**
 
 ```python
 """L2-01 启动 5 阶段加载器.
@@ -994,19 +994,19 @@ class RegistryLoader:
 
 - [ ] **Step 4: Green**
 
-Run: `pytest tests/l1_05/test_l2_01_registry.py::TestLoaderStages1to3 -v`
+Run: `pytest tests/skill_dispatch/test_l2_01_registry.py::TestLoaderStages1to3 -v`
 Expected: 6 PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/l1_05/registry/loader.py tests/l1_05/test_l2_01_registry.py
+git add app/skill_dispatch/registry/loader.py tests/skill_dispatch/test_l2_01_registry.py
 git commit -m "feat(harnessFlow-code): γ-WP01.2 Loader Stage 1-3 (yaml → parse → validate) + SLO 500ms TC"
 ```
 
 ### Task 01.3 — Loader Stage 4-5（ledger + snapshot）+ query_api
 
-- [ ] **Step 1: Add fixture `tests/l1_05/fixtures/ledger_sample.jsonl`**
+- [ ] **Step 1: Add fixture `tests/skill_dispatch/fixtures/ledger_sample.jsonl`**
 
 ```jsonl
 {"capability":"write_test","skill_id":"superpowers:tdd-workflow","success_count":12,"failure_count":1,"last_attempt_ts":1714000000,"failure_reason":null}
@@ -1020,7 +1020,7 @@ git commit -m "feat(harnessFlow-code): γ-WP01.2 Loader Stage 1-3 (yaml → pars
 class TestLedgerAndQuery:
     def test_stage4_loads_ledger_entries(self, tmp_project, fixtures_dir):
         import shutil
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         shutil.copy(fixtures_dir / "ledger_sample.jsonl", cache / "ledger.jsonl")
@@ -1030,7 +1030,7 @@ class TestLedgerAndQuery:
 
     def test_stage5_writes_snapshot_file(self, tmp_project, fixtures_dir):
         import shutil
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         loader = RegistryLoader(project_root=tmp_project)
@@ -1040,8 +1040,8 @@ class TestLedgerAndQuery:
 
     def test_query_candidates_returns_sorted_by_builtin_last(self, tmp_project, fixtures_dir):
         import shutil
-        from app.l1_05.registry.query_api import RegistryQueryAPI
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -1052,8 +1052,8 @@ class TestLedgerAndQuery:
 
     def test_query_candidates_unknown_capability_raises(self, tmp_project, fixtures_dir):
         import shutil
-        from app.l1_05.registry.query_api import RegistryQueryAPI, CapabilityNotFoundError
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI, CapabilityNotFoundError
+        from app.skill_dispatch.registry.loader import RegistryLoader
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -1063,8 +1063,8 @@ class TestLedgerAndQuery:
 
     def test_query_subagent_returns_entry(self, tmp_project, fixtures_dir):
         import shutil
-        from app.l1_05.registry.query_api import RegistryQueryAPI
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -1074,8 +1074,8 @@ class TestLedgerAndQuery:
 
     def test_query_tool_atomic(self, tmp_project, fixtures_dir):
         import shutil
-        from app.l1_05.registry.query_api import RegistryQueryAPI
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -1084,8 +1084,8 @@ class TestLedgerAndQuery:
 
     def test_query_schema_pointer(self, tmp_project, fixtures_dir):
         import shutil
-        from app.l1_05.registry.query_api import RegistryQueryAPI
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -1095,7 +1095,7 @@ class TestLedgerAndQuery:
 
 - [ ] **Step 3: Red**
 
-Run: `pytest tests/l1_05/test_l2_01_registry.py::TestLedgerAndQuery -v`
+Run: `pytest tests/skill_dispatch/test_l2_01_registry.py::TestLedgerAndQuery -v`
 Expected: 7 errors
 
 - [ ] **Step 4: Extend `schemas.py` — add ledger_index field to RegistrySnapshot**
@@ -1150,7 +1150,7 @@ Append to RegistryLoader:
         out.write_text(_yaml.safe_dump(body), encoding="utf-8")
 ```
 
-- [ ] **Step 6: Implement `app/l1_05/registry/query_api.py`**
+- [ ] **Step 6: Implement `app/skill_dispatch/registry/query_api.py`**
 
 ```python
 """L2-01 读接口 · 单实例绑定 snapshot · 双 buffer 切换时替换 self.snapshot."""
@@ -1209,13 +1209,13 @@ class RegistryQueryAPI:
 
 - [ ] **Step 7: Green**
 
-Run: `pytest tests/l1_05/test_l2_01_registry.py::TestLedgerAndQuery -v`
+Run: `pytest tests/skill_dispatch/test_l2_01_registry.py::TestLedgerAndQuery -v`
 Expected: 7 PASS
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add app/l1_05/registry/ tests/l1_05/
+git add app/skill_dispatch/registry/ tests/skill_dispatch/
 git commit -m "feat(harnessFlow-code): γ-WP01.3 Loader Stage 4-5 (ledger + snapshot) + query_api 4 接口"
 ```
 
@@ -1227,7 +1227,7 @@ git commit -m "feat(harnessFlow-code): γ-WP01.3 Loader Stage 4-5 (ledger + snap
 class TestLedgerWrite:
     def test_ledger_writer_persists_increment(self, tmp_project, fixtures_dir, lock_mock):
         import shutil
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
@@ -1238,7 +1238,7 @@ class TestLedgerWrite:
 
     def test_concurrent_writes_serialized_via_lock(self, tmp_project, fixtures_dir, lock_mock):
         import shutil, threading
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
@@ -1261,7 +1261,7 @@ class TestLedgerWrite:
     def test_write_only_from_l2_02(self, tmp_project, fixtures_dir, lock_mock):
         """IC-L2-07 约束：只有 L2-02 可写（标 caller='L2-02' · 其他拒）."""
         import shutil
-        from app.l1_05.registry.ledger import LedgerWriter, LedgerPermissionError
+        from app.skill_dispatch.registry.ledger import LedgerWriter, LedgerPermissionError
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
@@ -1269,14 +1269,14 @@ class TestLedgerWrite:
             writer.record("p1", "c", "s", success=True, caller="L2-03")
 
     def test_record_requires_project_id_pm14(self, tmp_project, lock_mock):
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
         with pytest.raises(ValueError, match="project_id"):
             writer.record("", "c", "s", success=True)
 
     def test_write_slo_under_50ms_p99(self, tmp_project, fixtures_dir, lock_mock):
         import shutil, time
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
@@ -1291,7 +1291,7 @@ class TestLedgerWrite:
 
     def test_failure_records_failure_reason(self, tmp_project, fixtures_dir, lock_mock):
         import shutil, json
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
@@ -1303,7 +1303,7 @@ class TestLedgerWrite:
 
 - [ ] **Step 2: Red** — expect 6 errors
 
-- [ ] **Step 3: Implement `app/l1_05/registry/ledger.py`**
+- [ ] **Step 3: Implement `app/skill_dispatch/registry/ledger.py`**
 
 ```python
 """L2-01 账本回写 · IC-L2-07 · 只允许 caller='L2-02'（L2-02 意图选择器）."""
@@ -1361,8 +1361,8 @@ class LedgerWriter:
 - [ ] **Step 4: Green** + **Commit**
 
 ```bash
-pytest tests/l1_05/test_l2_01_registry.py::TestLedgerWrite -v
-git add app/l1_05/registry/ledger.py tests/l1_05/
+pytest tests/skill_dispatch/test_l2_01_registry.py::TestLedgerWrite -v
+git add app/skill_dispatch/registry/ledger.py tests/skill_dispatch/
 git commit -m "feat(harnessFlow-code): γ-WP01.4 Ledger 写入 + IC-L2-07 只许 L2-02 + 锁保护 + 50ms SLO"
 ```
 
@@ -1370,7 +1370,7 @@ git commit -m "feat(harnessFlow-code): γ-WP01.4 Ledger 写入 + IC-L2-07 只许
 
 - [ ] **Step 1: Append TestFsWatcher (5 red tests)** — 测 watchdog 触发 / throttle / reload 成功 / 失败降级 / 原子 swap
 
-- [ ] **Step 2: Implement `app/l1_05/registry/fs_watcher.py`** — `watchdog.observers.Observer` + `FileSystemEventHandler` · throttle 10s · 调 `RegistryLoader.load()` + `RegistryQueryAPI.swap()` 原子替换
+- [ ] **Step 2: Implement `app/skill_dispatch/registry/fs_watcher.py`** — `watchdog.observers.Observer` + `FileSystemEventHandler` · throttle 10s · 调 `RegistryLoader.load()` + `RegistryQueryAPI.swap()` 原子替换
 
 - [ ] **Step 3: Green + Commit `γ-WP01.5 fs_watcher + 热更新 ≤ 500ms SLO`**
 
@@ -1378,12 +1378,12 @@ git commit -m "feat(harnessFlow-code): γ-WP01.4 Ledger 写入 + IC-L2-07 只许
 
 - [ ] **Step 1: Run 全量 L2-01 测试 + coverage**
 
-Run: `pytest tests/l1_05/test_l2_01_registry.py -v --cov=app.l1_05.registry --cov-report=term-missing`
+Run: `pytest tests/skill_dispatch/test_l2_01_registry.py -v --cov=app.skill_dispatch.registry --cov-report=term-missing`
 Expected: 所有 test 全绿 · coverage ≥ 80%
 
 - [ ] **Step 2: 错误码覆盖审查** — grep 5 个 L2-01 错误码 · 每个至少有 1 个测试命中
 
-Run: `for c in E_REG_MISSING_CAPABILITY E_REG_SINGLE_CANDIDATE E_REG_NO_SCHEMA_POINTER E_REG_RELOAD_CONFLICT E_REG_FILE_NOT_FOUND; do echo "=== $c ==="; grep -r "$c" tests/l1_05/test_l2_01_registry.py; done`
+Run: `for c in E_REG_MISSING_CAPABILITY E_REG_SINGLE_CANDIDATE E_REG_NO_SCHEMA_POINTER E_REG_RELOAD_CONFLICT E_REG_FILE_NOT_FOUND; do echo "=== $c ==="; grep -r "$c" tests/skill_dispatch/test_l2_01_registry.py; done`
 
 - [ ] **Step 3: Commit WP-γ-01 close**
 
@@ -1397,12 +1397,12 @@ git commit -m "feat(harnessFlow-code): γ-WP01 close — L2-01 Skill 注册表�
 ## §4 WP-γ-02 · L2-02 意图选择器（~40 TC · ~800 行）
 
 **Files:**
-- Create: `app/l1_05/intent_selector/schemas.py` (~150 行)
-- Create: `app/l1_05/intent_selector/scorer.py` (~250 行)
-- Create: `app/l1_05/intent_selector/hard_edge_scan.py` (~120 行)
-- Create: `app/l1_05/intent_selector/fallback_advancer.py` (~180 行)
-- Create: `app/l1_05/intent_selector/kb_boost.py` (~100 行)
-- Test: `tests/l1_05/test_l2_02_intent.py`
+- Create: `app/skill_dispatch/intent_selector/schemas.py` (~150 行)
+- Create: `app/skill_dispatch/intent_selector/scorer.py` (~250 行)
+- Create: `app/skill_dispatch/intent_selector/hard_edge_scan.py` (~120 行)
+- Create: `app/skill_dispatch/intent_selector/fallback_advancer.py` (~180 行)
+- Create: `app/skill_dispatch/intent_selector/kb_boost.py` (~100 行)
+- Test: `tests/skill_dispatch/test_l2_02_intent.py`
 
 ### Task 02.1 — Intent schemas + Chain VO
 
@@ -1419,7 +1419,7 @@ git commit -m "feat(harnessFlow-code): γ-WP01 close — L2-01 Skill 注册表�
 ```python
 class TestHardEdgeScan:
     def test_scan_crashes_when_hardcoded_skill_found(self, tmp_path):
-        from app.l1_05.intent_selector.hard_edge_scan import HardEdgeScan, HardcodedSkillViolation
+        from app.skill_dispatch.intent_selector.hard_edge_scan import HardEdgeScan, HardcodedSkillViolation
         bad = tmp_path / "offender.py"
         bad.write_text('SKILL = "superpowers:tdd-workflow"\n')
         scanner = HardEdgeScan(roots=[tmp_path])
@@ -1428,18 +1428,18 @@ class TestHardEdgeScan:
         assert "offender.py" in str(ei.value)
 
     def test_scan_passes_clean_tree(self, tmp_path):
-        from app.l1_05.intent_selector.hard_edge_scan import HardEdgeScan
+        from app.skill_dispatch.intent_selector.hard_edge_scan import HardEdgeScan
         (tmp_path / "good.py").write_text('CAP = "write_test"\n')
         HardEdgeScan(roots=[tmp_path]).run()  # 不抛
 
     def test_scan_ignores_tests_dir(self, tmp_path):
-        from app.l1_05.intent_selector.hard_edge_scan import HardEdgeScan
+        from app.skill_dispatch.intent_selector.hard_edge_scan import HardEdgeScan
         (tmp_path / "tests").mkdir()
         (tmp_path / "tests" / "t.py").write_text('X = "superpowers:foo"\n')
         HardEdgeScan(roots=[tmp_path], ignore=["tests"]).run()
 
     def test_scan_catches_gstack_and_ecc_patterns(self, tmp_path):
-        from app.l1_05.intent_selector.hard_edge_scan import HardEdgeScan, HardcodedSkillViolation
+        from app.skill_dispatch.intent_selector.hard_edge_scan import HardEdgeScan, HardcodedSkillViolation
         for pat in ("gstack:x", "ecc:y", "superpowers:z"):
             bad = tmp_path / f"b_{pat.split(':')[0]}.py"
             bad.write_text(f'X = "{pat}"\n')
@@ -1447,7 +1447,7 @@ class TestHardEdgeScan:
             HardEdgeScan(roots=[tmp_path]).run()
 
     def test_scan_reports_all_violations_not_first(self, tmp_path):
-        from app.l1_05.intent_selector.hard_edge_scan import HardEdgeScan, HardcodedSkillViolation
+        from app.skill_dispatch.intent_selector.hard_edge_scan import HardEdgeScan, HardcodedSkillViolation
         for i in range(3):
             (tmp_path / f"o{i}.py").write_text(f'S = "superpowers:x{i}"\n')
         with pytest.raises(HardcodedSkillViolation) as ei:
@@ -1525,28 +1525,28 @@ class HardEdgeScan:
 ```python
 class TestKBBoost:
     def test_kb_boost_added_when_recipe_matches(self, kb_mock):
-        from app.l1_05.intent_selector.kb_boost import KBBooster
-        from app.l1_05._mocks.ic06_mock import KBRecipe
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
+        from app.skill_dispatch._mocks.ic06_mock import KBRecipe
         kb_mock._recipes = [KBRecipe(capability="c", skill_id="s", success_rate=0.9, last_seen_ts=0)]
         booster = KBBooster(kb=kb_mock, timeout_ms=150)
         hits = booster.fetch("p1", "c")
         assert hits["s"] > 0
 
     def test_kb_timeout_degrades_gracefully(self):
-        from app.l1_05.intent_selector.kb_boost import KBBooster
-        from app.l1_05._mocks.ic06_mock import IC06KBMock
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
+        from app.skill_dispatch._mocks.ic06_mock import IC06KBMock
         slow = IC06KBMock(read_latency_ms=500)
         booster = KBBooster(kb=slow, timeout_ms=150)
         hits = booster.fetch("p1", "c")
         assert hits == {}   # 超时降级 · 返空 · 不 raise
 
     def test_kb_empty_returns_empty(self, kb_mock):
-        from app.l1_05.intent_selector.kb_boost import KBBooster
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
         booster = KBBooster(kb=kb_mock, timeout_ms=150)
         assert booster.fetch("p1", "c") == {}
 
     def test_kb_requires_project_id(self, kb_mock):
-        from app.l1_05.intent_selector.kb_boost import KBBooster
+        from app.skill_dispatch.intent_selector.kb_boost import KBBooster
         booster = KBBooster(kb=kb_mock, timeout_ms=150)
         with pytest.raises(ValueError):
             booster.fetch("", "c")
@@ -1592,7 +1592,7 @@ class KBBooster:
 
 - [ ] **Step 1: 集成调用点 — 提供 `select(request: IntentRequest) -> Chain` 高阶入口**
 
-新建 `app/l1_05/intent_selector/__init__.py` 导出 `IntentSelector.select()`（编排 scorer + kb_boost + fallback_advancer）
+新建 `app/skill_dispatch/intent_selector/__init__.py` 导出 `IntentSelector.select()`（编排 scorer + kb_boost + fallback_advancer）
 
 - [ ] **Step 2: pytest + coverage ≥ 80% · 5 错误码全覆盖（BOUNDARY_VIOLATION / NO_AVAILABLE / KB_TIMEOUT / EXPLANATION_TRUNCATED / CHAIN_EXHAUSTED）**
 
@@ -1607,13 +1607,13 @@ git commit -m "feat(harnessFlow-code): γ-WP02 close — L2-02 意图选择器�
 ## §5 WP-γ-03 · L2-03 IC-04 invoke_skill（~39 TC · ~950 行）
 
 **Files:**
-- Create: `app/l1_05/invoker/schemas.py` (~180 行) — **必须严格对齐 ic-contracts.md §3.4.2/§3.4.3**
-- Create: `app/l1_05/invoker/context_injector.py` (~150 行)
-- Create: `app/l1_05/invoker/timeout_manager.py` (~120 行)
-- Create: `app/l1_05/invoker/retry_policy.py` (~120 行)
-- Create: `app/l1_05/invoker/audit.py` (~100 行)
-- Create: `app/l1_05/invoker/executor.py` (~280 行) — IC-04 主入口
-- Test: `tests/l1_05/test_l2_03_invoker.py`
+- Create: `app/skill_dispatch/invoker/schemas.py` (~180 行) — **必须严格对齐 ic-contracts.md §3.4.2/§3.4.3**
+- Create: `app/skill_dispatch/invoker/context_injector.py` (~150 行)
+- Create: `app/skill_dispatch/invoker/timeout_manager.py` (~120 行)
+- Create: `app/skill_dispatch/invoker/retry_policy.py` (~120 行)
+- Create: `app/skill_dispatch/invoker/audit.py` (~100 行)
+- Create: `app/skill_dispatch/invoker/executor.py` (~280 行) — IC-04 主入口
+- Test: `tests/skill_dispatch/test_l2_03_invoker.py`
 
 **契约红线：** IC-04 InvocationRequest/Response 的字段 **必须**是 ic-contracts §3.4.2/.3 的超集（多 attempt/params_hash），**不能**是子集。若发现矛盾 → Dev-γ-exe-plan §6 情形 D 自修正。
 
@@ -1624,7 +1624,7 @@ git commit -m "feat(harnessFlow-code): γ-WP02 close — L2-02 意图选择器�
 ```python
 class TestIC04Schemas:
     def test_request_required_fields(self):
-        from app.l1_05.invoker.schemas import InvocationRequest
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
         req = InvocationRequest(
             invocation_id="inv1", project_id="p1", capability="write_test",
             params={"x": 1}, caller_l1="L1-04",
@@ -1634,7 +1634,7 @@ class TestIC04Schemas:
         assert req.allow_fallback is True
 
     def test_request_rejects_missing_project_id(self):
-        from app.l1_05.invoker.schemas import InvocationRequest
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
         with pytest.raises(ValueError):
             InvocationRequest(
                 invocation_id="i", project_id="", capability="c",
@@ -1642,7 +1642,7 @@ class TestIC04Schemas:
             )
 
     def test_response_success_has_result_not_error(self):
-        from app.l1_05.invoker.schemas import InvocationResponse
+        from app.skill_dispatch.invoker.schemas import InvocationResponse
         r = InvocationResponse(
             invocation_id="i", success=True, skill_id="s", duration_ms=100,
             fallback_used=False, result={"ok": True},
@@ -1651,7 +1651,7 @@ class TestIC04Schemas:
         assert r.error is None
 
     def test_response_failure_has_error_not_result(self):
-        from app.l1_05.invoker.schemas import InvocationResponse
+        from app.skill_dispatch.invoker.schemas import InvocationResponse
         r = InvocationResponse(
             invocation_id="i", success=False, skill_id="s", duration_ms=100,
             fallback_used=True, error={"code": "E_SKILL_TIMEOUT"},
@@ -1662,7 +1662,7 @@ class TestIC04Schemas:
 
     def test_invocation_signature_is_superset_of_response(self):
         """契约红线：InvocationSignature 必须 ⊇ InvocationResponse 字段 + 多 params_hash + attempt."""
-        from app.l1_05.invoker.schemas import InvocationResponse, InvocationSignature
+        from app.skill_dispatch.invoker.schemas import InvocationResponse, InvocationSignature
         rsp_fields = set(InvocationResponse.model_fields.keys())
         sig_fields = set(InvocationSignature.model_fields.keys())
         extra = {"params_hash", "attempt", "started_at_ts_ns"}
@@ -1673,7 +1673,7 @@ class TestIC04Schemas:
 
     def test_context_must_carry_project_id_mirror(self):
         """防御字段窃取：context.project_id 必须与顶层 project_id 一致."""
-        from app.l1_05.invoker.schemas import InvocationRequest
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
         with pytest.raises(ValueError, match="project_id.*mismatch"):
             InvocationRequest(
                 invocation_id="i", project_id="p1", capability="c", params={},
@@ -1681,7 +1681,7 @@ class TestIC04Schemas:
             )
 
     def test_default_allow_fallback_true(self):
-        from app.l1_05.invoker.schemas import InvocationRequest
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
         req = InvocationRequest(
             invocation_id="i", project_id="p1", capability="c", params={},
             caller_l1="L1-04", context={"project_id": "p1"},
@@ -1690,7 +1690,7 @@ class TestIC04Schemas:
 
     def test_hard_cap_timeout_300000(self):
         """不允许 timeout_ms > 300000（hard-cap 5min · IC-04 §3.4.2）."""
-        from app.l1_05.invoker.schemas import InvocationRequest
+        from app.skill_dispatch.invoker.schemas import InvocationRequest
         with pytest.raises(ValueError):
             InvocationRequest(
                 invocation_id="i", project_id="p1", capability="c", params={},
@@ -1954,7 +1954,7 @@ class Auditor:
 
 - [ ] **Step 2: Performance bench**
 
-Run: `pytest tests/l1_05/perf/bench_ic_04_dispatch.py -v`
+Run: `pytest tests/skill_dispatch/perf/bench_ic_04_dispatch.py -v`
 Expected: P99 dispatch latency ≤ 200ms
 
 - [ ] **Step 3: Commit close**
@@ -1968,12 +1968,12 @@ git commit -m "feat(harnessFlow-code): γ-WP03 close — L2-03 IC-04 invoke_skil
 ## §6 WP-γ-04 · L2-04 子 Agent 委托器（~39 TC · ~900 行）
 
 **Files:**
-- Create: `app/l1_05/subagent/schemas.py` (~180 行)
-- Create: `app/l1_05/subagent/delegator.py` (~250 行) — IC-05/12/20 路由
-- Create: `app/l1_05/subagent/claude_sdk_client.py` (~200 行) — SDK 封装（可 mock 层替换）
-- Create: `app/l1_05/subagent/resource_limiter.py` (~150 行)
-- Create: `app/l1_05/subagent/context_scope.py` (~120 行)
-- Test: `tests/l1_05/test_l2_04_subagent.py`
+- Create: `app/skill_dispatch/subagent/schemas.py` (~180 行)
+- Create: `app/skill_dispatch/subagent/delegator.py` (~250 行) — IC-05/12/20 路由
+- Create: `app/skill_dispatch/subagent/claude_sdk_client.py` (~200 行) — SDK 封装（可 mock 层替换）
+- Create: `app/skill_dispatch/subagent/resource_limiter.py` (~150 行)
+- Create: `app/skill_dispatch/subagent/context_scope.py` (~120 行)
+- Test: `tests/skill_dispatch/test_l2_04_subagent.py`
 
 **SDK 策略：** 若 `claude-agent-sdk` 在 pyproject 可装 → 真实集成；否则用 `_mocks/claude_agent_sdk_stub.py` 作 import fallback · 真实接入延到 WP-04 后期或主-3 集成期。
 
@@ -2137,7 +2137,7 @@ class ResourceLimiter:
 
 ### Task 04.6 — WP-γ-04 收尾
 
-- [ ] **Step 1: PM-03 e2e 隔离测（tests/l1_05/integration/test_pm14_subagent_isolation.py 初版）**
+- [ ] **Step 1: PM-03 e2e 隔离测（tests/skill_dispatch/integration/test_pm14_subagent_isolation.py 初版）**
 
 ```python
 @pytest.mark.pm03
@@ -2166,11 +2166,11 @@ git commit -m "feat(harnessFlow-code): γ-WP04 close — L2-04 子 Agent 委托�
 ## §7 WP-γ-05 · L2-05 异步结果回收器（~38 TC · ~730 行）
 
 **Files:**
-- Create: `app/l1_05/async_receiver/schemas.py` (~180 行)
-- Create: `app/l1_05/async_receiver/validator.py` (~250 行)
-- Create: `app/l1_05/async_receiver/forwarder.py` (~150 行)
-- Create: `app/l1_05/async_receiver/crash_recovery.py` (~150 行)
-- Test: `tests/l1_05/test_l2_05_receiver.py`
+- Create: `app/skill_dispatch/async_receiver/schemas.py` (~180 行)
+- Create: `app/skill_dispatch/async_receiver/validator.py` (~250 行)
+- Create: `app/skill_dispatch/async_receiver/forwarder.py` (~150 行)
+- Create: `app/skill_dispatch/async_receiver/crash_recovery.py` (~150 行)
+- Test: `tests/skill_dispatch/test_l2_05_receiver.py`
 
 ### Task 05.1 — Receiver schemas + CollectionRecord VO
 
@@ -2497,12 +2497,12 @@ git commit -m "feat(harnessFlow-code): γ-WP05 close — L2-05 异步结果回�
 ## §8 WP-γ-06 · 组内 5 L2 集成 + e2e（≥ 8 集成 TC）
 
 **Files:**
-- Create: `tests/l1_05/integration/test_l1_05_e2e.py` (~200 行)
-- Create: `tests/l1_05/integration/test_ic_04_05_12_20.py` (~180 行)
-- Create: `tests/l1_05/integration/test_pm14_subagent_isolation.py` (~120 行)
-- Create: `tests/l1_05/perf/bench_ic_04_dispatch.py`（WP03 已建 · 本 WP 扩展负载）
-- Create: `tests/l1_05/perf/bench_subagent_spawn.py`（WP04 已建 · 本 WP 扩展负载）
-- Create: `app/l1_05/README.md`（组级使用说明 + DoD checklist）
+- Create: `tests/skill_dispatch/integration/test_l1_05_e2e.py` (~200 行)
+- Create: `tests/skill_dispatch/integration/test_ic_04_05_12_20.py` (~180 行)
+- Create: `tests/skill_dispatch/integration/test_pm14_subagent_isolation.py` (~120 行)
+- Create: `tests/skill_dispatch/perf/bench_ic_04_dispatch.py`（WP03 已建 · 本 WP 扩展负载）
+- Create: `tests/skill_dispatch/perf/bench_subagent_spawn.py`（WP04 已建 · 本 WP 扩展负载）
+- Create: `app/skill_dispatch/README.md`（组级使用说明 + DoD checklist）
 
 ### Task 06.1 — e2e 全链：invoke → registry → intent → invoker → subagent → receiver
 
@@ -2518,14 +2518,14 @@ async def test_invoke_skill_happy_path_through_registry_intent_and_receiver(
     shutil.copy(fixtures_dir / "registry_valid.yaml",
                 tmp_project / "skills" / "registry-cache" / "registry.yaml")
     # 装配全链
-    from app.l1_05.registry.loader import RegistryLoader
-    from app.l1_05.registry.query_api import RegistryQueryAPI
-    from app.l1_05.registry.ledger import LedgerWriter
-    from app.l1_05.intent_selector import IntentSelector
-    from app.l1_05.invoker.executor import SkillExecutor
-    from app.l1_05.async_receiver.validator import Validator
-    from app.l1_05.async_receiver.forwarder import DoDForwarder
-    from app.l1_05.invoker.schemas import InvocationRequest
+    from app.skill_dispatch.registry.loader import RegistryLoader
+    from app.skill_dispatch.registry.query_api import RegistryQueryAPI
+    from app.skill_dispatch.registry.ledger import LedgerWriter
+    from app.skill_dispatch.intent_selector import IntentSelector
+    from app.skill_dispatch.invoker.executor import SkillExecutor
+    from app.skill_dispatch.async_receiver.validator import Validator
+    from app.skill_dispatch.async_receiver.forwarder import DoDForwarder
+    from app.skill_dispatch.invoker.schemas import InvocationRequest
 
     snap = RegistryLoader(project_root=tmp_project).load()
     api = RegistryQueryAPI(snapshot=snap)
@@ -2564,7 +2564,7 @@ async def test_capability_unknown_raises_ic15_halt(...):
 
 - [ ] **Step 2: Green**
 
-Run: `pytest -m e2e tests/l1_05/integration/ -v`
+Run: `pytest -m e2e tests/skill_dispatch/integration/ -v`
 Expected: 3 PASS
 
 - [ ] **Step 3: Commit `γ-WP06.1 e2e 全链 happy path + all-fail + capability-unknown`**
@@ -2596,7 +2596,7 @@ Expected: 3 PASS
 
 ### Task 06.5 — README 组级说明
 
-- [ ] **Step 1: Write `app/l1_05/README.md`**
+- [ ] **Step 1: Write `app/skill_dispatch/README.md`**
 
 ```markdown
 # L1-05 · Skill 生态 + 子 Agent 调度
@@ -2629,14 +2629,14 @@ Skill 调用 + 子 Agent 委托的**唯一**入口。四个对外 IC：
 见 `_mocks/*.py` 顶注。
 ```
 
-- [ ] **Step 2: Commit `γ-WP06.5 app/l1_05/README.md`**
+- [ ] **Step 2: Commit `γ-WP06.5 app/skill_dispatch/README.md`**
 
 ### Task 06.6 — WP-γ-06 收尾 + 组级 DoD 自检
 
 - [ ] **Step 1: Run full suite**
 
 ```bash
-pytest tests/l1_05/ -v --cov=app.l1_05 --cov-report=term-missing --cov-fail-under=85
+pytest tests/skill_dispatch/ -v --cov=app.skill_dispatch --cov-report=term-missing --cov-fail-under=85
 ```
 Expected: 全绿 · coverage ≥ 85%
 
@@ -2665,7 +2665,7 @@ git commit -m "feat(harnessFlow-code): γ-WP06 close — 组内 5 L2 集成完�
 - [ ] 启动硬编码 scan 绿（PM-09）
 - [ ] 子 Agent e2e（spawn → complete）绿
 - [ ] 降级链 4 路径全测
-- [ ] `app/l1_05/README.md` 已写
+- [ ] `app/skill_dispatch/README.md` 已写
 - [ ] 11-12 个 commit 全部 prefix `feat(harnessFlow-code): γ-WPNN.M ...`
 - [ ] `docs/4-exe-plan/standup-logs/Dev-γ-*.md` 每日 standup 齐全
 

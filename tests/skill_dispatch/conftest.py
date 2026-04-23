@@ -10,10 +10,10 @@ from collections.abc import Iterator
 
 import pytest
 
-from app.l1_05._mocks.dod_gate_mock import DoDGateMock
-from app.l1_05._mocks.ic06_mock import IC06KBMock
-from app.l1_05._mocks.ic09_mock import IC09EventBusMock
-from app.l1_05._mocks.lock_mock import AccountLockMock
+from app.skill_dispatch._mocks.dod_gate_mock import DoDGateMock
+from app.skill_dispatch._mocks.ic06_mock import IC06KBMock
+from app.skill_dispatch._mocks.ic09_mock import IC09EventBusMock
+from app.skill_dispatch._mocks.lock_mock import AccountLockMock
 
 
 @pytest.fixture

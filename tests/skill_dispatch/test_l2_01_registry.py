@@ -18,13 +18,13 @@ class TestRegistrySchemas:
     """Task 01.1 · Pydantic v2 schemas · PM-09 ≥2 candidates + builtin_fallback 硬约束."""
 
     def test_skill_spec_requires_skill_id(self):
-        from app.l1_05.registry.schemas import SkillSpec
+        from app.skill_dispatch.registry.schemas import SkillSpec
 
         with pytest.raises(ValueError):
             SkillSpec(skill_id="", availability=True, cost_usd=0.0, timeout_s=30)
 
     def test_capability_point_rejects_single_candidate(self):
-        from app.l1_05.registry.schemas import CapabilityPoint, SkillSpec
+        from app.skill_dispatch.registry.schemas import CapabilityPoint, SkillSpec
 
         with pytest.raises(ValueError, match="at_least_2_candidates"):
             CapabilityPoint(
@@ -37,7 +37,7 @@ class TestRegistrySchemas:
             )
 
     def test_capability_point_rejects_missing_builtin_fallback(self):
-        from app.l1_05.registry.schemas import CapabilityPoint, SkillSpec
+        from app.skill_dispatch.registry.schemas import CapabilityPoint, SkillSpec
 
         with pytest.raises(ValueError, match="builtin_fallback_required"):
             CapabilityPoint(
@@ -52,7 +52,7 @@ class TestRegistrySchemas:
 
     def test_capability_point_accepts_valid_with_builtin(self):
         """Positive case · 2 candidates with one builtin_fallback = 通过校验."""
-        from app.l1_05.registry.schemas import CapabilityPoint, SkillSpec
+        from app.skill_dispatch.registry.schemas import CapabilityPoint, SkillSpec
 
         cp = CapabilityPoint(
             name="write_test",
@@ -73,7 +73,7 @@ class TestRegistrySchemas:
         assert any(c.is_builtin_fallback for c in cp.candidates)
 
     def test_subagent_entry_role_enum(self):
-        from app.l1_05.registry.schemas import SubagentEntry
+        from app.skill_dispatch.registry.schemas import SubagentEntry
 
         e = SubagentEntry(
             role="verifier",
@@ -84,7 +84,7 @@ class TestRegistrySchemas:
         assert e.role == "verifier"
 
     def test_subagent_entry_rejects_unknown_role(self):
-        from app.l1_05.registry.schemas import SubagentEntry
+        from app.skill_dispatch.registry.schemas import SubagentEntry
 
         with pytest.raises(ValueError):
             SubagentEntry(
@@ -95,13 +95,13 @@ class TestRegistrySchemas:
             )
 
     def test_tool_entry_defaults_to_atomic(self):
-        from app.l1_05.registry.schemas import ToolEntry
+        from app.skill_dispatch.registry.schemas import ToolEntry
 
         te = ToolEntry()
         assert te.kind == "atomic"
 
     def test_ledger_entry_rejects_negative_counts(self):
-        from app.l1_05.registry.schemas import LedgerEntry
+        from app.skill_dispatch.registry.schemas import LedgerEntry
 
         with pytest.raises(ValueError):
             LedgerEntry(
@@ -114,7 +114,7 @@ class TestRegistrySchemas:
             )
 
     def test_ledger_entry_accepts_zero_counts(self):
-        from app.l1_05.registry.schemas import LedgerEntry
+        from app.skill_dispatch.registry.schemas import LedgerEntry
 
         e = LedgerEntry(
             capability="x",
@@ -127,7 +127,7 @@ class TestRegistrySchemas:
         assert e.success_count == 0 and e.failure_count == 0
 
     def test_registry_snapshot_fields(self):
-        from app.l1_05.registry.schemas import RegistrySnapshot
+        from app.skill_dispatch.registry.schemas import RegistrySnapshot
 
         snap = RegistrySnapshot(
             version="1.0",
@@ -143,7 +143,7 @@ class TestLoaderStages1to3:
     """Task 01.2 · RegistryLoader 启动 5 阶段中的前 3 阶段（fs scan / yaml parse / validate）."""
 
     def test_stage1_missing_file_raises_E_REG_FILE_NOT_FOUND(self, tmp_project):
-        from app.l1_05.registry.loader import RegistryLoadError, RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoadError, RegistryLoader
 
         loader = RegistryLoader(project_root=tmp_project)
         with pytest.raises(RegistryLoadError, match="E_REG_FILE_NOT_FOUND"):
@@ -152,7 +152,7 @@ class TestLoaderStages1to3:
     def test_stage2_parses_capability_points_from_fixtures(self, tmp_project, fixtures_dir):
         import shutil
 
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
 
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
@@ -164,7 +164,7 @@ class TestLoaderStages1to3:
     def test_stage2_parses_subagents_and_tools(self, tmp_project, fixtures_dir):
         import shutil
 
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
 
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
@@ -175,7 +175,7 @@ class TestLoaderStages1to3:
         assert snap.tools["Read"].kind == "atomic"
 
     def test_stage3_reject_capability_without_schema_pointer(self, tmp_path):
-        from app.l1_05.registry.loader import RegistryLoadError, RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoadError, RegistryLoader
 
         cache = tmp_path / "skills" / "registry-cache"
         cache.mkdir(parents=True)
@@ -196,7 +196,7 @@ class TestLoaderStages1to3:
         """fixture 里每 capability 都有 builtin_fallback · 应 Stage 3 通过."""
         import shutil
 
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
 
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
@@ -207,7 +207,7 @@ class TestLoaderStages1to3:
             )
 
     def test_stage2_invalid_yaml_raises_E_REG_YAML_PARSE(self, tmp_path):
-        from app.l1_05.registry.loader import RegistryLoadError, RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoadError, RegistryLoader
 
         cache = tmp_path / "skills" / "registry-cache"
         cache.mkdir(parents=True)
@@ -218,7 +218,7 @@ class TestLoaderStages1to3:
 
     def test_stage3_rejects_single_candidate_without_builtin(self, tmp_path):
         """PM-09 · 单候选 + 无 builtin → CapabilityPoint model_validator 触发 · 包装成 E_REG_VALIDATION."""
-        from app.l1_05.registry.loader import RegistryLoadError, RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoadError, RegistryLoader
 
         cache = tmp_path / "skills" / "registry-cache"
         cache.mkdir(parents=True)
@@ -244,7 +244,7 @@ class TestLoaderStages1to3:
         import shutil
         import time
 
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
 
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
@@ -268,7 +268,7 @@ class TestLedgerAndQuery:
         return cache
 
     def test_stage4_loads_ledger_entries(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
 
         self._prepare(tmp_project, fixtures_dir)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -278,14 +278,14 @@ class TestLedgerAndQuery:
         assert rec.failure_count == 1
 
     def test_stage4_handles_missing_ledger_as_empty(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
         assert snap.ledger_index == {}
 
     def test_stage5_writes_snapshot_file(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.loader import RegistryLoader
 
         cache = self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         RegistryLoader(project_root=tmp_project).load()
@@ -294,8 +294,8 @@ class TestLedgerAndQuery:
         assert snapshots[0].stat().st_size > 0
 
     def test_query_candidates_returns_builtin_fallback_last(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -308,8 +308,8 @@ class TestLedgerAndQuery:
     def test_query_candidates_unknown_raises_E_REG_MISSING_CAPABILITY(
         self, tmp_project, fixtures_dir
     ):
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import CapabilityNotFoundError, RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import CapabilityNotFoundError, RegistryQueryAPI
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -318,8 +318,8 @@ class TestLedgerAndQuery:
             api.query_candidates("no_such_capability")
 
     def test_query_subagent_returns_entry(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -329,8 +329,8 @@ class TestLedgerAndQuery:
         assert v.timeout_s == 1200
 
     def test_query_subagent_unknown_raises(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import RegistryQueryAPI, SubagentNotFoundError
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI, SubagentNotFoundError
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -339,8 +339,8 @@ class TestLedgerAndQuery:
             api.query_subagent("hacker")
 
     def test_query_tool_atomic(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -348,8 +348,8 @@ class TestLedgerAndQuery:
         assert api.query_tool("Read").kind == "atomic"
 
     def test_query_tool_unknown_raises(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import RegistryQueryAPI, ToolNotFoundError
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI, ToolNotFoundError
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -358,8 +358,8 @@ class TestLedgerAndQuery:
             api.query_tool("NoSuchTool")
 
     def test_query_schema_pointer_unknown_raises(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import CapabilityNotFoundError, RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import CapabilityNotFoundError, RegistryQueryAPI
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -368,8 +368,8 @@ class TestLedgerAndQuery:
             api.query_schema_pointer("no_such_cap")
 
     def test_query_schema_pointer(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap = RegistryLoader(project_root=tmp_project).load()
@@ -378,9 +378,9 @@ class TestLedgerAndQuery:
 
     def test_swap_replaces_snapshot_atomically(self, tmp_project, fixtures_dir):
         """Registry hot-reload · swap() 原子替换 · 旧查询到新 snapshot."""
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import RegistryQueryAPI
-        from app.l1_05.registry.schemas import RegistrySnapshot
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.schemas import RegistrySnapshot
 
         self._prepare(tmp_project, fixtures_dir, with_ledger=False)
         snap1 = RegistryLoader(project_root=tmp_project).load()
@@ -395,7 +395,7 @@ class TestLedgerAndQuery:
             loaded_at_ts_ns=0,
         )
         api.swap(empty)
-        from app.l1_05.registry.query_api import CapabilityNotFoundError
+        from app.skill_dispatch.registry.query_api import CapabilityNotFoundError
         with pytest.raises(CapabilityNotFoundError):
             api.query_candidates("write_test")
 
@@ -406,7 +406,7 @@ class TestLedgerWrite:
     def test_ledger_writer_persists_success(self, tmp_project, lock_mock):
         import json
 
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
 
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
         writer.record(
@@ -425,7 +425,7 @@ class TestLedgerWrite:
     def test_ledger_records_failure_reason(self, tmp_project, lock_mock):
         import json
 
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
 
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
         writer.record(
@@ -442,7 +442,7 @@ class TestLedgerWrite:
 
     def test_ledger_rejects_non_l2_02_caller(self, tmp_project, lock_mock):
         """IC-L2-07 · 只有 L2-02 可写 · 其他 caller raise LedgerPermissionError."""
-        from app.l1_05.registry.ledger import LedgerPermissionError, LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerPermissionError, LedgerWriter
 
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
         with pytest.raises(LedgerPermissionError):
@@ -455,7 +455,7 @@ class TestLedgerWrite:
             )
 
     def test_ledger_rejects_empty_project_id_pm14(self, tmp_project, lock_mock):
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
 
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
         with pytest.raises(ValueError, match="project_id"):
@@ -465,7 +465,7 @@ class TestLedgerWrite:
         """4 threads × 20 writes each → 80 条记录 · 锁保证无丢失."""
         import threading
 
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
 
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
         errs: list[BaseException] = []
@@ -496,7 +496,7 @@ class TestLedgerWrite:
         """SLO: 账本回写 P99 ≤ 50ms · 100 次采样."""
         import time
 
-        from app.l1_05.registry.ledger import LedgerWriter
+        from app.skill_dispatch.registry.ledger import LedgerWriter
 
         writer = LedgerWriter(project_root=tmp_project, lock=lock_mock)
         durations: list[float] = []
@@ -520,8 +520,8 @@ class TestFsWatcher:
     def _bootstrap_api(self, tmp_project, fixtures_dir):
         import shutil
 
-        from app.l1_05.registry.loader import RegistryLoader
-        from app.l1_05.registry.query_api import RegistryQueryAPI
+        from app.skill_dispatch.registry.loader import RegistryLoader
+        from app.skill_dispatch.registry.query_api import RegistryQueryAPI
 
         cache = tmp_project / "skills" / "registry-cache"
         shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
@@ -530,7 +530,7 @@ class TestFsWatcher:
         return loader, api
 
     def test_trigger_reload_swaps_to_new_snapshot(self, tmp_project, fixtures_dir):
-        from app.l1_05.registry.fs_watcher import FsWatcher
+        from app.skill_dispatch.registry.fs_watcher import FsWatcher
 
         loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
         old_ts = api.snapshot.loaded_at_ts_ns
@@ -544,7 +544,7 @@ class TestFsWatcher:
 
     def test_trigger_reload_does_not_crash_on_load_error(self, tmp_project, fixtures_dir):
         """reload 失败时保留旧 snapshot · 不让整进程崩."""
-        from app.l1_05.registry.fs_watcher import FsWatcher
+        from app.skill_dispatch.registry.fs_watcher import FsWatcher
 
         loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
         old_snap = api.snapshot
@@ -560,7 +560,7 @@ class TestFsWatcher:
 
     def test_throttle_coalesces_rapid_calls(self, tmp_project, fixtures_dir):
         """throttle 10s 内多次 _on_change → 只 reload 1 次."""
-        from app.l1_05.registry.fs_watcher import FsWatcher
+        from app.skill_dispatch.registry.fs_watcher import FsWatcher
 
         loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
         watcher = FsWatcher(loader=loader, api=api, throttle_s=10.0)
@@ -576,7 +576,7 @@ class TestFsWatcher:
         """throttle 窗口外 · 下次 _on_change 再次触发 reload."""
         import time as _t
 
-        from app.l1_05.registry.fs_watcher import FsWatcher
+        from app.skill_dispatch.registry.fs_watcher import FsWatcher
 
         loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
         watcher = FsWatcher(loader=loader, api=api, throttle_s=1.0)
@@ -589,7 +589,7 @@ class TestFsWatcher:
         monkeypatch.setattr(_t, "monotonic", now)
         # 绕过 watcher 内部 time 的第一次绑定
         monkeypatch.setattr(
-            "app.l1_05.registry.fs_watcher.time.monotonic", now, raising=False
+            "app.skill_dispatch.registry.fs_watcher.time.monotonic", now, raising=False
         )
 
         # 第一次 reload
@@ -607,7 +607,7 @@ class TestFsWatcher:
         """SLO: fs_watch 触发到 swap 完成 ≤ 500ms."""
         import time
 
-        from app.l1_05.registry.fs_watcher import FsWatcher
+        from app.skill_dispatch.registry.fs_watcher import FsWatcher
 
         loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
         watcher = FsWatcher(loader=loader, api=api, throttle_s=0)
