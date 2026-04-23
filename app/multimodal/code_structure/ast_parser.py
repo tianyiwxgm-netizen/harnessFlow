@@ -16,28 +16,28 @@ from app.multimodal.common.errors import L108Error
 def _load_registry() -> dict[str, Language]:
     registry: dict[str, Language] = {}
     try:
-        import tree_sitter_python as _m
-        registry["python"] = Language(_m.language())
+        import tree_sitter_python as _py
+        registry["python"] = Language(_py.language())
     except Exception:
         pass
     try:
-        import tree_sitter_typescript as _m
-        registry["typescript"] = Language(_m.language_typescript())
+        import tree_sitter_typescript as _ts
+        registry["typescript"] = Language(_ts.language_typescript())
     except Exception:
         pass
     try:
-        import tree_sitter_go as _m
-        registry["go"] = Language(_m.language())
+        import tree_sitter_go as _go
+        registry["go"] = Language(_go.language())
     except Exception:
         pass
     try:
-        import tree_sitter_rust as _m
-        registry["rust"] = Language(_m.language())
+        import tree_sitter_rust as _rs
+        registry["rust"] = Language(_rs.language())
     except Exception:
         pass
     try:
-        import tree_sitter_java as _m
-        registry["java"] = Language(_m.language())
+        import tree_sitter_java as _ja
+        registry["java"] = Language(_ja.language())
     except Exception:
         pass
     return registry
@@ -80,6 +80,7 @@ class ASTParser:
 
         cached = self.cache.get(pid, lang, h)
         if cached is not None:
+            assert isinstance(cached, ASTTree)
             return cached
 
         parser = Parser(LANG_REGISTRY[lang])
