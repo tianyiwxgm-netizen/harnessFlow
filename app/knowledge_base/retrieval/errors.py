@@ -42,3 +42,14 @@ class WeightsSumError(RerankError):
 
     def __init__(self, message: str = "") -> None:
         super().__init__(RerankErrorCode.WEIGHTS_SUM_INVALID, message)
+
+
+class RerankTimeout(RerankError):
+    """Raised when rerank exceeds its budget (IC-L2-04 timeout).
+
+    Upstream callers (L2-02 reader) catch this to fall back to observed_count
+    DESC ordering (KBR-008 soft failure, not user-visible).
+    """
+
+    def __init__(self, message: str = "rerank timeout") -> None:
+        super().__init__(RerankErrorCode.TIMEOUT, message)

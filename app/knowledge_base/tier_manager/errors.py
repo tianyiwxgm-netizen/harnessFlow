@@ -26,3 +26,14 @@ class TierError(Exception):
         self.code = code.value if isinstance(code, TierErrorCode) else code
         self.message = message or self.code
         super().__init__(f"{self.code}: {self.message}")
+
+
+class ScopeCheckError(TierError):
+    """Raised by TierManager.scope_check when cross-project or isolation fails.
+
+    Consumed by L2-02 reader so it can collapse the failure to KBR-003/004
+    rather than propagate PM-14 codes to upstream callers.
+    """
+
+    def __init__(self, message: str = "scope check denied") -> None:
+        super().__init__(TierErrorCode.CROSS_PROJECT_READ_DENIED, message)
