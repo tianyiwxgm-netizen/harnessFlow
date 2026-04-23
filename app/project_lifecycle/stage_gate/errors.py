@@ -1,0 +1,30 @@
+"""L2-01 Stage Gate 控制器错误码 · 对齐 tech §11（14 条）。"""
+from __future__ import annotations
+
+from app.project_lifecycle.common.errors import L102Error
+
+
+class StageGateError(L102Error):
+    @property
+    def err_type(self) -> str:
+        return self.error_code
+
+
+E_GATE_EVIDENCE_MISSING = "E_L102_L201_001"
+E_TRANSITION_FORBIDDEN = "E_L102_L201_002"
+E_CIRCULAR_DEP = "E_L102_L201_003"
+E_STATE_CORRUPT = "E_L102_L201_004"
+E_EVIDENCE_EXPIRED = "E_L102_L201_005"
+E_PM14_OWNERSHIP_VIOLATION = "E_L102_L201_006"
+E_REJECTION_ANALYZER_TIMEOUT = "E_L102_L201_007"
+E_FSYNC_FAIL = "E_L102_L201_008"
+E_HISTORY_QUOTA_EXCEEDED = "E_L102_L201_009"
+E_LLM_FALLBACK_DISABLED = "E_L102_L201_010"
+E_CONCURRENT_GATE_REQUEST = "E_L102_L201_011"
+E_AUDIT_SEED_EMIT_FAIL = "E_L102_L201_012"
+E_GATE_AUTO_TIMEOUT_ATTEMPTED = "E_L102_L201_013"
+E_SNAPSHOT_REPLAY_MISMATCH = "E_L102_L201_014"
+
+
+class StartupConfigError(Exception):
+    """GATE_AUTO_TIMEOUT_ENABLED=true 等启动配置硬违 · 启动期抛。"""
