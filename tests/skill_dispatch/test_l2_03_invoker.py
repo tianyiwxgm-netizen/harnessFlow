@@ -329,3 +329,100 @@ class TestRetryPolicy:
         assert backoff_ms(1) == 100
         assert backoff_ms(2) == 200
         assert backoff_ms(3) == 400
+
+
+class TestAudit:
+    """Task 03.5 · params_hash SHA-256 + 脱敏 + IC-09 两次写."""
+
+    def test_params_hash_is_sha256_hex_64_chars(self):
+        from app.skill_dispatch.invoker.audit import params_hash
+
+        h = params_hash({"x": 1})
+        assert len(h) == 64
+        assert all(c in "0123456789abcdef" for c in h)
+
+    def test_params_hash_stable_on_key_order(self):
+        """canonical JSON · 键序不同 hash 一致."""
+        from app.skill_dispatch.invoker.audit import params_hash
+
+        h1 = params_hash({"a": 1, "b": 2, "c": 3})
+        h2 = params_hash({"c": 3, "a": 1, "b": 2})
+        assert h1 == h2
+
+    def test_sensitive_fields_redacted_before_hash(self):
+        """带 token/key/password/secret 后缀的字段脱敏后 hash · 只要前缀同 hash 一致."""
+        from app.skill_dispatch.invoker.audit import params_hash
+
+        h1 = params_hash({"cmd": "do", "api_token": "A"})
+        h2 = params_hash({"cmd": "do", "api_token": "B"})
+        # 两次都被 REDACTED · hash 相同
+        assert h1 == h2
+
+    def test_non_sensitive_field_diff_breaks_hash(self):
+        from app.skill_dispatch.invoker.audit import params_hash
+
+        h1 = params_hash({"cmd": "run", "n": 1})
+        h2 = params_hash({"cmd": "run", "n": 2})
+        assert h1 != h2
+
+    def test_audit_start_writes_ic09_started_event(self, ic09_bus):
+        from app.skill_dispatch.invoker.audit import Auditor
+
+        a = Auditor(event_bus=ic09_bus)
+        a.audit_start(
+            project_id="p1", invocation_id="inv1", capability="c",
+            skill_id="s1", caller_l1="L1-04", attempt=1, params={"x": 1},
+        )
+        events = [e for e in ic09_bus.read_all("p1") if e.event_type == "skill_invocation_started"]
+        assert len(events) == 1
+        payload = events[0].payload
+        assert payload["invocation_id"] == "inv1"
+        assert payload["attempt"] == 1
+        assert len(payload["params_hash"]) == 64
+
+    def test_audit_finish_writes_ic09_finished_event(self, ic09_bus):
+        from app.skill_dispatch.invoker.audit import Auditor
+
+        a = Auditor(event_bus=ic09_bus)
+        a.audit_finish(
+            project_id="p1", invocation_id="inv1", success=True,
+            duration_ms=150, fallback_used=False, result_summary="ok",
+        )
+        events = [e for e in ic09_bus.read_all("p1") if e.event_type == "skill_invocation_finished"]
+        assert len(events) == 1
+        assert events[0].payload["success"] is True
+        assert events[0].payload["duration_ms"] == 150
+
+    def test_audit_start_swallows_ic09_failure(self):
+        """IC-09 失败不得 crash 主链 (E_SKILL_INVOCATION_AUDIT_SEED_FAILED 路径)."""
+        from app.skill_dispatch.invoker.audit import Auditor
+
+        class BrokenBus:
+            def append_event(self, **kw):
+                raise RuntimeError("IC-09 down")
+
+        a = Auditor(event_bus=BrokenBus())
+        # 不抛
+        h = a.audit_start(
+            project_id="p1", invocation_id="i", capability="c",
+            skill_id="s", caller_l1="L1-04", attempt=1, params={"x": 1},
+        )
+        assert len(h) == 64   # 仍返回 hash 供后续 Signature 写
+
+    def test_audit_doesnt_leak_sensitive_plaintext_to_event(self, ic09_bus):
+        """payload.params_hash 是 hash · 不是明文；原字段也不在 payload 里."""
+        from app.skill_dispatch.invoker.audit import Auditor
+
+        a = Auditor(event_bus=ic09_bus)
+        secret_value = "sk-super-secret-abcdef"
+        a.audit_start(
+            project_id="p1", invocation_id="i", capability="c",
+            skill_id="s", caller_l1="L1-04", attempt=1,
+            params={"api_token": secret_value, "cmd": "do"},
+        )
+        events = ic09_bus.read_all("p1")
+        for e in events:
+            # 任何 event payload 序列化后不得含 secret 明文
+            assert secret_value not in str(e.payload), (
+                f"secret leaked to payload: {e.payload}"
+            )
