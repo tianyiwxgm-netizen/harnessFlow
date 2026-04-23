@@ -2,7 +2,12 @@
 
 
 def test_package_imports():
-    pass
+    import app.multimodal  # noqa: F401
+    import app.multimodal.code_structure  # noqa: F401
+    import app.multimodal.common  # noqa: F401
+    import app.multimodal.doc_io  # noqa: F401
+    import app.multimodal.path_safety  # noqa: F401
+    import app.multimodal.vision  # noqa: F401
 
 
 def test_external_deps_present():

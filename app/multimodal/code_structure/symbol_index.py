@@ -25,15 +25,13 @@ def _line_of(text: str, pos: int) -> int:
 def extract_python(text: str, file_path: str) -> tuple[list[SymbolDef], list[SymbolRef]]:
     defs: list[SymbolDef] = []
     for m in _PY_DEF.finditer(text):
-        indent, kind_kw, name = m.group(1), m.group(2), m.group(3)
+        kind_kw, name = m.group(2), m.group(3)
         kind = "class" if kind_kw == "class" else "function"
         defs.append(SymbolDef(kind=kind, name=name, file_path=file_path, line=_line_of(text, m.start())))
     for m in _PY_CONST.finditer(text):
         defs.append(SymbolDef(kind="const", name=m.group(1), file_path=file_path, line=_line_of(text, m.start())))
 
     refs: list[SymbolRef] = []
-    # Exclude the def-name itself from its own line to avoid self-ref noise.
-    def_names = {d.name for d in defs}
     for m in _PY_CALL.finditer(text):
         name = m.group(1)
         # Skip Python keywords that look like calls
