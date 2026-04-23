@@ -289,3 +289,43 @@ class TestTimeoutManager:
 
         with pytest.raises(ValueError, match="skill-error"):
             run_with_timeout(boom, timeout_ms=1000)
+
+
+class TestRetryPolicy:
+    """Task 03.4 · RetryPolicy · idempotent skill 最多 retry 1 次 (attempt ≤ 2)."""
+
+    def test_idempotent_transient_should_retry(self):
+        from app.skill_dispatch.invoker.retry_policy import should_retry
+        from app.skill_dispatch.invoker.timeout_manager import SkillTimeout
+
+        assert should_retry(SkillTimeout("x"), attempt=1, is_idempotent=True) is True
+
+    def test_idempotent_exhausted_attempt_no_retry(self):
+        from app.skill_dispatch.invoker.retry_policy import MAX_ATTEMPTS, should_retry
+        from app.skill_dispatch.invoker.timeout_manager import SkillTimeout
+
+        assert should_retry(SkillTimeout("x"), attempt=MAX_ATTEMPTS, is_idempotent=True) is False
+
+    def test_non_idempotent_never_retries(self):
+        from app.skill_dispatch.invoker.retry_policy import should_retry
+        from app.skill_dispatch.invoker.timeout_manager import SkillTimeout
+
+        assert should_retry(SkillTimeout("x"), attempt=1, is_idempotent=False) is False
+
+    def test_schema_error_never_retries(self):
+        """ValueError / SchemaError 是 caller bug · 不能 retry."""
+        from app.skill_dispatch.invoker.retry_policy import should_retry
+
+        assert should_retry(ValueError("bad params"), attempt=1, is_idempotent=True) is False
+
+    def test_connection_error_is_retriable(self):
+        from app.skill_dispatch.invoker.retry_policy import should_retry
+
+        assert should_retry(ConnectionError("net"), attempt=1, is_idempotent=True) is True
+
+    def test_backoff_ms_exponential(self):
+        from app.skill_dispatch.invoker.retry_policy import backoff_ms
+
+        assert backoff_ms(1) == 100
+        assert backoff_ms(2) == 200
+        assert backoff_ms(3) == 400
