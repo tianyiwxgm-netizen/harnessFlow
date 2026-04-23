@@ -28,6 +28,10 @@ from app.project_lifecycle.stage_gate.errors import (
     StageGateError,
     StartupConfigError,
 )
+from app.project_lifecycle.stage_gate.ic_16_stub import (
+    UIBridge,
+    build_push_stage_gate_card_command,
+)
 from app.project_lifecycle.stage_gate.schemas import (
     Decision,
     EvidenceBundle,
@@ -105,6 +109,7 @@ class StageGateController:
         event_bus: EventSink,
         l1_01_state_machine: L1_01_StateMachine,
         config: dict[str, Any] | None = None,
+        ui_bridge: UIBridge | None = None,
     ) -> None:
         config = config or {}
         # 硬约束：GATE_AUTO_TIMEOUT_ENABLED=true 启动 crash
@@ -120,6 +125,7 @@ class StageGateController:
 
         self._event_bus = event_bus
         self._l1_01 = l1_01_state_machine
+        self._ui_bridge = ui_bridge  # IC-16 · Dev-θ L1-10 真实 UI 接入前可为 None
         self._gate_history: dict[str, GateStateSnapshot] = {}
         self._re_open_counts: dict[tuple[str, Stage], int] = {}
         self._decisions_by_request: dict[str, GateDecision] = {}  # 幂等
@@ -181,6 +187,15 @@ class StageGateController:
                 "missing_signals": list(dec.missing_signals),
             },
         )
+
+        # IC-16 § 3.16 · Gate pass 后推 UI 卡片
+        if dec.decision == "pass":
+            self._push_gate_card(
+                gate_id=dec.gate_id,
+                project_id=dec.project_id,
+                stage_name=dec.stage,
+                trim_level=self._trim_level_from(evidence),
+            )
 
         self._enforce_history_quota()
         return dec
@@ -388,6 +403,40 @@ class StageGateController:
     def _compute_missing_signals(self, evidence: EvidenceBundle) -> tuple[str, ...]:
         required = set(_REQUIRED_SIGNALS_BY_STAGE.get(evidence.stage, ()))
         return tuple(sorted(required - set(evidence.signals)))
+
+    @staticmethod
+    def _trim_level_from(evidence: EvidenceBundle) -> str:
+        """EvidenceBundle.trim_level (full|minimal|custom) → §3.16 enum (minimal|standard|full)。"""
+        mapping = {"full": "full", "minimal": "minimal", "custom": "standard"}
+        return mapping.get(evidence.trim_level, "standard")
+
+    def _push_gate_card(
+        self,
+        *,
+        gate_id: str,
+        project_id: str,
+        stage_name: str,
+        trim_level: str,
+    ) -> None:
+        """IC-16 § 3.16 · Gate pass 后推 UI 卡片。
+
+        - ui_bridge 注入（Dev-θ L1-10 真实 UI 可用）→ delegate
+        - 未注入 → 降级为 IC-09 事件 ic_16_push_stage_gate_card（审计可追溯）
+        """
+        command = build_push_stage_gate_card_command(
+            gate_id=gate_id,
+            project_id=project_id,
+            stage_name=stage_name,
+            trim_level=trim_level,
+        )
+        if self._ui_bridge is not None:
+            self._ui_bridge.push_stage_gate_card_to_ui(command=command)
+        # 无论 ui_bridge 是否存在 · 审计事件都发（§3.16.7 IC-09 审计路径）
+        self._event_bus.append_event(
+            project_id=project_id,
+            event_type="ic_16_push_stage_gate_card",
+            payload=command,
+        )
 
     @staticmethod
     def _mint_gate_id(project_id: str, stage: Stage) -> str:

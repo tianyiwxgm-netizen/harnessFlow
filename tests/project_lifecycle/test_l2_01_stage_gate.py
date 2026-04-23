@@ -373,3 +373,129 @@ class TestL2_01_IC01_Payload:
         t1 = calls[0].kwargs["transition_id"]
         t2 = calls[1].kwargs["transition_id"]
         assert t1 != t2, "transition_id should be unique per invocation"
+
+
+class TestL2_01_IC16_PushCard:
+    """IC-16 push_stage_gate_card · fix-2026-04-23 P1-02。
+
+    §3.16.2 required: [card_id, project_id, gate_id, stage_name,
+                       artifacts_bundle, trim_level]
+    """
+
+    @pytest.fixture
+    def ui_stub(self) -> MagicMock:
+        """L1-10 UI IC-16 接收方 · mock ack。"""
+        m = MagicMock()
+        m.push_stage_gate_card_to_ui.return_value = {
+            "card_id": "card-stub-1",
+            "displayed": True,
+            "render_ms": 120,
+            "session_persisted": True,
+        }
+        return m
+
+    @pytest.fixture
+    def sut_with_ui(self, event_bus, l1_01, ui_stub) -> StageGateController:
+        return StageGateController(
+            event_bus=event_bus, l1_01_state_machine=l1_01, ui_bridge=ui_stub,
+        )
+
+    def test_TC_L102_L201_420_ic_16_push_card_called_on_gate_pass(
+        self, sut_with_ui: StageGateController, ui_stub: MagicMock,
+    ) -> None:
+        """Gate pass 时 · push_stage_gate_card_to_ui 被调一次。"""
+        sut_with_ui.request_gate_decision(_evidence_full("S2"))
+        assert ui_stub.push_stage_gate_card_to_ui.call_count == 1
+
+    def test_TC_L102_L201_421_ic_16_payload_required_fields(
+        self, sut_with_ui: StageGateController, ui_stub: MagicMock,
+    ) -> None:
+        """§3.16.2 required 字段必备: card_id/project_id/gate_id/stage_name/artifacts_bundle/trim_level。"""
+        dec = sut_with_ui.request_gate_decision(_evidence_full("S2"))
+        payload = ui_stub.push_stage_gate_card_to_ui.call_args.kwargs["command"]
+        for k in (
+            "card_id", "project_id", "gate_id", "stage_name",
+            "artifacts_bundle", "trim_level",
+        ):
+            assert k in payload, f"§3.16.2 missing required field {k!r}"
+        assert payload["gate_id"] == dec.gate_id
+        assert payload["stage_name"] == "S2"
+        assert payload["card_id"].startswith("card-")
+
+    def test_TC_L102_L201_422_ic_16_artifacts_bundle_min_items(
+        self, sut_with_ui: StageGateController, ui_stub: MagicMock,
+    ) -> None:
+        """§3.16.5 E_CARD_BUNDLE_EMPTY · artifacts_bundle 至少 1 项。"""
+        sut_with_ui.request_gate_decision(_evidence_full("S2"))
+        payload = ui_stub.push_stage_gate_card_to_ui.call_args.kwargs["command"]
+        assert isinstance(payload["artifacts_bundle"], (list, tuple))
+        assert len(payload["artifacts_bundle"]) >= 1
+        # 单项 schema: required [artifact_type, path, summary]
+        for art in payload["artifacts_bundle"]:
+            assert "artifact_type" in art
+            assert "path" in art
+            assert "summary" in art
+
+    def test_TC_L102_L201_423_ic_16_allowed_decisions_and_blocks_progress(
+        self, sut_with_ui: StageGateController, ui_stub: MagicMock,
+    ) -> None:
+        """§3.16.2 · allowed_decisions 含 approve/reject/request_change · blocks_progress=True。"""
+        sut_with_ui.request_gate_decision(_evidence_full("S2"))
+        payload = ui_stub.push_stage_gate_card_to_ui.call_args.kwargs["command"]
+        assert "allowed_decisions" in payload
+        assert set(payload["allowed_decisions"]) == {"approve", "reject", "request_change"}
+        assert payload.get("blocks_progress", True) is True
+
+    def test_TC_L102_L201_424_ic_16_not_called_on_need_input(
+        self, sut_with_ui: StageGateController, ui_stub: MagicMock,
+    ) -> None:
+        """need_input 分支 · 不推送卡片（§3.16.1 只 pass 时推）。"""
+        ev = _evidence_full("S2", signals=("4_pieces_ready",))  # 缺 3 个信号
+        dec = sut_with_ui.request_gate_decision(ev)
+        assert dec.decision == "need_input"
+        assert ui_stub.push_stage_gate_card_to_ui.call_count == 0
+
+    def test_TC_L102_L201_425_ic_16_no_ui_bridge_no_crash(
+        self, sut: StageGateController,
+    ) -> None:
+        """未注入 ui_bridge · pass 正常工作 · IC-16 降级为 no-op（向后兼容）。"""
+        dec = sut.request_gate_decision(_evidence_full("S2"))
+        assert dec.decision == "pass"  # 不 crash · UI 缺失不阻塞决策
+
+    def test_TC_L102_L201_426_ic_16_ts_iso8601(
+        self, sut_with_ui: StageGateController, ui_stub: MagicMock,
+    ) -> None:
+        """§3.16.2 ts ISO-8601 Z。"""
+        sut_with_ui.request_gate_decision(_evidence_full("S2"))
+        payload = ui_stub.push_stage_gate_card_to_ui.call_args.kwargs["command"]
+        assert "ts" in payload
+        assert "T" in payload["ts"]
+        assert payload["ts"].endswith("Z")
+
+
+class TestL2_01_IC16_Stub:
+    """IC-16 event-bus-only stub · 无 ui_bridge 时走 IC-09 事件。"""
+
+    def test_TC_L102_L201_427_ic_16_event_fallback_emitted(
+        self, sut: StageGateController, event_bus: MagicMock,
+    ) -> None:
+        """未注入 ui_bridge 时 · 发 IC-09 ic_16_push_stage_gate_card 事件（降级审计路径）。"""
+        sut.request_gate_decision(_evidence_full("S2"))
+        events = [c.kwargs["event_type"] for c in event_bus.append_event.call_args_list]
+        assert "ic_16_push_stage_gate_card" in events
+
+    def test_TC_L102_L201_428_ic_16_event_payload_schema(
+        self, sut: StageGateController, event_bus: MagicMock,
+    ) -> None:
+        """降级事件 payload 与 §3.16.2 schema 对齐。"""
+        sut.request_gate_decision(_evidence_full("S2"))
+        ic16_events = [
+            c for c in event_bus.append_event.call_args_list
+            if c.kwargs["event_type"] == "ic_16_push_stage_gate_card"
+        ]
+        assert len(ic16_events) == 1
+        payload = ic16_events[0].kwargs["payload"]
+        for k in ("card_id", "project_id", "gate_id", "stage_name",
+                  "artifacts_bundle", "trim_level", "allowed_decisions",
+                  "blocks_progress", "ts"):
+            assert k in payload, f"降级事件 missing {k}"
