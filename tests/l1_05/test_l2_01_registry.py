@@ -492,3 +492,106 @@ class TestLedgerWrite:
         durations.sort()
         p99 = durations[98]
         assert p99 < 50.0, f"p99 write latency exceeded 50ms SLO: {p99:.2f}ms"
+
+
+class TestFsWatcher:
+    """Task 01.5 · fs_watcher 热更新 · throttle 10s · 原子 swap."""
+
+    def _bootstrap_api(self, tmp_project, fixtures_dir):
+        import shutil
+
+        from app.l1_05.registry.loader import RegistryLoader
+        from app.l1_05.registry.query_api import RegistryQueryAPI
+
+        cache = tmp_project / "skills" / "registry-cache"
+        shutil.copy(fixtures_dir / "registry_valid.yaml", cache / "registry.yaml")
+        loader = RegistryLoader(project_root=tmp_project)
+        api = RegistryQueryAPI(snapshot=loader.load())
+        return loader, api
+
+    def test_trigger_reload_swaps_to_new_snapshot(self, tmp_project, fixtures_dir):
+        from app.l1_05.registry.fs_watcher import FsWatcher
+
+        loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
+        old_ts = api.snapshot.loaded_at_ts_ns
+        watcher = FsWatcher(loader=loader, api=api, throttle_s=0)
+        # time.sleep ns tick · 保证 new ts > old ts
+        import time as _t
+        _t.sleep(0.001)
+        watcher.trigger_reload()
+        assert api.snapshot.loaded_at_ts_ns > old_ts
+        assert "write_test" in api.snapshot.capability_points
+
+    def test_trigger_reload_does_not_crash_on_load_error(self, tmp_project, fixtures_dir):
+        """reload 失败时保留旧 snapshot · 不让整进程崩."""
+        from app.l1_05.registry.fs_watcher import FsWatcher
+
+        loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
+        old_snap = api.snapshot
+        # 写入 invalid yaml · reload 应捕获错误并保留旧 snapshot
+        yaml_path = tmp_project / "skills" / "registry-cache" / "registry.yaml"
+        yaml_path.write_text("invalid: yaml: :\n\n bad", encoding="utf-8")
+        watcher = FsWatcher(loader=loader, api=api, throttle_s=0)
+        # 不 raise
+        ok = watcher.trigger_reload()
+        assert ok is False
+        # 旧 snapshot 仍然可查
+        assert api.snapshot is old_snap
+
+    def test_throttle_coalesces_rapid_calls(self, tmp_project, fixtures_dir):
+        """throttle 10s 内多次 _on_change → 只 reload 1 次."""
+        from app.l1_05.registry.fs_watcher import FsWatcher
+
+        loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
+        watcher = FsWatcher(loader=loader, api=api, throttle_s=10.0)
+        # 连续 3 次 _on_change 应只触发 1 次 reload
+        count_before = watcher.reload_count
+        watcher._on_change()
+        watcher._on_change()
+        watcher._on_change()
+        # 第一次 reload 成功 · 后两次被 throttle 吞掉
+        assert watcher.reload_count == count_before + 1
+
+    def test_throttle_allows_reload_after_window(self, tmp_project, fixtures_dir, monkeypatch):
+        """throttle 窗口外 · 下次 _on_change 再次触发 reload."""
+        import time as _t
+
+        from app.l1_05.registry.fs_watcher import FsWatcher
+
+        loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
+        watcher = FsWatcher(loader=loader, api=api, throttle_s=1.0)
+
+        fake_now = [1000.0]
+
+        def now() -> float:
+            return fake_now[0]
+
+        monkeypatch.setattr(_t, "monotonic", now)
+        # 绕过 watcher 内部 time 的第一次绑定
+        monkeypatch.setattr(
+            "app.l1_05.registry.fs_watcher.time.monotonic", now, raising=False
+        )
+
+        # 第一次 reload
+        watcher._on_change()
+        first_count = watcher.reload_count
+        # throttle 内 · 第二次被吞
+        watcher._on_change()
+        assert watcher.reload_count == first_count
+        # 推时钟过 throttle 窗口
+        fake_now[0] = 1002.0
+        watcher._on_change()
+        assert watcher.reload_count == first_count + 1
+
+    def test_reload_slo_under_500ms(self, tmp_project, fixtures_dir):
+        """SLO: fs_watch 触发到 swap 完成 ≤ 500ms."""
+        import time
+
+        from app.l1_05.registry.fs_watcher import FsWatcher
+
+        loader, api = self._bootstrap_api(tmp_project, fixtures_dir)
+        watcher = FsWatcher(loader=loader, api=api, throttle_s=0)
+        t0 = time.perf_counter()
+        watcher.trigger_reload()
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert elapsed_ms < 500.0, f"reload exceeded 500ms SLO: {elapsed_ms:.1f}ms"
