@@ -31,7 +31,7 @@ updated_at: 2026-04-23
 | Dev-γ | L1-05 | `app/l1_05/**` · `tests/l1_05/**` · `tests/unit/l1_05/**` | 🟢 低 |
 | Dev-δ | L1-02 | `app/l1_02/**` · `tests/l1_02/**` · `tests/unit/l1_02/**` | 🟢 低（已存在基础骨架）|
 | Dev-ε | L1-03 | `app/l1_03/**` · `tests/l1_03/**` · `tests/unit/l1_03/**` | 🟢 低 |
-| Dev-ζ | L1-07 | `app/l1_07/**` · `tests/l1_07/**` · `tests/unit/l1_07/**` | 🟢 低 |
+| Dev-ζ | L1-07 | `app/supervisor/**` · `tests/supervisor/**`（语义名 · 2026-04-23 主会话仲裁调整 · 见 `docs/4-exe-plan/arbitration-logs/2026-04-23-Dev-ζ-4-corrections.md` C-4）| 🟢 低 |
 | Dev-η | L1-08 | `app/l1_08/**` · `tests/l1_08/**` · `tests/unit/l1_08/**` | 🟢 低 |
 | Dev-θ | L1-10 | `app/l1_10/**` · `tests/l1_10/**` · `tests/unit/l1_10/**` · `frontend/**`（Vue）· `bff/**`（FastAPI BFF）| 🟡 中（frontend 独立子树）|
 

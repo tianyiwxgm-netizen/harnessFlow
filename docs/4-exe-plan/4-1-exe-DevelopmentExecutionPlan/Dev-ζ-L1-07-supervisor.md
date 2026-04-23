@@ -38,7 +38,7 @@ estimated_duration: 7-9 天（ζ1 · 3 天 + ζ2 · 4 天）
 **ζ1 批**（3 天 · 3 L2）：
 | L2 | 职责 | 估时 |
 |:---:|:---|:---:|
-| L2-01 8 维度采集器 | 订阅 IC-09 · 30s 扫 · 8 维度（代码/质量/进度/风险/合规/...） | 1.25 天 |
+| L2-01 8 维度采集器 | 主动调 IC-11 read_event_stream + 写 IC-09 · 30s tick / PostToolUse fast / on-demand 3 入口 · 8 维度（phase/artifacts/wp_status/tool_calls/latency_slo/self_repair_rate/rollback_counter/event_bus）| 1.25 天 |
 | L2-04 Supervisor 事件发送器 | IC-13/14/15 出口 · 队列 + 背压 · BLOCK 抢占 | 1 天 |
 | L2-06 死循环升级器+回退路由 | 同级连 ≥ 3 failed · 自动升级 | 0.75 天 |
 
