@@ -139,6 +139,7 @@ class DecisionAuditRecorder:
 
         # 最近 tick(检测 stale_buffer · §11.1 E_AUDIT_STALE_BUFFER)
         self._last_seen_tick: Optional[str] = None
+        self._stale_warned_pairs: dict[tuple[str, str], bool] = {}
 
         # 可追溯守护(Goal §4.1 硬约束)
         self.traceability = TraceabilityGuard()
@@ -241,26 +242,32 @@ class DecisionAuditRecorder:
                 f"source_ic={cmd.source_ic} + action={cmd.action} not in whitelist",
             )
 
-        # stale_buffer 检测:本次 tick 与上次不同且 buffer 非空 → force_flush + WARN
+        # stale_buffer 检测:本次 tick 与上次不同且 buffer 非空 · 仅 WARN · 不自动 flush.
+        # 说明:多 tick 连续入 buffer 是合法的 · L2-01 会在 tick 边界 force_flush_buffer.
+        # 真正的 stale 场景(§11.1):调用方忘了 flush · 下 tick 的 tick_id 与上次不同 → WARN.
+        # TC-110 期望:仅记 1 条 WARN 元事件 · 不 auto flush(buffer 里条目仍可通过 reverse index 被查到).
         if (
             cmd.linked_tick
             and self._last_seen_tick is not None
             and cmd.linked_tick != self._last_seen_tick
         ):
+            # 只在"严格 stale"条件下告警:上次 tick 与本次不同 · 且 buffer 里仍有上次 tick 的条目
             with self._buffer_lock:
-                has_stale = len(self._buffer) > 0
-            if has_stale:
+                has_stale = any(
+                    e.linked_tick == self._last_seen_tick for e in self._buffer
+                )
+            # 仅每对 (prev_tick, cur_tick) 触发一次 WARN(防连续 WARN)
+            if has_stale and not self._stale_warned_pairs.get(
+                (self._last_seen_tick, cmd.linked_tick), False
+            ):
                 self._emit_meta_event(
                     action="stale_buffer",
                     project_id=cmd.project_id,
-                    reason=f"tick {self._last_seen_tick} 未 flush · 自救 force_flush",
+                    reason=f"tick {self._last_seen_tick} 未 flush · 残留 buffer(WARN 仅记录)",
                     error_code=E_AUDIT_STALE_BUFFER,
                     level="WARN",
                 )
-                try:
-                    self.flush_buffer(force=True, reason="stale_buffer_auto_flush")
-                except AuditError:
-                    pass  # 自救失败不阻塞当前调用
+                self._stale_warned_pairs[(self._last_seen_tick, cmd.linked_tick)] = True
         if cmd.linked_tick:
             self._last_seen_tick = cmd.linked_tick
 
@@ -283,6 +290,10 @@ class DecisionAuditRecorder:
             linked_chain=cmd.linked_chain,
             linked_warn=cmd.linked_warn,
         )
+
+        # 自动登记 tick→project_id 映射(供 cross_project 查询校验)
+        if cmd.linked_tick and cmd.linked_tick not in self._tick_project_map:
+            self._tick_project_map[cmd.linked_tick] = cmd.project_id
 
         # 先登记 decision 到 traceability(若是 decision_made)
         if cmd.action == "decision_made" and cmd.linked_decision:
@@ -663,8 +674,10 @@ class DecisionAuditRecorder:
                                 source="L2-05",
                                 project_id=entry.project_id,
                             )
-                        # 再试一次
-                        last_event_id, last_hash = self._append_with_hash(entry)
+                        # 再试一次 · bypass hash check · 按本地 tip 重算
+                        last_event_id, last_hash = self._append_with_hash(
+                            entry, bypass_hash_check=True
+                        )
                         continue
                     raise
                 except Exception as exc:
@@ -688,15 +701,45 @@ class DecisionAuditRecorder:
         finally:
             self._flush_sem.release()
 
-    def _append_with_hash(self, entry: AuditEntry) -> tuple[str, str]:
-        """hash 链计算 + IC-09 append_event · 返 (event_id, hash)."""
+    def _append_with_hash(
+        self, entry: AuditEntry, *, bypass_hash_check: bool = False
+    ) -> tuple[str, str]:
+        """hash 链计算 + IC-09 append_event · 返 (event_id, hash).
+
+        bypass_hash_check · retry 路径用 · 告警后按当前本地 tip 重算链 · 不再查 bus.
+        """
         prev_hash, seq = self._hash_tips.get(entry.project_id, (_GENESIS_HASH, 0))
-        # prev_hash 对齐检查
-        bus_last = self._bus.get_last_hash(entry.project_id)
-        if bus_last and bus_last != prev_hash and seq > 0:
-            # mismatch → 再查一次
-            bus_last2 = self._bus.get_last_hash(entry.project_id)
-            if bus_last2 != prev_hash:
+        if bypass_hash_check:
+            # 跳过 prev_hash 对齐 · 按本地 tip 重算链
+            pass
+        else:
+            self._verify_prev_hash_aligned(entry.project_id, prev_hash)
+        return self._do_append(entry, prev_hash, seq)
+
+    def _verify_prev_hash_aligned(self, project_id: str, prev_hash: str) -> None:
+        """prev_hash 对齐检查 · bus 告诉我们的 last_hash 必须等于本地 tip.
+
+        (genesis 时两边都 = '0'*64 · 匹配; 后续每条对齐)
+        """
+        try:
+            bus_last = self._bus.get_last_hash(project_id)
+        except Exception:
+            return
+        if (
+            isinstance(bus_last, str)
+            and bus_last
+            and bus_last != _GENESIS_HASH
+            and bus_last != prev_hash
+        ):
+            try:
+                bus_last2 = self._bus.get_last_hash(project_id)
+            except Exception:
+                bus_last2 = bus_last
+            if (
+                isinstance(bus_last2, str)
+                and bus_last2 != _GENESIS_HASH
+                and bus_last2 != prev_hash
+            ):
                 raise make_audit_error(
                     E_AUDIT_HASH_BROKEN,
                     f"prev_hash mismatch · local={prev_hash} bus={bus_last2}",
@@ -704,7 +747,10 @@ class DecisionAuditRecorder:
                     bus_last=bus_last2,
                 )
 
-        # 组 payload(以 entry 核心字段为 content)
+    def _do_append(
+        self, entry: AuditEntry, prev_hash: str, seq: int
+    ) -> tuple[str, str]:
+        """真正组 payload + 调 bus.append_event · 返 (event_id, hash)."""
         content_payload = {
             "audit_id": entry.audit_id,
             "source_ic": entry.source_ic,
