@@ -146,3 +146,22 @@ def test_TC_L101_L205_E08_get_hash_tip_unknown_project_returns_genesis(
     tip = sut.get_hash_tip(project_id="pid-never-seen")
     assert tip.hash == "0" * 64
     assert tip.sequence == 0
+
+
+# ---------------------------------------------------------------------------
+# TC-E09 · peek_buffer 返回副本 · mutate 外部不影响内部
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E09_peek_buffer_returns_copy_not_ref(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick="tick-peek",
+        reason="peek test", evidence=["e1"],
+    ))
+    snapshot = sut.peek_buffer()
+    assert len(snapshot) == 1
+    snapshot.clear()  # mutate 外部
+    assert sut.buffer_size() == 1  # 内部 buffer 未受影响
