@@ -88,16 +88,20 @@ def request_context(
 
     若 correlation_id is None 且 auto_generate=True · 自动生成新 id.
     yields dict(correlation_id, trace_id, span_id) · 当前上下文值.
+
+    E-1 修复：nested-safe · 用 Token.reset(token) 正确恢复每 ContextVar 的前值.
+    原实现无条件 `set(None)` 会擦外层值（嵌套场景破 L1-01 主循环 tick-level 追溯）.
     """
     if correlation_id is None and auto_generate_correlation:
         correlation_id = new_correlation_id()
-    tokens = []
+    # E-1: 配对 (ContextVar, Token) · 退出时 ContextVar.reset(Token) 恢复前值
+    reset_pairs: list[tuple[contextvars.ContextVar, contextvars.Token]] = []
     if correlation_id is not None:
-        tokens.append(set_correlation_id(correlation_id))
+        reset_pairs.append((_correlation_id, set_correlation_id(correlation_id)))
     if trace_id is not None:
-        tokens.append(set_trace_id(trace_id))
+        reset_pairs.append((_trace_id, set_trace_id(trace_id)))
     if span_id is not None:
-        tokens.append(set_span_id(span_id))
+        reset_pairs.append((_span_id, set_span_id(span_id)))
     try:
         yield {
             "correlation_id": correlation_id,
@@ -105,15 +109,9 @@ def request_context(
             "span_id": span_id,
         }
     finally:
-        # Token order doesn't matter for reset · but restore in reverse
-        for tok in reversed(tokens):
-            # ContextVar.reset 需要 var 自己 · 通过 Token 找不到 ContextVar
-            # 简单起见直接 set(None)
-            _ = tok
-        # Reset 所有（简化实现 · 正式 V2+ 用 Token.reset）
-        _correlation_id.set(None)
-        _trace_id.set(None)
-        _span_id.set(None)
+        # reverse 恢复（LIFO · 与 set 顺序相反）· 保持 ContextVar 原值
+        for var, tok in reversed(reset_pairs):
+            var.reset(tok)
 
 
 __all__ = [
