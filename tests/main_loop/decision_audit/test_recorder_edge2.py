@@ -255,3 +255,28 @@ def test_TC_L101_L205_E23_get_hash_tip_sequence_accumulates(
     assert tip.sequence == 3
     assert tip.hash != "0" * 64
     assert len(tip.hash) == 64
+
+
+# ---------------------------------------------------------------------------
+# TC-E24 · event_bus.append_event · links 含 audit_id · idempotency_key 回退
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E24_append_event_has_audit_link_and_fallback_idempotency(
+    sut, mock_project_id, mock_event_bus, make_audit_cmd
+) -> None:
+    r = sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick="tick-e24",
+        reason="link check", evidence=["e1"],
+        # idempotency_key 留空 · 观察是否 fallback 到 audit_id
+    ))
+    sut.flush_buffer(force=True, reason="tick_boundary")
+    call = mock_event_bus.append_event.call_args_list[0]
+    links = call.kwargs.get("links") or []
+    assert any(
+        isinstance(l, dict) and l.get("kind") == "audit" and l.get("ref") == r.audit_id
+        for l in links
+    )
+    # idempotency_key fallback = audit_id
+    assert call.kwargs.get("idempotency_key") == r.audit_id
