@@ -1,11 +1,15 @@
-"""L2-03 TestCaseGenerator 主入口（WP03 scope · skeleton）。
+"""L2-03 TestCaseGenerator 主入口（WP03 scope · TC-200 + 200b + 200c）。
 
-WP03 TDD 逐步构建：先过 TC-200（generate 产 READY TestSuite）。
+WP03 TDD 逐步构建：
+  - TC-200  · generate 产 READY TestSuite
+  - TC-200b · suite.cases 数 = slot 矩阵展开数
+  - TC-200c · 生成即红灯（全部 CaseState.RED）
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from app.quality_loop.tdd_blueprint.schemas import TDDBlueprint
 
@@ -71,16 +75,45 @@ class TestCaseGenerator:
             test_framework=options.test_framework,
         )
 
-        # INITIALIZING → GENERATING（skeleton 版不渲染 · 直通 READY）
+        # INITIALIZING → GENERATING
         suite.state = SuiteState.GENERATING
+
+        # ac_id → raw_text 索引（renderer intent_line 源）
+        ac_text_by_id = self._ac_text_index(blueprint)
+
+        for slot in slots:
+            intent_line = ac_text_by_id.get(slot.ac_id, slot.ac_id)
+            skeleton = self._renderer.render(
+                slot,
+                intent_line=intent_line,
+                blueprint_id=blueprint.blueprint_id,
+                blueprint_version=blueprint.version,
+                options=options,
+                wp_id=options.wp_id,
+            )
+            suite.cases.append(skeleton)
+            self.render_call_count += 1
+
         # GENERATING → READY
         suite.state = SuiteState.READY
         suite.ready_at = _utcnow_iso()
-        # RED 归零
+        # §10.5 · 生成即红灯
         for c in suite.cases:
             c.state = CaseState.RED
 
         return suite
+
+    @staticmethod
+    def _ac_text_index(blueprint: TDDBlueprint) -> dict[str, str]:
+        """从 blueprint.ac_items 取 raw_text · 没有就回退空串。"""
+        idx: dict[str, str] = {}
+        items: Any = getattr(blueprint, "ac_items", None) or []
+        for item in items:
+            ac_id = getattr(item, "id", None)
+            raw = getattr(item, "raw_text", None)
+            if isinstance(ac_id, str):
+                idx[ac_id] = raw if isinstance(raw, str) else ""
+        return idx
 
 
 __all__ = ["TestCaseGenerator"]
