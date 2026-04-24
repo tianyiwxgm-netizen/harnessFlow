@@ -8,6 +8,8 @@ WP03 TDD 逐步构建：
   - TC-200e · suite_id 稳定（hash_blueprint_signature）
   - TC-200f · PM-14 · case.file_path 前缀 projects/<pid>/testing/generated/
              （pytest_renderer.build_file_path 组装 · generator 传递 options.project_id）
+  - TC-200g · §10.9 正向 · 每 case.code ast.parse 通过
+             （§6 algo 5 syntax_check 由 renderer 已内嵌 · generator 组装完毕必已 valid）
   - TC-002  · §6.10 algo 10 · 同 (blueprint_id, version, project_id) 幂等
              · 第二次调用直接返回 cache · 不再 render
 """
