@@ -446,6 +446,103 @@ def assert_panic_within_100ms(
     return elapsed_ms
 
 
+# =============================================================================
+# IC-04 · L1-05 skill_invoke 断言
+# =============================================================================
+
+
+def assert_ic_04_invoked(
+    invoker_calls: list[dict[str, Any]],
+    *,
+    skill_id: str,
+    project_id: str | None = None,
+    min_count: int = 1,
+) -> list[dict[str, Any]]:
+    """IC-04: 断言 L1-05 SkillInvoker 被调 · 指定 skill_id.
+
+    Args:
+        invoker_calls: 通常是 FakeSkillInvoker.call_log 或类似记录.
+                       每项 dict · 含 {skill_id, args, kw?}
+        skill_id: 必须精确匹配.
+        project_id: 可选 · 校 args 里的 project_id 字段(PM-14).
+        min_count: 默认 ≥ 1.
+
+    返: 匹配的调用记录.
+    """
+    matched = [c for c in invoker_calls if c.get("skill_id") == skill_id]
+    if project_id is not None:
+        matched = [c for c in matched if (c.get("args") or {}).get("project_id") == project_id]
+    if len(matched) < min_count:
+        all_skills = [c.get("skill_id") for c in invoker_calls]
+        raise AssertionError(
+            f"IC-04 skill_invoke 断言失败 skill_id={skill_id} pid={project_id} "
+            f"期望≥{min_count} 实际={len(matched)} 全部已调 skills={all_skills}"
+        )
+    return matched
+
+
+# =============================================================================
+# IC-19 · L1-03 WBS 拆解入口断言
+# =============================================================================
+
+
+def assert_ic_19_wbs_accepted(
+    result: Any,
+    *,
+    project_id: str,
+) -> None:
+    """IC-19: 断言 L1-03 WBS 拆解同步 ack 合法(status=accepted + pid 一致).
+
+    Args:
+        result: RequestWBSDecompositionResult(或等价 dict).
+        project_id: PM-14 校对.
+    """
+    status = getattr(result, "status", None) or (result.get("status") if isinstance(result, dict) else None)
+    if status != "accepted":
+        raise AssertionError(
+            f"IC-19 WBS dispatch status 期望=accepted 实际={status}"
+        )
+    pid = getattr(result, "project_id", None) or (result.get("project_id") if isinstance(result, dict) else None)
+    if pid != project_id:
+        raise AssertionError(
+            f"IC-19 WBS PM-14 违反 期望 project_id={project_id} 实际={pid}"
+        )
+
+
+# =============================================================================
+# IC-13 · L1-07 Supervisor sense 断言(从事件 bus 查 sense_emitted)
+# =============================================================================
+
+
+def assert_ic_13_sense_emitted(
+    event_bus_root: Path,
+    *,
+    project_id: str,
+    dim: str | None = None,
+    min_count: int = 1,
+) -> list[dict[str, Any]]:
+    """IC-13: 断言 L1-07 Supervisor 对 project 发出过 sense 事件.
+
+    Supervisor 每 tick 读 10 dim → 聚合 drift → emit L1-07:supervisor_sense_emitted.
+
+    Args:
+        project_id: PM-14 分片.
+        dim: 可选 · 校 payload.dim 必含(如 "plan_drift" / "spec_deviation" / "halt_signal").
+        min_count: 默认 ≥ 1 条.
+    """
+    events = list_events(
+        event_bus_root, project_id, type_exact="L1-07:supervisor_sense_emitted",
+    )
+    if dim is not None:
+        events = [e for e in events if e.get("payload", {}).get("dim") == dim]
+    if len(events) < min_count:
+        raise AssertionError(
+            f"IC-13 supervisor_sense_emitted 断言失败 pid={project_id} dim={dim} "
+            f"期望≥{min_count} 实际={len(events)}"
+        )
+    return events
+
+
 def assert_ic_20_dispatched(
     delegate_calls: list[Any],
     *,
