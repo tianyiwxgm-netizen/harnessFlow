@@ -118,3 +118,18 @@ def test_TC_L101_L205_E06_replay_without_jsonl_root_sets_status_no_root(
     assert rr.latest_hash == "0" * 64
     assert rr.hash_chain_valid is True
     assert sut.replay_status() == "no_root"
+
+
+# ---------------------------------------------------------------------------
+# TC-E07 · replay 空 audit_dir · status=no_data
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E07_replay_empty_audit_dir_sets_status_no_data(
+    make_recorder, mock_project_id, tmp_path
+) -> None:
+    rec = make_recorder(session_active_pid=mock_project_id, jsonl_root=tmp_path)
+    rr = rec.replay_from_jsonl(project_id=mock_project_id)
+    assert rr.replayed_count == 0
+    assert rr.latest_hash == "0" * 64
+    assert rec.replay_status() == "no_data"
