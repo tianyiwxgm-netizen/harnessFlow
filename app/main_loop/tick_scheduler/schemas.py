@@ -14,7 +14,7 @@ HRL-04(HarnessFlow Release Blocker 04):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 # ------------------------------------------------------------------
@@ -23,7 +23,7 @@ from typing import Any, Literal
 TickStateName = Literal["IDLE", "RUNNING", "PAUSED", "HALTED"]
 
 
-class TickState(str, Enum):
+class TickState(StrEnum):
     """Tick 调度器运行态 · 4 态简化版 (WP04 范围)。
 
     - IDLE:     未启动 / 已停止
@@ -93,7 +93,7 @@ class TickBudget:
 # ------------------------------------------------------------------
 # TickEvent · 每 tick 审计事件(对 L2-05 IC-L2-05 的 payload 投影)
 # ------------------------------------------------------------------
-class TickEventType(str, Enum):
+class TickEventType(StrEnum):
     """tick loop 产生的审计事件类型 · 对齐 §3.1/§3.2/§3.3 tick_scheduled 等。"""
 
     TICK_SCHEDULED = "tick_scheduled"

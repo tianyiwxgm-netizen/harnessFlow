@@ -1,7 +1,6 @@
 """TC-WP04-AL01..AL20 · AsyncioTickLoop 单 tick + 主逻辑(确定性路径)。"""
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 import pytest

@@ -9,7 +9,7 @@ P0 场景:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -23,13 +23,11 @@ from app.main_loop.tick_scheduler import (
 from app.main_loop.tick_scheduler.asyncio_loop import (
     StubActionDispatcher,
     StubDecisionEngine,
-    StubStateReader,
 )
-from app.main_loop.tick_scheduler.halt_enforcer import HaltEnforcer
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 class TestE2EScenarios:

@@ -15,7 +15,6 @@ from app.main_loop.tick_scheduler import (
 from app.main_loop.tick_scheduler.asyncio_loop import (
     StubActionDispatcher,
     StubDecisionEngine,
-    StubStateReader,
 )
 
 

@@ -27,7 +27,7 @@ HRL-04 铁律:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from app.main_loop.state_machine.orchestrator import StateMachineOrchestrator
 from app.main_loop.tick_scheduler.asyncio_loop import (
@@ -151,7 +151,7 @@ class TickScheduler:
         state_reader: ProjectStateReaderProtocol | None = None,
         action_dispatcher: ActionDispatcherProtocol | None = None,
         state_machine_orchestrator: StateMachineOrchestrator | None = None,
-    ) -> "TickScheduler":
+    ) -> TickScheduler:
         """默认装配 · 方便测试和端到端集成。
 
         - state_machine_orchestrator 传入 → 用真 WP02 bridge

@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from app.main_loop.tick_scheduler.schemas import (
     TICK_DRIFT_SLO_MS,

@@ -7,8 +7,6 @@
 """
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from app.main_loop.supervisor_receiver.ic_15_consumer import IC15Consumer

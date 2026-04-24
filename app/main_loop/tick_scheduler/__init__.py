@@ -23,16 +23,16 @@ from app.main_loop.tick_scheduler.panic_handler import (
     PanicResult,
     PanicSignal,
 )
+from app.main_loop.tick_scheduler.scheduler import (
+    StateMachineSnapshotReader,
+    TickScheduler,
+)
 from app.main_loop.tick_scheduler.schemas import (
     TickBudget,
     TickEvent,
     TickEventType,
     TickResult,
     TickState,
-)
-from app.main_loop.tick_scheduler.scheduler import (
-    StateMachineSnapshotReader,
-    TickScheduler,
 )
 
 __all__ = [

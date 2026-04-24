@@ -176,7 +176,7 @@ def test_TC_WP04_BENCH_HALT_LATENCY_P99_UNDER_100MS(benchmark) -> None:
     def _round() -> None:
         counter["n"] += 1
         enforcer = HaltEnforcer(project_id="pid-bench-halt")
-        result = event_loop.run_until_complete(
+        event_loop.run_until_complete(
             enforcer.halt(
                 halt_id=f"halt-bench-{counter['n']:06d}",
                 red_line_id="IRREVERSIBLE_HALT",

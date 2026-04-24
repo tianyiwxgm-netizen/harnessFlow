@@ -22,13 +22,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from app.main_loop.tick_scheduler.halt_enforcer import HaltEnforcer
 from app.main_loop.tick_scheduler.schemas import (
     E_TICK_PANIC_ALREADY_PAUSED,
     E_TICK_PANIC_NO_USER_ID,
-    E_TICK_PANIC_SLO_VIOLATION,
     PANIC_SLO_MS,
     TickError,
 )

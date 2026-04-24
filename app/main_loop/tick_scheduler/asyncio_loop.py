@@ -37,11 +37,12 @@ DecisionEngine 用 Protocol mock:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional, Protocol
+from typing import Any, Protocol
 
 from app.main_loop.tick_scheduler.deadline_tracker import DeadlineTracker
 from app.main_loop.tick_scheduler.halt_enforcer import HaltEnforcer
@@ -102,7 +103,7 @@ class StubDecisionEngine:
         self.fail_after = fail_after
         self.call_count = 0
 
-    async def decide(self, ctx: dict[str, Any]) -> dict[str, Any]:
+    async def decide(self, ctx: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
         self.call_count += 1
         if self.fail_after is not None and self.call_count > self.fail_after:
             raise RuntimeError(f"stub failure after {self.fail_after}")
@@ -222,12 +223,10 @@ class AsyncioTickLoop:
         self._stop_event.set()
         try:
             await asyncio.wait_for(self._task, timeout=timeout_sec)
-        except asyncio.TimeoutError:  # pragma: no cover - 防御
+        except TimeoutError:  # pragma: no cover - 防御
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
         finally:
             self._task = None
             self._state = TickState.IDLE

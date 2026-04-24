@@ -15,14 +15,12 @@ HRL-05 释义(与 IC-15 consumer 对齐):
 """
 from __future__ import annotations
 
-import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.main_loop.tick_scheduler.schemas import (
     E_TICK_HALTED_REJECT,
-    E_TICK_HALT_SLO_VIOLATION,
     HARD_HALT_SLO_MS,
     TickError,
     TickState,
