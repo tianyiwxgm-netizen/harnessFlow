@@ -3,7 +3,7 @@
 **定位**：Quality Loop 的 Gate 裁决层 · 消费 DoD AST(WP01 `dod_compiler`)+
 metric 样本(外部 S4/S5 注入) · 产出 5 基线 GateVerdict + 验收 Checklist。
 
-**5 基线判据（3-3 quality-standards · §2 核心清单）**：
+**5 基线判据（brief §职责）**：
 
 | baseline | 判据 | target_stage 建议 |
 |:---|:---|:---|
@@ -13,13 +13,13 @@ metric 样本(外部 S4/S5 注入) · 产出 5 基线 GateVerdict + 验收 Check
 | `rework`     | hard 失败 或 soft < 60%       | RETRY_S4 |
 | `abort`      | 连续 3 次 `rework`            | UPGRADE_TO_STAGE_GATE |
 
-**对外暴露**：
-- `GateCompiler`            · Facade · `evaluate_gate(dod, metric) → GateVerdict`
-- `BaselineEvaluator`       · 纯函数 · 5 基线判据
-- `MetricSampler`           · 外部 metric → `MetricSample`
-- `DoDAdapter`              · 适配 WP01 `CompiledDoD`
-- `ChecklistCompiler`       · 产 human-readable `AcceptanceChecklist`
-- schemas（`GateVerdict` / `Baseline` / `AcceptanceChecklist` …）
+**对外暴露**（分文件渐进填充 · 本 `__init__` 只 re-export 已落地模块）：
+- `GateCompiler`            · Facade · `evaluate_gate(dod, metric) → GateVerdict`（gate.py）
+- `BaselineEvaluator`       · 纯函数 · 5 基线判据（baseline_evaluator.py）
+- `MetricSampler`           · 外部 metric → `MetricSample`（metric_sampler.py）
+- `DoDAdapter`              · 适配 WP01 `CompiledDoD`（dod_adapter.py）
+- `ChecklistCompiler`       · 产 human-readable `AcceptanceChecklist`（checklist_compiler.py）
+- schemas（`GateVerdict` / `Baseline` / …）
 
 **约束**：
 - 依赖 WP01 `app.quality_loop.dod_compiler`（真实 import · 无 mock）
@@ -30,32 +30,17 @@ metric 样本(外部 S4/S5 注入) · 产出 5 基线 GateVerdict + 验收 Check
 from __future__ import annotations
 
 from app.quality_loop.gate_compiler.baseline_evaluator import (
-    BaselineEvaluator,
     DEFAULT_REWORK_ABORT_THRESHOLD,
     DEFAULT_SOFT_PASS_THRESHOLD,
     DEFAULT_TOLERATED_FLOOR,
+    BaselineEvaluator,
     classify_baseline,
-)
-from app.quality_loop.gate_compiler.checklist_compiler import (
-    AcceptanceChecklist,
-    ChecklistCompiler,
-    ChecklistItem,
 )
 from app.quality_loop.gate_compiler.dod_adapter import (
     DoDAdapter,
     DoDAdapterError,
     EvaluatedDoD,
     EvaluatedExpression,
-)
-from app.quality_loop.gate_compiler.gate import (
-    EvaluateGateCommand,
-    GateCompiler,
-    RewordCounter,
-)
-from app.quality_loop.gate_compiler.metric_sampler import (
-    MetricSample,
-    MetricSampler,
-    MetricSamplerError,
 )
 from app.quality_loop.gate_compiler.schemas import (
     Baseline,
@@ -67,28 +52,19 @@ from app.quality_loop.gate_compiler.schemas import (
 )
 
 __all__ = [
-    "AcceptanceChecklist",
     "Baseline",
     "BaselineEvaluator",
-    "ChecklistCompiler",
-    "ChecklistItem",
     "DEFAULT_REWORK_ABORT_THRESHOLD",
     "DEFAULT_SOFT_PASS_THRESHOLD",
     "DEFAULT_TOLERATED_FLOOR",
     "DoDAdapter",
     "DoDAdapterError",
-    "EvaluateGateCommand",
     "EvaluatedDoD",
     "EvaluatedExpression",
     "GateAction",
-    "GateCompiler",
     "GateCompilerError",
     "GateVerdict",
-    "MetricSample",
-    "MetricSampler",
-    "MetricSamplerError",
     "MissingEvidence",
-    "RewordCounter",
     "VerdictReason",
     "classify_baseline",
 ]
