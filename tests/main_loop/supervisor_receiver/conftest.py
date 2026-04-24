@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 
 from app.main_loop.supervisor_receiver.schemas import (
-    AdviceLevel,
     HaltSignal,
     RollbackInbox,
     SuggestionInbox,

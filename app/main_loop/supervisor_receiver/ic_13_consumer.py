@@ -29,7 +29,6 @@ from app.main_loop.supervisor_receiver.schemas import (
 )
 from app.supervisor.event_sender.schemas import (
     PushSuggestionCommand,
-    SuggestionLevel,
 )
 
 

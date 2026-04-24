@@ -14,7 +14,6 @@ from app.main_loop.supervisor_receiver.ic_15_consumer import (
 )
 from app.main_loop.supervisor_receiver.schemas import HaltState
 from app.supervisor.event_sender.halt_requester import MockHardHaltTarget
-from app.supervisor.event_sender.schemas import HardHaltState
 
 pytestmark = pytest.mark.asyncio
 

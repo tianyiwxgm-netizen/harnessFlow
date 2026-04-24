@@ -9,9 +9,7 @@ import pytest
 from app.main_loop.supervisor_receiver.ic_13_consumer import IC13Consumer
 from app.main_loop.supervisor_receiver.schemas import (
     AdviceLevel,
-    SuggestionInbox,
 )
-from app.supervisor.common.event_bus_stub import EventBusStub
 from app.supervisor.event_sender.schemas import SuggestionLevel
 
 pytestmark = pytest.mark.asyncio

@@ -20,7 +20,6 @@ from app.supervisor.event_sender.schemas import (
     PushRollbackRouteCommand,
     PushSuggestionCommand,
     RequestHardHaltCommand,
-    SuggestionLevel,
 )
 
 
@@ -52,7 +51,7 @@ class SuggestionInbox(BaseModel):
     @classmethod
     def from_command(
         cls, cmd: PushSuggestionCommand, *, received_at_ms: int,
-    ) -> "SuggestionInbox":
+    ) -> SuggestionInbox:
         """自 Dev-ζ producer 命令组装 inbox · 派生 level。"""
         return cls(
             command=cmd,
@@ -93,7 +92,7 @@ class RollbackInbox(BaseModel):
     @classmethod
     def from_command(
         cls, cmd: PushRollbackRouteCommand, *, received_at_ms: int,
-    ) -> "RollbackInbox":
+    ) -> RollbackInbox:
         return cls(command=cmd, received_at_ms=received_at_ms)
 
 
@@ -132,7 +131,7 @@ class HaltSignal(BaseModel):
     @classmethod
     def from_command(
         cls, cmd: RequestHardHaltCommand, *, received_at_ms: int,
-    ) -> "HaltSignal":
+    ) -> HaltSignal:
         return cls(command=cmd, received_at_ms=received_at_ms)
 
 

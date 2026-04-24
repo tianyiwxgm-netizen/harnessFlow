@@ -16,7 +16,7 @@ WP06 范围 = 最小网关 · 满足 "3 个 consume 方法 + 统一注入"。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any
 
 from app.main_loop.supervisor_receiver.ic_13_consumer import (
     EventBusProtocol,
