@@ -103,7 +103,19 @@ class TierManager:
     # ------------------------------------------------------------------ A1
 
     def resolve_read_scope(self, req: ScopeDecisionRequest) -> ScopeDecision:
-        """A1 ResolveScope + A2 EnforceIsolation · IC-L2-01."""
+        """A1 ResolveScope + A2 EnforceIsolation · IC-L2-01.
+
+        Degradation gate (P2-02 · design §11): only ``EMERGENCY_LOCKDOWN``
+        rejects reads. ``READ_ONLY_ISOLATION`` still permits reads (by name).
+        """
+        # Step 0 · degradation gate
+        if self._degradation_level == "EMERGENCY_LOCKDOWN":
+            return self._scope_deny(
+                req,
+                TierErrorCode.TIER_REGISTRY_CORRUPT,
+                "reads rejected · emergency lockdown",
+            )
+
         # Step 1 · pid format + E-TIER-010
         if not _is_valid_pid(req.project_id):
             return self._scope_deny(
@@ -207,7 +219,20 @@ class TierManager:
     # ------------------------------------------------------------------ A5
 
     def allocate_session_write_slot(self, req: WriteSlotRequest) -> WriteSlot:
-        """A5 AllocateSessionWriteSlot · IC-L2-02 (+ A3 schema + A4 kind)."""
+        """A5 AllocateSessionWriteSlot · IC-L2-02 (+ A3 schema + A4 kind).
+
+        Degradation gates (§11 L2 lockdown) enforced up-front:
+          - ``EMERGENCY_LOCKDOWN`` → reject writes (E-TIER-011)
+          - ``READ_ONLY_ISOLATION`` → reject writes (E-TIER-011)
+        """
+        # 0 · degradation gate (P2-02 · design §11 write-reject under lockdown)
+        if self._degradation_level in ("EMERGENCY_LOCKDOWN", "READ_ONLY_ISOLATION"):
+            return self._slot_deny(
+                req,
+                TierErrorCode.TIER_REGISTRY_CORRUPT,
+                f"writes rejected · degradation={self._degradation_level}",
+            )
+
         cand = req.entry_candidate
 
         # 1 · scope must be "session" (E-TIER-005)
