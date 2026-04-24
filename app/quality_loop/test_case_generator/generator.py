@@ -1,9 +1,11 @@
-"""L2-03 TestCaseGenerator 主入口（WP03 scope · TC-200 + 200b + 200c）。
+"""L2-03 TestCaseGenerator 主入口（WP03 scope · TC-200 + 200b/c/d）。
 
 WP03 TDD 逐步构建：
   - TC-200  · generate 产 READY TestSuite
   - TC-200b · suite.cases 数 = slot 矩阵展开数
   - TC-200c · 生成即红灯（全部 CaseState.RED）
+  - TC-200d · §10.1 locked · suite.ac_coverage_pct == 1.0
+             （aggregate property 派生 · blueprint_reader 已硬锁 AC 全覆盖）
 """
 
 from __future__ import annotations
