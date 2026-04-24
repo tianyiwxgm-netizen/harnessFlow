@@ -295,12 +295,16 @@ class PromotionExecutor:
             else:
                 self._target_store.write_global(promoted)
         except Exception:
+            # Review B-1 · any storage failure is infrastructure-level, not
+            # a rule violation. It MUST NOT populate the rejected-cannot-undo
+            # blacklist — transient errors (OSError / IOError / TimeoutError
+            # / adapter-specific) must be retryable. verdict="error".
             return self._reject_with_single(
                 req,
                 response_id,
                 PromoterErrorCode.WRITE_TARGET_FAIL,
                 t,
-                verdict="rejected",
+                verdict="error",
             )
 
         with self._idem_lock:
@@ -424,12 +428,13 @@ class PromotionExecutor:
                 elif sr.verdict == "rejected":
                     result.rejected.append(entry_id)
                 else:
+                    # verdict == "error" or unknown → infra failure, retryable
                     result.failed.append(
                         {
                             "entry_id": entry_id,
                             "failure_code": sr.reason_code
                             or "UNKNOWN",
-                            "will_retry": False,
+                            "will_retry": sr.verdict == "error",
                         }
                     )
 
@@ -511,11 +516,18 @@ class PromotionExecutor:
         target: PromoteTarget,
         verdict: str = "rejected",
     ) -> KBPromoteResponse:
-        # Mark rejected-cannot-undo for future calls
+        # Mark rejected-cannot-undo ONLY for content-level rule rejections.
+        # Review B-1 · verdict="error" (infra failure) MUST NOT mark_rejected.
         if verdict == "rejected":
             self._target_store.mark_rejected(req.project_id, target.entry_id)
+        # Use a distinct audit event type for infra errors vs rule rejections
+        event_type = (
+            "kb_promotion_error"
+            if verdict == "error"
+            else "kb_promotion_rejected"
+        )
         self._audit(
-            "kb_promotion_rejected",
+            event_type,
             project_id=req.project_id,
             entry_id=target.entry_id,
             error_code=code.value,
