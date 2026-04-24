@@ -81,3 +81,23 @@ def test_TC_L101_L205_E04_buffer_remaining_decrements_per_record(
     assert r1.buffer_remaining == 63
     assert r2.buffer_remaining == 62
     assert sut.buffer_size() == 2
+
+
+# ---------------------------------------------------------------------------
+# TC-E05 · flush 后 buffer 清空 · state 回 buffering
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E05_flush_clears_buffer_and_restores_state(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    for i in range(3):
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick=f"tick-e05-{i}",
+            reason=f"r{i}", evidence=[f"e{i}"],
+        ))
+    assert sut.buffer_size() == 3
+    sut.flush_buffer(force=True, reason="tick_boundary")
+    assert sut.buffer_size() == 0
+    assert sut.current_state() == "buffering"
