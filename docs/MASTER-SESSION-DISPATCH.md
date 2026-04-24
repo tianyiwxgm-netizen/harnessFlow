@@ -76,77 +76,140 @@ updated_at: 2026-04-22
 
 ---
 
-## §2.6 波 1-3 · 实际进度快照（2026-04-23 深夜 update）
+## §2.6 全局进度快照（2026-04-24 · 最新）
 
 > 主会话每次 agent 完成后更新。
 
-| Dev | L1 | WP 完成 / 总 | Review | 最终状态 |
-|:---:|:---:|:---:|:---:|:---|
-| **Dev-α** | L1-09 | **7 / 13**（α1 批 WP00-06）| 🔴 **BLOCK**（1 CRIT + 4 HIGH）| **fix agent 跑中** · `fix/dev-alpha-α1-review`（预计 0.5-1 天完）|
-| **Dev-β** | L1-06 | **2 / 6 → 推进中** | 🟡 CONDITIONAL（P0 plan 已修 · 1 P1 + 3 P2 待修）| **WP03-06 agent 跑中** · `feat/dev-beta-wp03-06`（预计 1-2 天完）|
-| **Dev-γ** | L1-05 | **6 / 6** ✅ | ✅ fix 完（223 TC · 89.43%）| ✅ **merged main**（`c605d3d`）|
-| **Dev-δ** | L1-02 | **8 / 8** ✅ | ✅ fix 完（198 TC · 89.05%）| ✅ **merged main**（`9e773d8`）|
-| **Dev-ε** | L1-03 | **6 / 6** ✅ | ✅ fix 完（230 TC · 94.1%）| ✅ **merged main**（`edd3e74`）|
-| **Dev-ζ** | L1-07 | **1 / 7**（仅 WP01）| ✅ ACCEPT（WP01）| ⏸ 待派 · ζ1 WP02-03 + ζ2 WP04-07（合计 6 WP）· 按仲裁严格落 IC-13/14/15 |
-| **Dev-η** | L1-08 | **5 / 5** ✅ | ✅ fix 完（225 TC · 93.12% · P99 0.29ms）| ✅ **merged main**（`994d31a`）|
-| **Dev-θ** | L1-10 | **4 / 9**（θ1 批）| ✅ ACCEPT（θ1）· L0 Vite C 方案已应用 | ⏸ θ1 可 merge · θ2（WP05-09）**依赖 block**（等 main-2/Dev-α WP04/Dev-δ IC-16/Dev-β IC-06）|
+### 7 波整体进度
 
-**merged main**：4/8（Dev-γ/δ/ε/η · 合计 876 TC）
-**fix 跑中**：2/8（Dev-α α1 · Dev-β WP03-06）
-**待派**：1/8（Dev-ζ · 6 WP · 最大独立任务）
-**延后**：1/8（Dev-θ θ2 · 依赖未到）
+| 波 | 内容 | 状态 | TC |
+|:---:|:---|:---:|:---:|
+| **波 1-3** | 8 Dev 底座+业务+监督 | 🟢 **全完**（Dev-θ θ2 延后）| ~1849 |
+| **波 4** | main-1 L1-04 Quality Loop | 🟢 **全完**（7 L2 + 集成 · 9 WP）| 719 |
+| **波 5** | main-2 L1-01 主决策循环 | 🟡 **进行中**（~15%）| ~15 |
+| **波 6** | main-3 + QA-1~5 | ⏸ 未启动 | - |
+| **波 7** | main-4 + Sign-1~4 + release | ⏸ 未启动 | - |
+| **Dev-θ θ2** | L1-10 UI panic/SSE/Gate/KB | ⏸ 未启动（依赖解开）| - |
 
-**剩余 WP 估算**（修订）：~18 WP 未做（α 6 α2 + β 4 WP03-06 + ζ 6 + θ 5）· 估约 **5-8 天墙钟**（原估 8-12 · 实际并发 + fix agent 推得快）。
+**main 累计 TC**：~2583(1849 + 719 + 15)
+**main HEAD**：`a6d763a`
 
-**关键风险**：
-- 🔴 **Dev-α α1 L1-09 BLOCK** · 脊柱代码 · 其他 Dev 真实 IC-09 依赖都受牵连 · 本周必须清（fix agent 已派）
-- 🟡 **commit 混淆事故 2 起** · 共享 worktree 导致 · 新规矩已立（禁 `git add -A`）
+### 波 1-3 · 8 Dev（全 merged）
+
+| Dev | L1 | WP | TC | Cov | Status |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| α | L1-09 韧性+审计 | 13/13(α1+α2) | 245 | 91-92% | ✅ |
+| β | L1-06 KB | 6/6 + fix | 267 | 89% | ✅ |
+| γ | L1-05 Skill | 6/6 + fix | 223 | 89% | ✅ |
+| δ | L1-02 Lifecycle | 8/8 + fix | 198 | 89% | ✅ |
+| ε | L1-03 WBS+WP | 6/6 + fix | 230 | 94% | ✅ |
+| ζ | L1-07 Supervisor | 7/7(ζ1+ζ2) | 281 | 92-96% | ✅ |
+| η | L1-08 Multimodal | 5/5 + fix | 225 | 93% | ✅ |
+| **θ** | L1-10 UI | **θ1 4/9** | 180 | - | ✅ θ1 · ⏸ **θ2 5 WP 待**（依赖解开可推）|
+
+### 波 4 · main-1 L1-04 Quality Loop（全 merged）
+
+| WP | L2 | TC | Cov |
+|:---:|:---|:---:|:---:|
+| WP01 | DoD 编译器 | 166 | 90.9% |
+| WP02 | TDD 蓝图 | 85 | 90.6% |
+| WP03 | 测试用例生成 | 44 | - |
+| WP04 | 质量 Gate | 90 | **96.8%** |
+| WP05 | S4 驱动 | 86 | **98.5%** |
+| WP06 | Verifier | 135 | **97.2%** |
+| WP07 | rollback_router | 65 | - |
+| WP08 | 内部 e2e | 20 | - |
+| WP09 | 跨 L1 e2e | 28 | - |
+| **合计** | | **719** | 平均 92%+ |
+
+### 波 5 · main-2 L1-01（进行中 · 7 WP）
+
+| WP | L2 | 状态 | TC |
+|:---:|:---|:---:|:---:|
+| WP01 | L2-05 审计 | 🟡 部分(TraceabilityGuard + recorder 部分 · 3 次 agent stall)| ~15-27 |
+| WP02 | L2-03 状态机 | 🟡 部分(orchestrator + IC01Producer 骨架 · 0 TC)| 0 |
+| WP03 | L2-02 决策引擎 | 🔴 未启动 | 0 |
+| WP04 | L2-01 **Tick 调度器 心脏** | 🔴 未启动 | 0 |
+| WP05 | L2-04 任务链执行 | 🔴 未启动 | 0 |
+| WP06 | L2-06 Supervisor 接收 | 🟡 部分(schemas + skeleton · 0 TC)| 0 |
+| WP07 | 集成 | 🔴 未启动 | 0 |
+| **合计** | | | **~15-27** |
+
+**波 5 完成度**：~15%（3 WP 部分骨架 · 4 WP 未动）
 
 ---
 
-## §2.7 下一步行动清单（2026-04-23 深夜更新）
+## §2.7 下一步行动清单（2026-04-24 · 最新）
 
-### A · 进行中（agent 跑）
+### A · 立即(波 5 main-2 推进)
 
-| 优先级 | 动作 | agent | ETA |
-|:---:|:---|:---:|:---:|
-| 🔴 P0 | Dev-α α1 fix 9 条（1 CRIT DiskFull halt + 4 HIGH meta/fsync/assert/context + 4 P2 契约字段）| `a02a3317` | ~0.5-1 h |
-| 🟠 P1 | Dev-β WP03-06 推进（4 WP · IC-06/07/08 + 集成）+ 顺手 1 P1 + 3 P2 fix | `a720a8d4` | ~1-2 h |
+**核心阻塞**:Tick 调度器(WP04)没做 · 其他 L2 无法真实集成。
 
-### B · 待派（等 A 中 1-2 完再派 · 防 rate limit）
+| 优先级 | 动作 | 依赖 | 预估 |
+|:---:|:---|:---|:---:|
+| 🔴 | **WP01 收尾 recorder + 剩余 TC** | 已有 27+12 TC · 补 recorder 主入口 + 5-10 TC | 1-2 h |
+| 🔴 | **WP02 完成 state_machine 全 TC** | 已有 orchestrator 骨架 · 补 30+ TC 覆盖 12 转换 | 2-3 h |
+| 🔴 | **WP06 完成 supervisor_receiver** | 已有 skeleton · 补 ic_13/14/15_consumer + 100ms bench + 30+ TC | 2-3 h |
+| 🟠 | **WP03 L2-02 决策引擎**(AST + KB boost) | 依赖 WP01 审计 | 1 天 |
+| 🔴 | **WP04 L2-01 Tick 调度器(心脏)**(100ms tick · asyncio loop) | 依赖 WP02+03 | 1.5 天 |
+| 🟠 | **WP05 L2-04 任务链执行**(asyncio.Task + 下游 L1 调用) | 依赖 WP04 | 1.5 天 |
+| 🟠 | **WP07 集成** | 依赖全 WP | 2 天 |
 
-| 动作 | agent | 预估 | 依赖 |
-|:---|:---:|:---:|:---|
-| **Dev-ζ ζ1 WP02-03 推进**（event_sender 严格按仲裁落 IC-13/14/15 · halt_requester 100ms bench · escalator）| 待派 | 2 天 | WP01 已 ACCEPT · 无依赖 |
-| **Dev-α α2 批 WP07-13 推进**（L2-02 lock_manager + L2-03 audit + L2-04 checkpoint + L2-06 shutdown · 6 WP · 最大）| 待派 | 3-4 天 | **α1 fix merge** 后 |
-| **Dev-ζ ζ2 批 WP04-07 推进**（deviation_judge + red_line + soft_drift + 集成）| 待派 | 4-5 天 | ζ1 全完 |
-| **Dev-β WP03-06 review**（agent 完后 review · 找 bug）| 待派 | 0.5 天 | WP03-06 agent 完 |
+### B · 波 5 后续(依赖 main-2 完成)
 
-### C · 主会话动作（已完）
+- **Dev-θ θ2 批**(WP05-09 · panic/SSE/Gate/KB)· 5 WP · ~3-4 天 · 主依赖就位
+- **Dev-α/β/γ/δ/ε/ζ/η 代码 review**(部分已做 · 可补)· on-demand
 
-- ✅ Dev-γ / Dev-ε / Dev-η / Dev-δ 4 分支 merge main + push（173 files · +24K 行）
-- ✅ pyproject.toml 夜晚合并（13 新 deps + 6 packages 统一）
-- ✅ Dev-θ 仲裁 4 条全应用（L0/tech-stack + L1-10 arch + Dev-θ exe-plan）
-- ✅ Vite C 方案文档落实
-- ✅ 3 组 review 完成（Dev-ε + Dev-ζ WP01 + Dev-δ + Dev-β + Dev-η + Dev-γ + Dev-α α1 + Dev-θ θ1）· 共 8 份 review md 产出
+### C · 波 6 · 集成 + QA(等 main-2 完)
 
-### D · 延后（依赖未 ready · 不可开）
+- main-3 集成 + acceptance 测试(24+12) · 7-10 天
+- QA-1~5 独立并发测试 · 3-5 天/个
+- release gate
 
-- **Dev-θ θ2 批**（WP05-09 · panic/SSE/Gate/KB）· 需 main-2 WebSocket + Dev-α WP04+ + Dev-δ IC-16 + Dev-β IC-06
-- **波 4 main-1**（L1-04 Quality Loop）· 需波 1-3 全完 + merge · 预计 2026-05-10 前后
-- **波 5 main-2**（L1-01）· 需 main-1 完 · 预计 2026-05-25 前后
+### D · 波 7 · release v1.0(等波 6 完)
 
-### E · commit 混淆事故（已发生 · 需规范）
+- main-4 最终 bug fix + 打包 · 3-5 天
+- Sign-1~4 并发 · release notes + checklist + signoff + docs
+- v1.0 发布
 
-多个 Dev 在同一 worktree 共享导致 `git add -A` 互相污染：
-- `dcbdffc`（Dev-β standup）实际含 Dev-δ WP02-F 代码
-- `8511ca7`（主会话 docs prep）实际含 Dev-β WP02 代码
+---
 
-**修复规矩**（新增到各 Dev standup 模板）：
-- **禁用 `git add -A` · `git add .`**
-- **只 `git add <具体文件>`**
-- 共享 worktree 时 · commit 前先 `git status` · 确认只 stage 自己 L1 的文件
-- 推荐：各 Dev 用**独立 worktree**（`git worktree add .worktrees/dev-x`）· 从根本避免
+## §2.8 剩余工作量 + ETA（2026-04-24）
+
+**代码剩余**(TC 预估):
+- 波 5 main-2:~300 TC(当前 15 → 目标 300+)
+- Dev-θ θ2:~150-200 TC
+- 波 6 main-3:~500 TC(集成 + acceptance)
+- QA-1~5:各 200-400 TC 测试报告
+- 波 7:非 TC(release + 签收)
+
+**预计全 v1.0 ETA**:
+- 乐观(今天开始)→ **2-3 周**(若 API 稳定)
+- 实际(API 不稳 · 多次 stall)→ **3-4 周**
+- 保守(含意外)→ **4-6 周**
+
+**当前瓶颈**:
+1. 🔴 **API 不稳定**(Anthropic 网络层多次 FailedToOpenSocket/ConnectionRefused)· 多次 agent stall
+2. 🟡 **main-2 复杂度高**(心脏 · 跨 10+ IC)· 单会话难一次性推完
+3. 🟡 **共享 worktree**(虽已独立 worktree 但偶尔污染)
+
+---
+
+## §2.9 重要 artifacts 清单
+
+**已完成 artifacts**:
+- 25 份 exe-plan md(4-exe-plan + 5-exe-test-plan + 6-finalQualityAcceptance + MASTER-DISPATCH)
+- 8 份 code review md(主会话 + python-reviewer agent)
+- 5 份仲裁决议 md(projects/_correction_log.jsonl)
+- 10+ standup log
+- Vite C 方案架构文档(L0/tech-stack + L1-10 arch)
+- pyproject.toml 统一(13 deps + 6 packages)
+
+**历史 merge 纪录**:
+- 波 1-3:11 merges(Dev 分支)
+- 波 4:9 WP merges(main-1 WP01-09)
+- 波 5:4 merges(WP01/02/06 部分)
+- **合计 24 merge commits 到 main**
 
 ### 2.2 波 4-5 · 核心集成 + 主循环（主会话接力）
 
