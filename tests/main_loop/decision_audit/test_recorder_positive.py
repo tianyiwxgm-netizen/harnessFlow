@@ -202,3 +202,53 @@ def test_TC_L101_L205_010_query_by_chain_returns_multiple_entries(
     entries = sut.query_by_chain(chain_id=chain_id, project_id=mock_project_id)
     assert len(entries) == 3
     assert all(e.linked_chain == chain_id for e in entries)
+
+
+# ---------------------------------------------------------------------------
+# flush_buffer / hash_tip
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_011_flush_buffer_tick_boundary_ok(
+    sut, mock_project_id, mock_event_bus, make_audit_cmd
+) -> None:
+    for i in range(5):
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick=f"tick-{i}",
+            reason=f"trigger {i}", evidence=[f"evt-{i}"],
+        ))
+    fr = sut.flush_buffer(force=True, reason="tick_boundary")
+    assert fr.flushed_count == 5
+    assert fr.last_event_id is not None
+    assert fr.last_hash and len(fr.last_hash) == 64
+    assert fr.duration_ms <= 50
+    assert mock_event_bus.append_event.call_count == 5
+
+
+def test_TC_L101_L205_012_flush_buffer_empty_is_noop(sut, mock_event_bus) -> None:
+    fr = sut.flush_buffer(force=True, reason="tick_boundary")
+    assert fr.flushed_count == 0
+    assert fr.last_event_id is None
+    assert mock_event_bus.append_event.call_count == 0
+
+
+def test_TC_L101_L205_014_get_hash_tip_genesis_is_all_zero(sut, mock_project_id) -> None:
+    tip = sut.get_hash_tip(project_id=mock_project_id)
+    assert tip.hash == "0" * 64
+    assert tip.sequence == 0
+
+
+def test_TC_L101_L205_015_get_hash_tip_after_flush_increments(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    for i in range(3):
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick=f"tick-{i}",
+            reason=f"trigger {i}", evidence=[f"evt-{i}"],
+        ))
+    sut.flush_buffer(force=True, reason="tick_boundary")
+    tip = sut.get_hash_tip(project_id=mock_project_id)
+    assert tip.sequence == 3
+    assert tip.hash != "0" * 64
