@@ -13,7 +13,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # 合法 L1 前缀 · §3.2 TypePrefixValidator
 VALID_L1_PREFIXES: tuple[str, ...] = (
@@ -30,6 +32,22 @@ VALID_ACTORS: tuple[str, ...] = (
 VALID_STATES: tuple[str, ...] = (
     "NOT_EXIST", "INIT", "PLAN", "EXEC", "CLOSE", "CLOSED", "HALTED",
 )
+
+# A-3 · IC-09 §3.9.2 project_id_or_system · "system" 保留值允许
+# 系统级事件（halt / startup / crash-recovery）用 project_id="system"
+_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9_-]{1,40}$")
+_SYSTEM_PROJECT_VALUES: frozenset[str] = frozenset({"system"})
+
+
+def _validate_project_id_or_system(value: str) -> str:
+    """Allow normal `[a-z0-9_-]{1,40}` OR reserved `'system'` literal."""
+    if value in _SYSTEM_PROJECT_VALUES:
+        return value
+    if not isinstance(value, str) or not _PROJECT_ID_PATTERN.match(value):
+        raise ValueError(
+            f"project_id must match ^[a-z0-9_-]{{1,40}}$ or be 'system' · got {value!r}"
+        )
+    return value
 
 
 class BusState(StrEnum):
@@ -56,10 +74,10 @@ class Event(BaseModel):
     )
 
     # === 路由必填 ===
+    # A-3 · IC-09 §3.9.2 project_id_or_system · "system" 保留值允许
     project_id: str = Field(
         ...,
-        pattern=r"^[a-z0-9_-]{1,40}$",
-        description="PM-14 分片键 · ≤ 40 chars snake-case",
+        description="PM-14 分片键 · ≤ 40 chars snake-case 或 'system' 保留值",
     )
     # === 事件本体 ===
     type: str = Field(
@@ -102,6 +120,12 @@ class Event(BaseModel):
         pattern=r"^tick_[0-9A-HJKMNP-TV-Z]{26}$",
         description="L1-01 main_loop tick id · ULID · 可选",
     )
+
+    @field_validator("project_id")
+    @classmethod
+    def _check_project_id_or_system(cls, value: str) -> str:
+        """A-3 · project_id 必为普通 pattern 或 'system' 保留值."""
+        return _validate_project_id_or_system(value)
 
 
 class AppendEventResult(BaseModel):
