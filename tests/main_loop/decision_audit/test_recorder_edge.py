@@ -186,3 +186,22 @@ def test_TC_L101_L205_E10_idempotency_key_triple_call_same_audit_id(
     r3 = sut.record_audit(cmd)
     assert r1.audit_id == r2.audit_id == r3.audit_id
     assert sut.buffer_size() == 1
+
+
+# ---------------------------------------------------------------------------
+# TC-E11 · event_type 白名单多态 · IC-L2-06 → L1-01:state_transition
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E11_event_type_mapped_from_source_ic_action(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-06", action="state_transitioned",
+        actor={"l1": "L1-01", "l2": "L2-03"},
+        project_id=mock_project_id,
+        reason="S1→S2", evidence=["e1"],
+        payload={"from_state": "S1", "to_state": "S2"},
+    ))
+    buf = sut.peek_buffer()
+    assert buf[-1].event_type == "L1-01:state_transition"
