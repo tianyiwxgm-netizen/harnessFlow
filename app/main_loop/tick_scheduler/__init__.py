@@ -16,6 +16,13 @@ WP04 简化包范围:
 - docs/3-1-Solution-Technical/L1-01-主 Agent 决策循环/L2-01-Tick 调度器.md §3 + §11
 - docs/3-2-Solution-TDD/L1-01-主 Agent 决策循环/L2-01-Tick 调度器-tests.md
 """
+from app.main_loop.tick_scheduler.deadline_tracker import DeadlineTracker
+from app.main_loop.tick_scheduler.halt_enforcer import HaltEnforcer
+from app.main_loop.tick_scheduler.panic_handler import (
+    PanicHandler,
+    PanicResult,
+    PanicSignal,
+)
 from app.main_loop.tick_scheduler.schemas import (
     TickBudget,
     TickEvent,
@@ -23,11 +30,22 @@ from app.main_loop.tick_scheduler.schemas import (
     TickResult,
     TickState,
 )
+from app.main_loop.tick_scheduler.scheduler import (
+    StateMachineSnapshotReader,
+    TickScheduler,
+)
 
 __all__ = [
+    "DeadlineTracker",
+    "HaltEnforcer",
+    "PanicHandler",
+    "PanicResult",
+    "PanicSignal",
+    "StateMachineSnapshotReader",
     "TickBudget",
     "TickEvent",
     "TickEventType",
     "TickResult",
+    "TickScheduler",
     "TickState",
 ]
