@@ -208,3 +208,26 @@ def test_TC_L101_L205_E21_recent_meta_carries_error_code_and_level(
     assert m.level == "WARN"
     assert m.error_code is not None and m.error_code.startswith("E_AUDIT_")
     assert m.event_type == "L1-01:audit_rejected"
+
+
+# ---------------------------------------------------------------------------
+# TC-E22 · query_by_decision · 其它 project 查询 · raise CROSS_PROJECT
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E22_query_by_decision_cross_project_raises(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="decision_made",
+        actor={"l1": "L1-01", "l2": "L2-02"},
+        project_id=mock_project_id,
+        linked_decision="dec-e22",
+        reason="owner decision", evidence=["e1"],
+        payload={"decision_type": "invoke_skill"},
+    ))
+    with pytest.raises(AuditError) as exc:
+        sut.query_by_decision(
+            decision_id="dec-e22", project_id="pid-other-team"
+        )
+    assert exc.value.error_code == E_AUDIT_CROSS_PROJECT
