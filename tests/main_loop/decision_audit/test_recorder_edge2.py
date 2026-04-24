@@ -337,3 +337,24 @@ def test_TC_L101_L205_E26_replay_rebuilds_entries_by_id(
     )
     assert r.count >= 1
     assert r.source in ("index", "mixed", "jsonl_scan")
+
+
+# ---------------------------------------------------------------------------
+# TC-E27 · halt 后 record_audit 拒绝 · raise HALT_ON_FAIL
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E27_record_audit_rejected_when_halted(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    from app.main_loop.decision_audit import E_AUDIT_HALT_ON_FAIL
+
+    sut._force_halted()
+    assert sut.current_state() == "HALTED"
+    with pytest.raises(AuditError) as exc:
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick="tick-e27",
+            reason="after halt", evidence=["e1"],
+        ))
+    assert exc.value.error_code == E_AUDIT_HALT_ON_FAIL
