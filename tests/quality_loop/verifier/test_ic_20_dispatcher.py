@@ -19,7 +19,6 @@ import pytest
 
 from app.quality_loop.verifier.ic_20_dispatcher import (
     DelegationFailureError,
-    DispatcherError,
     SessionPrefixViolationError,
     build_ic_20_command,
     dispatch_with_retry,
@@ -163,7 +162,7 @@ class FakeDelegator:
 
 async def no_sleep(_: float) -> None:
     """Test sleep · 不延迟."""
-    return None
+    return
 
 
 class AuditCollector:

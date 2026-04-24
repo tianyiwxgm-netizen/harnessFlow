@@ -36,8 +36,9 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Protocol, runtime_checkable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Protocol, runtime_checkable
 
 from app.quality_loop.verifier.ic_20_dispatcher import (
     AuditEmitter,
@@ -62,7 +63,6 @@ from app.quality_loop.verifier.trace_adapter import (
     ExecutionTraceLike,
     adapt_from_s4,
 )
-
 
 # ==============================================================================
 # 错误
@@ -194,7 +194,7 @@ async def orchestrate_s5(
             verifier_session_id=dispatch_result.verifier_session_id or "",
             timeout_s=request.timeout_s,
         )
-    except (TimeoutError, asyncio.TimeoutError) as e:
+    except TimeoutError as e:
         await _emit(deps.audit_emitter, "L1-04:verifier_timeout", {
             "project_id": request.project_id,
             "delegation_id": request.delegation_id,

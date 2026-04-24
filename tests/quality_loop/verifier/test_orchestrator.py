@@ -14,7 +14,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -25,8 +24,6 @@ from app.quality_loop.verifier.ic_20_dispatcher import (
 )
 from app.quality_loop.verifier.orchestrator import (
     CallbackSchemaError,
-    CallbackWaiterProtocol,
-    OrchestratorError,
     VerifierDeps,
     orchestrate_s5,
 )
@@ -36,7 +33,6 @@ from app.quality_loop.verifier.schemas import (
     VerifierVerdict,
 )
 from app.quality_loop.verifier.trace_adapter import MockExecutionTrace
-
 
 # ==============================================================================
 # Fixtures / Fakes
@@ -347,7 +343,7 @@ class TestOrchestrateTimeout:
     async def test_timeout_three_segment_evidence_has_reason(self) -> None:
         """超时 · 三段 evidence 应含 reason=verifier_timeout."""
         trace = _mk_trace()
-        waiter = FakeCallbackWaiter(raise_exc=asyncio.TimeoutError())
+        waiter = FakeCallbackWaiter(raise_exc=TimeoutError())
         deps = _make_deps(FakeDelegator(), waiter)
         result = await orchestrate_s5(trace, deps)
         ev = result.three_segment_evidence

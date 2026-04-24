@@ -26,8 +26,9 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Protocol, runtime_checkable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Protocol, runtime_checkable
 
 from app.quality_loop.verifier.schemas import (
     IC20Command,
@@ -35,7 +36,6 @@ from app.quality_loop.verifier.schemas import (
     VerificationRequest,
     VerifierError,
 )
-
 
 # ==============================================================================
 # 错误
@@ -172,8 +172,8 @@ def verify_session_prefix(
         )
     if verifier_session_id == main_session_id:
         raise SessionPrefixViolationError(
-            f"E20_session_id_prefix_mismatch: "
-            f"verifier_session_id equals main_session_id",
+            "E20_session_id_prefix_mismatch: "
+            "verifier_session_id equals main_session_id",
         )
     if verifier_session_id.startswith("main."):
         raise SessionPrefixViolationError(
