@@ -121,3 +121,21 @@ def test_TC_L101_L205_E17_replay_max_entries_stops_early_partial(
     assert rr.replayed_count == 1
     assert rr.partial is True
     assert rec.replay_status() == "partial"
+
+
+# ---------------------------------------------------------------------------
+# TC-E18 · replay · 损坏 hash 链 · hash_chain_valid=False + first_broken_at
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E18_replay_detects_corrupted_hash_chain(
+    make_recorder, mock_project_id, corrupted_jsonl_dir
+) -> None:
+    rec = make_recorder(
+        session_active_pid=mock_project_id,
+        jsonl_root=corrupted_jsonl_dir,
+    )
+    rr = rec.replay_from_jsonl(project_id=mock_project_id)
+    assert rr.hash_chain_valid is False
+    assert rr.first_broken_at is not None
+    assert "seq" in rr.first_broken_at
