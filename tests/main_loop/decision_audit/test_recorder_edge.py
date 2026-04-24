@@ -58,3 +58,26 @@ def test_TC_L101_L205_E03_query_by_tick_miss_source_not_found(
     assert result.count == 0
     assert result.entries == []
     assert result.source == "not_found"
+
+
+# ---------------------------------------------------------------------------
+# TC-E04 · buffer_remaining 随 record_audit 递减
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E04_buffer_remaining_decrements_per_record(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    r1 = sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick="tick-buf-01",
+        reason="first", evidence=["e1"],
+    ))
+    r2 = sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick="tick-buf-02",
+        reason="second", evidence=["e2"],
+    ))
+    assert r1.buffer_remaining == 63
+    assert r2.buffer_remaining == 62
+    assert sut.buffer_size() == 2
