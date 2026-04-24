@@ -20,23 +20,48 @@
 
 ---
 
-## 🚀 快速开始(3 条命令)
+## ⚠️ 当前状态:**Alpha · v1.0 开发中**
+
+截至本文 · 波 4 main-1 完 · 波 5 main-2 ~60% · 波 6/7 待启动。**release v1.0 尚未打包** · 不可生产使用。想体验请从源码装。
+
+## 📋 Prerequisites
+
+- **Python 3.11+**(必须)
+- **Claude Code**(建议 · harnessFlow 面向 Claude Code Skill)
+- **LLM 凭据**(择一):Anthropic API Key / 豆包 API / DeepSeek · 详 `.env`
+- **磁盘**:≥ 500MB(含依赖)
+- **内存**:≥ 2GB(单 project 运行约 600-800MB)
+- **Node 20+**(仅 Dev 贡献者 build frontend 时需要 · End User **零 Node**)
+
+## 🚀 快速开始(从源码 · v1.0 release 前)
 
 ```bash
-# 1. 安装
-pip install harnessflow
-# 或下载 release 包
-wget https://github.com/tianyiwxgm-netizen/harnessFlow/releases/download/v1.0.0/harnessflow-v1.0.0.tar.zst
-tar --zstd -xf harnessflow-v1.0.0.tar.zst && cd harnessflow-v1.0.0 && pip install -e .
+# 1. clone + 装依赖
+git clone https://github.com/tianyiwxgm-netizen/harnessFlow.git
+cd harnessFlow
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e .[dev]
 
-# 2. 启动(后端 + UI · End User 零 Node)
-harnessflow serve
+# 2. 准备 .env(用 release 前手动)
+cat > .env <<EOF
+LLM_PROVIDER=claude       # claude / deepseek / doubao / local
+ANTHROPIC_API_KEY=sk-...  # 若 LLM_PROVIDER=claude
+EOF
 
-# 3. 浏览器
-open http://localhost:8000/ui/
+# 3. 跑测试验证装好(~2758 TC)
+pytest tests/ -q --cov=app --cov-fail-under=85
+
+# 4. (波 4/5 完成后可用)启动后端 + 挂 UI
+# uvicorn app.bff.main:app --port 8000    # ← 波 5 main-2 + Dev-θ θ2 完后可用
+# 当前 Dev-θ θ1 branch 有骨架 BFF · 主 main 尚未合并 θ1 · 见"已知限制"
 ```
 
-> **End User 零 Node 依赖**:Vite 预编译产物已在 release 包内 · FastAPI 直接挂 `frontend/dist/` 静态资产。
+> **v1.0 release 后**(ETA 2-3 周):
+> ```bash
+> pip install harnessflow  # 假 PyPI 已发布
+> harnessflow serve         # CLI(需 pyproject.toml 补 [project.scripts])
+> ```
+> 当前本地跑只能 pytest / 分模块 Python import。
 
 ---
 
@@ -206,15 +231,69 @@ harnessflow/
 
 ---
 
-## 🏆 v1.0 交付指标
+## 🏆 v1.0 交付指标(最终目标)
 
-- ✅ **10 L1 + 集成层 + UI** · ~195,000 行代码
-- ✅ **~4080 TC 全绿** · 覆盖率 ≥ 85%(部分模块 ≥ 95%)
-- ✅ **4 硬约束** 100-970× 富余
-- ✅ **审计链完整 100%**
-- ✅ **跨 session 恢复** Tier 1-4
-- ✅ **7 篇文档** + 25 份设计 md
-- ✅ **MIT License** · 完全开源
+- **10 L1 + 集成层 + UI** · ~195,000 行代码
+- **~4080 TC 全绿** · 覆盖率 ≥ 85%(部分模块 ≥ 95%)
+- **4 硬约束** 100-970× 富余
+- **审计链完整 100%**
+- **跨 session 恢复** Tier 1-4
+- **7 篇文档** + 25 份设计 md
+- **MIT License** · 完全开源
+
+## 📍 当前实际进度(2026-04-24)
+
+**已 merged main**:
+- ✅ **2758 TC 全绿** · 覆盖率 85-98%
+- ✅ 8 Dev 代码全完(α-θ)· L1-01~10 基础
+- ✅ main-1 L1-04 Quality Loop 100%(9 WP · 719 TC)
+- 🟡 main-2 L1-01 心脏 ~60%(3/7 WP 完 · WP01+02+06)
+- ⏸ main-3 集成 + QA(波 6)未启动
+- ⏸ main-4 release + Sign(波 7)未启动
+- ⏸ Dev-θ θ2(UI panic/SSE/Gate/KB)未启动(依赖解除)
+
+**总体 v1.0 完成度 ~65%** · **剩余 2-3 周**(API 稳定情况下)。
+
+## 🚧 已知限制(v1.0 scope)
+
+- **V1 单 project 激活**(同时刻仅 1 个 active)· V2+ 多 project 切换
+- **无 CLI 包装**(`harnessflow serve` 需 pyproject.toml `[project.scripts]` 注册 · v1.0 release 前补)
+- **无 Docker 镜像**(V2+ 可选)
+- **LLM 只支持 4 个**(Claude / DeepSeek / 豆包 / local)· 接其他需改 adapter
+- **PM-14 严格**:同时刻只能一 project 写 · 跨 project 任何写操作 raise(安全兜底)
+- **UI 只有 Web**(无 TUI / 无原生 app · V2+ Electron)
+- **仅支持 Python 3.11+**(3.10 缺 asyncio improvements · 3.12 未测)
+- **Multimodal V1 只读 5 种代码语言**(py/ts/go/rust/java · tree-sitter)
+
+---
+
+## 💡 实际例子(v1.0 release 后)
+
+**输入**:UI 的"新项目"框输入
+```
+做一个简单 TODO App · FastAPI + Vue · 用户注册登录 + 标签分类
+```
+
+**20-60 分钟后 · 产出**:
+```
+projects/<pid>/
+├── artifacts/
+│   ├── REQ-001.md   需求文档(自动生成)
+│   ├── GOAL-001.md
+│   ├── AC-001.md    验收标准
+│   ├── QS-001.md    质量标准
+│   ├── PMP-9-plans/ 9 个子计划(范围/进度/成本/质量/资源/风险/沟通/采购/相关方)
+│   └── TOGAF-ADM/   架构 4 件套(business/data/application/technology)
+├── code/
+│   ├── backend/main.py  FastAPI + SQLAlchemy
+│   ├── backend/auth.py  JWT
+│   ├── frontend/        Vue 3 + Pinia
+│   └── tests/           TDD 测试(覆盖率 ≥ 85%)
+├── events.jsonl     所有 AI 决策审计(hash 链不断)
+└── wbs/             任务拓扑
+```
+
+全程在 UI 可见 · Gate 卡时推通知等你 approve。
 
 ---
 
