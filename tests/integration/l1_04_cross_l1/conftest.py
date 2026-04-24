@@ -186,11 +186,15 @@ def pass_verifier_output() -> dict[str, Any]:
 
 @pytest.fixture
 def fail_l3_verifier_output() -> dict[str, Any]:
-    """verifier DoD gate 未过: 双签 OK · DoD 失败 → FAIL_L3."""
+    """verifier DoD gate 未过: 双签 OK · DoD 失败 → FAIL_L3.
+
+    注意: blueprint_alignment 必须与 blueprint_slice 字段级完全一致（含 red_tests），
+    s4_diff_analysis 必须与 test_report 字段一致（passed/failed 严格 · coverage ±0.05）.
+    """
     return {
         "blueprint_alignment": {
             "dod_expression": "tests_pass_and_coverage_ge_80",
-            "red_tests": ["t1"],
+            "red_tests": ["t1", "t2"],  # 与 make_trace blueprint_slice 对齐
         },
         "s4_diff_analysis": {"passed": 10, "failed": 0, "coverage": 0.60},
         "dod_evaluation": {
