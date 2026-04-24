@@ -14,6 +14,13 @@ WP03 TDD 逐步构建：
              （case_id = "case-" + slot_id · blueprint_reader 已保证 slot_id 全域唯一）
   - TC-002  · §6.10 algo 10 · 同 (blueprint_id, version, project_id) 幂等
              · 第二次调用直接返回 cache · 不再 render
+  - TC-103  · §3 负向 · AC 覆盖率 < 100% 直接抛 AC_COVERAGE_NOT_100 CRITICAL
+             · 失败不落 cache（reader 在拿 slot 前就抛 · 走不到 self._cache[key]=）
+
+§8.1 状态机（WP03 裁 2 终态）：
+    INITIALIZING → GENERATING → READY
+                 ↘            ↘
+                  FAILED（reader 或 renderer 抛 · generator 不 swallow · 向上 raise）
 """
 
 from __future__ import annotations
