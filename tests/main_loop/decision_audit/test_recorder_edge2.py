@@ -280,3 +280,35 @@ def test_TC_L101_L205_E24_append_event_has_audit_link_and_fallback_idempotency(
     )
     # idempotency_key fallback = audit_id
     assert call.kwargs.get("idempotency_key") == r.audit_id
+
+
+# ---------------------------------------------------------------------------
+# TC-E25 · _sync_append_single · buffer_max 满 + 再 record · 同步直写 event_bus
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E25_sync_append_single_on_overflow(
+    make_recorder, mock_project_id, mock_event_bus, make_audit_cmd
+) -> None:
+    rec = make_recorder(session_active_pid=mock_project_id, buffer_max=2)
+    # 填满 buffer
+    for i in range(2):
+        rec.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick=f"tick-e25-{i}",
+            reason=f"r{i}", evidence=[f"e{i}"],
+        ))
+    assert rec.buffer_size() == 2
+    # 下一条触发 overflow · 先 flush 旧 2 条 · 再 sync 写本条 · 共 3 次 append_event
+    r = rec.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick="tick-e25-overflow",
+        reason="overflow path", evidence=["e-of"],
+    ))
+    assert r.buffered is False  # 非 buffered · 已直写
+    assert r.event_id is not None
+    # 2 旧 + 1 新 = 3 次 append
+    assert mock_event_bus.append_event.call_count == 3
+    # overflow meta 记了一条
+    metas = rec.get_recent_audits()
+    assert any(m.action == "buffer_overflow" for m in metas)
