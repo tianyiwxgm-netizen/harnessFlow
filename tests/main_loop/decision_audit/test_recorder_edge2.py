@@ -62,3 +62,19 @@ def test_TC_L101_L205_E14_query_by_tick_cross_project_raises(
             include_buffered=True,
         )
     assert exc.value.error_code == E_AUDIT_CROSS_PROJECT
+
+
+# ---------------------------------------------------------------------------
+# TC-E15 · flush 空 buffer · count=0 · event_bus 未被调用
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E15_flush_empty_buffer_noop(
+    sut, mock_event_bus
+) -> None:
+    fr = sut.flush_buffer(force=True, reason="tick_boundary")
+    assert fr.flushed_count == 0
+    assert fr.last_event_id is None
+    assert fr.last_hash == "0" * 64
+    mock_event_bus.append_event.assert_not_called()
+    assert sut.current_state() == "buffering"
