@@ -139,3 +139,24 @@ def test_TC_L101_L205_E18_replay_detects_corrupted_hash_chain(
     assert rr.hash_chain_valid is False
     assert rr.first_broken_at is not None
     assert "seq" in rr.first_broken_at
+
+
+# ---------------------------------------------------------------------------
+# TC-E19 · replay · from_date 过滤 · 只扫新文件
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E19_replay_from_date_skips_older_files(
+    make_recorder, mock_project_id, pre_populated_jsonl_dir
+) -> None:
+    # pre_populated_jsonl_dir 只有 2026-04-20 单文件 · from_date=2026-04-30 应跳过
+    rec = make_recorder(
+        session_active_pid=mock_project_id,
+        jsonl_root=pre_populated_jsonl_dir,
+    )
+    rr = rec.replay_from_jsonl(
+        project_id=mock_project_id, from_date="2026-04-30"
+    )
+    assert rr.replayed_count == 0
+    assert rr.files_scanned == 0
+    assert rec.replay_status() == "complete"
