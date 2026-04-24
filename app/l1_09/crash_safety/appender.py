@@ -152,10 +152,12 @@ def append_atomic(
 
     line_bytes = line.encode("utf-8") + b"\n"
     if len(line_bytes) >= PIPE_BUF_LIMIT:
-        # 保留 assert 兼容（TC-108）· 同时提供 LineTooLargeError（§3.6 E_LINE_TOO_LARGE）
-        raise AssertionError(
+        # B-4 · §3.6 E_LINE_TOO_LARGE · 用 LineTooLargeError（CrashSafetyError 子类）
+        # 不用 AssertionError（Python -O 会吞 assert · halt_system 不可设）
+        raise LineTooLargeError(
             f"line too large: {len(line_bytes)} >= {PIPE_BUF_LIMIT} (PIPE_BUF_LIMIT); "
-            f"use canonical_json compression or link-ref pattern (L1-08 责任)"
+            f"use canonical_json compression or link-ref pattern (L1-08 责任)",
+            target=str(target_path),
         )
     _ = expected_prev_hash  # 本层不校验 · 传递给调用方审计
 
