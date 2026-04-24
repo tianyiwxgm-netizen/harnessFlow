@@ -160,3 +160,28 @@ def test_TC_L101_L205_E19_replay_from_date_skips_older_files(
     assert rr.replayed_count == 0
     assert rr.files_scanned == 0
     assert rec.replay_status() == "complete"
+
+
+# ---------------------------------------------------------------------------
+# TC-E20 · query_by_tick · max_results 截断 · 10 条入 · max=3
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E20_query_by_tick_max_results_truncates(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    for i in range(5):
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick="tick-e20",
+            reason=f"r{i}", evidence=[f"e{i}"],
+        ))
+    r = sut.query_by_tick(
+        tick_id="tick-e20",
+        project_id=mock_project_id,
+        include_buffered=True,
+        max_results=3,
+    )
+    assert r.count == 3
+    assert len(r.entries) == 3
+    assert r.source == "buffer"
