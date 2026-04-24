@@ -185,3 +185,26 @@ def test_TC_L101_L205_E20_query_by_tick_max_results_truncates(
     assert r.count == 3
     assert len(r.entries) == 3
     assert r.source == "buffer"
+
+
+# ---------------------------------------------------------------------------
+# TC-E21 · recent_meta entries 携 error_code + level · reason 拒绝场景
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E21_recent_meta_carries_error_code_and_level(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    with pytest.raises(AuditError):
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick="tick-e21",
+            reason="   ", evidence=["e1"],  # 空白 reason
+        ))
+    metas = sut.get_recent_audits()
+    assert len(metas) == 1
+    m = metas[0]
+    assert m.action == "audit_rejected"
+    assert m.level == "WARN"
+    assert m.error_code is not None and m.error_code.startswith("E_AUDIT_")
+    assert m.event_type == "L1-01:audit_rejected"
