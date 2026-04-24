@@ -31,7 +31,13 @@ class DegradationLevel(str, Enum):
 
 
 class EightDimensionVector(BaseModel):
-    """8 维度状态向量。每维独立 None-able · 采集失败即 None。"""
+    """8 维度状态向量。每维独立 None-able · 采集失败即 None。
+
+    dim_evidence_refs（WP01-P1 补丁 · tech-design §2.2 + PRD §8.4）：
+    - 每维值必须可追溯到源事件 id
+    - key ∈ 8 维名 · value 为 tuple[str, ...]（可空 · 表示该维无证据或失败）
+    - 总审计索引 SupervisorSnapshot.evidence_refs 是所有维的 union（去重）
+    """
 
     model_config = {"frozen": True}
 
@@ -43,6 +49,7 @@ class EightDimensionVector(BaseModel):
     self_repair_rate: dict[str, Any] | None = None
     rollback_counter: dict[str, Any] | None = None
     event_bus: dict[str, Any] | None = None
+    dim_evidence_refs: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
     @property
     def present_count(self) -> int:

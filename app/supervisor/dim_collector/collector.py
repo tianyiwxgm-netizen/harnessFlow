@@ -55,8 +55,11 @@ class EightDimensionCollector:
         start_ms = self.clock.monotonic_ms()
         results = await self.scanner.scan_all(project_id)
 
-        vector_kwargs, reason_map = self._build_vector_from_results(results)
-        vector = EightDimensionVector(**vector_kwargs)
+        vector_kwargs, reason_map, dim_refs = self._build_vector_from_results(results)
+        vector = EightDimensionVector(
+            **vector_kwargs,
+            dim_evidence_refs=dim_refs,
+        )
         deg = _infer_degradation_level(vector.present_count, is_fast=False)
 
         snap = self._make_snapshot(
@@ -67,6 +70,7 @@ class EightDimensionCollector:
             reason_map=reason_map,
             start_ms=start_ms,
             metrics={},
+            dim_refs=dim_refs,
         )
         self.cache.put(snap)
         await self._emit_snapshot_captured(snap)
@@ -86,14 +90,12 @@ class EightDimensionCollector:
         start_ms = self.clock.monotonic_ms()
 
         # 并行刷 2 维
-        tc_val, tc_err = (None, None)
-        lt_val, lt_err = (None, None)
         tc_res, lt_res = await asyncio.gather(
             self.scanner.scan_tool_calls(project_id),
             self.scanner.scan_latency_slo(project_id),
         )
-        tc_val, tc_err = tc_res
-        lt_val, lt_err = lt_res
+        tc_val, tc_refs, tc_err = tc_res
+        lt_val, lt_refs, lt_err = lt_res
 
         reason_map: dict[str, str] = {}
         if tc_err is not None:
@@ -101,15 +103,25 @@ class EightDimensionCollector:
         if lt_err is not None:
             reason_map["latency_slo"] = lt_err.value
 
-        # 6 维从 LKG 复用
+        # 6 维从 LKG 复用（dim_evidence_refs 同复用 · 新刷 2 维覆盖）
         cached = self.cache.get_latest(project_id)
         if cached is not None:
+            new_dim_refs = dict(cached.eight_dim_vector.dim_evidence_refs)
+            new_dim_refs["tool_calls"] = tc_refs
+            new_dim_refs["latency_slo"] = lt_refs
             vector = cached.eight_dim_vector.model_copy(
-                update={"tool_calls": tc_val, "latency_slo": lt_val}
+                update={
+                    "tool_calls": tc_val,
+                    "latency_slo": lt_val,
+                    "dim_evidence_refs": new_dim_refs,
+                }
             )
         else:
+            new_dim_refs = {"tool_calls": tc_refs, "latency_slo": lt_refs}
             vector = EightDimensionVector(
-                tool_calls=tc_val, latency_slo=lt_val
+                tool_calls=tc_val,
+                latency_slo=lt_val,
+                dim_evidence_refs=new_dim_refs,
             )
             for missing in _DIM_KEYS:
                 if missing in _FAST_REFRESHED_DIMS:
@@ -136,6 +148,7 @@ class EightDimensionCollector:
                 "tool_invoked_at": tool_invoked_at_iso,
                 "hook_deadline_ms": hook_deadline_ms,
             },
+            dim_refs=dict(vector.dim_evidence_refs),
         )
         # fast 路径也更新 cache · 让下次 fast 或 on_demand 拿到 fresh tool_calls
         self.cache.put(snap)
@@ -179,8 +192,11 @@ class EightDimensionCollector:
 
         start_ms = now
         results = await self._scan_with_mask(project_id, dim_mask)
-        vector_kwargs, reason_map = self._build_vector_from_results(results)
-        vector = EightDimensionVector(**vector_kwargs)
+        vector_kwargs, reason_map, dim_refs = self._build_vector_from_results(results)
+        vector = EightDimensionVector(
+            **vector_kwargs,
+            dim_evidence_refs=dim_refs,
+        )
 
         if dim_mask is None:
             deg = _infer_degradation_level(vector.present_count, is_fast=False)
@@ -204,6 +220,7 @@ class EightDimensionCollector:
                 "cache_hit": False,
                 "dim_mask": dim_mask or {},
             },
+            dim_refs=dim_refs,
         )
         # 只有全扫时才写 LKG cache（避免部分向量污染）
         if dim_mask is None:
@@ -219,19 +236,24 @@ class EightDimensionCollector:
 
     @staticmethod
     def _build_vector_from_results(
-        results: dict[str, tuple[Any | None, Any]]
-    ) -> tuple[dict[str, Any], dict[str, str]]:
+        results: dict[str, Any],  # value: DimScanResult NamedTuple
+    ) -> tuple[dict[str, Any], dict[str, str], dict[str, tuple[str, ...]]]:
         kwargs: dict[str, Any] = {}
         reasons: dict[str, str] = {}
-        for dim_name, (value, err) in results.items():
+        dim_refs: dict[str, tuple[str, ...]] = {}
+        for dim_name, res in results.items():
+            # DimScanResult NamedTuple 支持 3 元组拆包
+            value, evidence_refs, err = res
             kwargs[dim_name] = value
             if err is not None:
                 reasons[dim_name] = err.value
-        return kwargs, reasons
+            # evidence_refs 总是记录（失败时为空 tuple · 保留 key）
+            dim_refs[dim_name] = tuple(evidence_refs)
+        return kwargs, reasons, dim_refs
 
     async def _scan_with_mask(
         self, project_id: str, dim_mask: dict[str, bool] | None
-    ) -> dict[str, tuple[Any | None, Any]]:
+    ) -> dict[str, Any]:
         if dim_mask is None:
             return await self.scanner.scan_all(project_id)
 
@@ -242,16 +264,20 @@ class EightDimensionCollector:
                 coro = getattr(self.scanner, f"scan_{key}")(project_id)
                 selected.append((key, coro))
 
+        # import local to avoid circular
+        from app.supervisor.dim_collector.dim_scanner import DimScanResult
+
+        empty = DimScanResult(None, (), None)
         if not selected:
-            return {k: (None, None) for k in _DIM_KEYS}
+            return {k: empty for k in _DIM_KEYS}
 
         keys = [k for k, _ in selected]
         coros = [c for _, c in selected]
         partials = dict(zip(keys, await asyncio.gather(*coros)))
 
-        out: dict[str, tuple[Any | None, Any]] = {}
+        out: dict[str, Any] = {}
         for k in _DIM_KEYS:
-            out[k] = partials.get(k, (None, None))
+            out[k] = partials.get(k, empty)
         return out
 
     def _make_snapshot(
@@ -264,8 +290,19 @@ class EightDimensionCollector:
         reason_map: dict[str, str],
         start_ms: int,
         metrics: dict[str, Any],
+        dim_refs: dict[str, tuple[str, ...]] | None = None,
     ) -> SupervisorSnapshot:
         end_ms = self.clock.monotonic_ms()
+        # 总 evidence_refs = 各维 refs union（去重保序）
+        if dim_refs is None:
+            dim_refs = dict(vector.dim_evidence_refs)
+        all_refs: list[str] = []
+        seen: set[str] = set()
+        for _, refs in dim_refs.items():
+            for r in refs:
+                if r not in seen:
+                    seen.add(r)
+                    all_refs.append(r)
         return SupervisorSnapshot(
             project_id=project_id,
             snapshot_id=SnapshotId.generate().value,
@@ -274,7 +311,7 @@ class EightDimensionCollector:
             eight_dim_vector=vector,
             degradation_level=deg,
             degradation_reason_map=reason_map,
-            evidence_refs=(),
+            evidence_refs=tuple(all_refs),
             collection_latency_ms=max(0, end_ms - start_ms),
             metrics=metrics,
         )

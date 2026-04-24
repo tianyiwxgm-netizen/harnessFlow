@@ -4,6 +4,8 @@
 - 每维正常路径（8）
 - 每维错误路径（IC timeout / unavailable 映射到 SupervisorError）
 - scan_all 聚合 · 单维失败不影响他维
+
+WP01-P1 后：scanner 返回 DimScanResult(value, evidence_refs, err) · 本测试沿用 .value/.err 属性。
 """
 from __future__ import annotations
 
@@ -36,67 +38,67 @@ def _build_scanner(
 
 async def test_scan_phase_returns_s4(pid) -> None:
     s = _build_scanner(l102=L102Stub(phase="S4"))
-    value, err = await s.scan_phase(pid.value)
-    assert value == "S4"
-    assert err is None
+    res = await s.scan_phase(pid.value)
+    assert res.value == "S4"
+    assert res.err is None
 
 
 async def test_scan_phase_timeout_maps_to_ic_l1_02_timeout(pid) -> None:
     s = _build_scanner(l102=L102Stub(_timeout=True))
-    value, err = await s.scan_phase(pid.value)
-    assert value is None
-    assert err == SupervisorError.IC_L1_02_TIMEOUT
+    res = await s.scan_phase(pid.value)
+    assert res.value is None
+    assert res.err == SupervisorError.IC_L1_02_TIMEOUT
 
 
 async def test_scan_phase_unavailable_maps_to_ic_l1_02_unavailable(pid) -> None:
     s = _build_scanner(l102=L102Stub(_unavailable=True))
-    value, err = await s.scan_phase(pid.value)
-    assert value is None
-    assert err == SupervisorError.IC_L1_02_UNAVAILABLE
+    res = await s.scan_phase(pid.value)
+    assert res.value is None
+    assert res.err == SupervisorError.IC_L1_02_UNAVAILABLE
 
 
 # --- artifacts ---
 
 async def test_scan_artifacts_returns_completeness(pid) -> None:
     s = _build_scanner(l102=L102Stub(artifacts_completeness_pct=95.5))
-    value, err = await s.scan_artifacts(pid.value)
-    assert err is None
-    assert value["completeness_pct"] == 95.5
+    res = await s.scan_artifacts(pid.value)
+    assert res.err is None
+    assert res.value["completeness_pct"] == 95.5
 
 
 async def test_scan_artifacts_timeout(pid) -> None:
     s = _build_scanner(l102=L102Stub(_timeout=True))
-    value, err = await s.scan_artifacts(pid.value)
-    assert value is None and err == SupervisorError.IC_L1_02_TIMEOUT
+    res = await s.scan_artifacts(pid.value)
+    assert res.value is None and res.err == SupervisorError.IC_L1_02_TIMEOUT
 
 
 # --- wp_status ---
 
 async def test_scan_wp_status_computes_completion_pct(pid) -> None:
     s = _build_scanner(l103=L103Stub(total=20, completed=5))
-    value, err = await s.scan_wp_status(pid.value)
-    assert err is None
-    assert value["completion_pct"] == 25.0
+    res = await s.scan_wp_status(pid.value)
+    assert res.err is None
+    assert res.value["completion_pct"] == 25.0
 
 
 async def test_scan_wp_status_timeout(pid) -> None:
     s = _build_scanner(l103=L103Stub(_timeout=True))
-    value, err = await s.scan_wp_status(pid.value)
-    assert value is None and err == SupervisorError.IC_L1_03_TIMEOUT
+    res = await s.scan_wp_status(pid.value)
+    assert res.value is None and res.err == SupervisorError.IC_L1_03_TIMEOUT
 
 
 # --- self_repair_rate ---
 
 async def test_scan_self_repair_rate(pid) -> None:
     s = _build_scanner(l104=L104Stub(attempts=10, successes=7))
-    value, err = await s.scan_self_repair_rate(pid.value)
-    assert err is None and value["rate"] == 0.7
+    res = await s.scan_self_repair_rate(pid.value)
+    assert res.err is None and res.value["rate"] == 0.7
 
 
 async def test_scan_self_repair_rate_timeout(pid) -> None:
     s = _build_scanner(l104=L104Stub(_timeout=True))
-    value, err = await s.scan_self_repair_rate(pid.value)
-    assert value is None and err == SupervisorError.IC_L1_04_TIMEOUT
+    res = await s.scan_self_repair_rate(pid.value)
+    assert res.value is None and res.err == SupervisorError.IC_L1_04_TIMEOUT
 
 
 # --- rollback_counter ---
@@ -105,8 +107,8 @@ async def test_scan_rollback_counter(pid) -> None:
     s = _build_scanner(
         l104=L104Stub(rollback_count=3, rollback_reasons={"L2_verdict": 3})
     )
-    value, err = await s.scan_rollback_counter(pid.value)
-    assert err is None and value["count"] == 3
+    res = await s.scan_rollback_counter(pid.value)
+    assert res.err is None and res.value["count"] == 3
 
 
 # --- event_bus ---
@@ -115,8 +117,8 @@ async def test_scan_event_bus_stats_reflects_appended_events(pid) -> None:
     bus = EventBusStub()
     await bus.append_event(project_id=pid.value, type="decision", payload={"x": 1})
     s = _build_scanner(bus=bus)
-    value, err = await s.scan_event_bus(pid.value)
-    assert err is None and value["event_count_last_30s"] == 1
+    res = await s.scan_event_bus(pid.value)
+    assert res.err is None and res.value["event_count_last_30s"] == 1
 
 
 # --- tool_calls ---
@@ -129,19 +131,19 @@ async def test_scan_tool_calls_extracts_last_and_detects_red_line_candidate(pid)
         payload={"tool_name": "git", "args_hash": "abc"},
     )
     s = _build_scanner(bus=bus)
-    value, err = await s.scan_tool_calls(pid.value)
-    assert err is None
-    assert value["last_tool_name"] == "git"
-    assert value["red_line_candidate"] is True  # git is red-line candidate
+    res = await s.scan_tool_calls(pid.value)
+    assert res.err is None
+    assert res.value["last_tool_name"] == "git"
+    assert res.value["red_line_candidate"] is True  # git is red-line candidate
 
 
 async def test_scan_tool_calls_no_events_returns_empty(pid) -> None:
     s = _build_scanner()
-    value, err = await s.scan_tool_calls(pid.value)
-    assert err is None
-    assert value["last_tool_name"] is None
-    assert value["red_line_candidate"] is False
-    assert value["last_n_calls"] == []
+    res = await s.scan_tool_calls(pid.value)
+    assert res.err is None
+    assert res.value["last_tool_name"] is None
+    assert res.value["red_line_candidate"] is False
+    assert res.value["last_n_calls"] == []
 
 
 # --- latency_slo ---
@@ -155,19 +157,19 @@ async def test_scan_latency_slo_computes_percentiles(pid) -> None:
             payload={"dur_ms": 100 + i * 50},
         )
     s = _build_scanner(bus=bus)
-    value, err = await s.scan_latency_slo(pid.value)
-    assert err is None
-    assert value["actual_p95_ms"] is not None
-    assert value["actual_p99_ms"] is not None
-    assert 0.0 <= value["compliance_rate"] <= 1.0
+    res = await s.scan_latency_slo(pid.value)
+    assert res.err is None
+    assert res.value["actual_p95_ms"] is not None
+    assert res.value["actual_p99_ms"] is not None
+    assert 0.0 <= res.value["compliance_rate"] <= 1.0
 
 
 async def test_scan_latency_slo_no_samples_returns_nulls(pid) -> None:
     s = _build_scanner()
-    value, err = await s.scan_latency_slo(pid.value)
-    assert err is None
-    assert value["actual_p95_ms"] is None
-    assert value["actual_p99_ms"] is None
+    res = await s.scan_latency_slo(pid.value)
+    assert res.err is None
+    assert res.value["actual_p95_ms"] is None
+    assert res.value["actual_p99_ms"] is None
 
 
 # --- scan_all aggregate ---
@@ -191,9 +193,9 @@ async def test_scan_all_isolates_per_dim_failure(pid) -> None:
     """l102 timeout should null phase + artifacts but leave other 6 dims fine."""
     s = _build_scanner(l102=L102Stub(_timeout=True))
     out = await s.scan_all(pid.value)
-    phase_val, phase_err = out["phase"]
-    artifacts_val, artifacts_err = out["artifacts"]
-    wp_val, wp_err = out["wp_status"]
-    assert phase_val is None and phase_err == SupervisorError.IC_L1_02_TIMEOUT
-    assert artifacts_val is None and artifacts_err == SupervisorError.IC_L1_02_TIMEOUT
-    assert wp_val is not None and wp_err is None  # L1-03 still OK
+    phase_res = out["phase"]
+    artifacts_res = out["artifacts"]
+    wp_res = out["wp_status"]
+    assert phase_res.value is None and phase_res.err == SupervisorError.IC_L1_02_TIMEOUT
+    assert artifacts_res.value is None and artifacts_res.err == SupervisorError.IC_L1_02_TIMEOUT
+    assert wp_res.value is not None and wp_res.err is None  # L1-03 still OK
