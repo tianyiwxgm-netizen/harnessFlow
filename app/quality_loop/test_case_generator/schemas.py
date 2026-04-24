@@ -24,6 +24,9 @@ from typing import Any
 class TestCaseGeneratorError(Exception):
     """L2-03 统一异常 · code + severity 二元暴露 · 调用方路由用 code 不用 isinstance。"""
 
+    # pytest 别收这个以 Test 开头的异常类（我们是产线代码）
+    __test__ = False
+
     def __init__(
         self,
         code: str,
@@ -97,6 +100,9 @@ class CaseSlot:
 class TestCaseSkeleton:
     """§2.5 渲染产物 · 单 pytest 函数 · 含 code + 元数据。"""
 
+    # pytest 别收（产线 dataclass · 不是测试类）
+    __test__ = False
+
     case_id: str
     slot_id: str
     ac_id: str
@@ -124,6 +130,9 @@ class TestCaseSkeleton:
 @dataclass
 class TestSuite:
     """§2.4 聚合根 · 整组测试骨架 + 元数据。"""
+
+    # pytest 别收（产线 dataclass · 不是测试类）
+    __test__ = False
 
     suite_id: str
     project_id: str
