@@ -103,3 +103,21 @@ def test_TC_L101_L205_E16_captured_events_hook_exposes_flush_meta(
     # 第 2 条 prev = 第 1 条 hash(链式)
     assert captured[1]["prev_hash"] == captured[0]["hash"]
     assert all("audit_id" in c and len(c["hash"]) == 64 for c in captured)
+
+
+# ---------------------------------------------------------------------------
+# TC-E17 · replay · max_entries=1 停早 · partial=True
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E17_replay_max_entries_stops_early_partial(
+    make_recorder, mock_project_id, pre_populated_jsonl_dir
+) -> None:
+    rec = make_recorder(
+        session_active_pid=mock_project_id,
+        jsonl_root=pre_populated_jsonl_dir,
+    )
+    rr = rec.replay_from_jsonl(project_id=mock_project_id, max_entries=1)
+    assert rr.replayed_count == 1
+    assert rr.partial is True
+    assert rec.replay_status() == "partial"
