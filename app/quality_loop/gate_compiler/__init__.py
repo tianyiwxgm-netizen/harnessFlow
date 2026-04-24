@@ -42,6 +42,11 @@ from app.quality_loop.gate_compiler.dod_adapter import (
     EvaluatedDoD,
     EvaluatedExpression,
 )
+from app.quality_loop.gate_compiler.metric_sampler import (
+    MetricSample,
+    MetricSampler,
+    MetricSamplerError,
+)
 from app.quality_loop.gate_compiler.schemas import (
     Baseline,
     GateAction,
@@ -64,6 +69,9 @@ __all__ = [
     "GateAction",
     "GateCompilerError",
     "GateVerdict",
+    "MetricSample",
+    "MetricSampler",
+    "MetricSamplerError",
     "MissingEvidence",
     "VerdictReason",
     "classify_baseline",
