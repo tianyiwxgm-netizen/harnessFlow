@@ -133,3 +133,16 @@ def test_TC_L101_L205_E07_replay_empty_audit_dir_sets_status_no_data(
     assert rr.replayed_count == 0
     assert rr.latest_hash == "0" * 64
     assert rec.replay_status() == "no_data"
+
+
+# ---------------------------------------------------------------------------
+# TC-E08 · get_hash_tip 对未见 project 返 genesis(不 raise)
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E08_get_hash_tip_unknown_project_returns_genesis(
+    sut,
+) -> None:
+    tip = sut.get_hash_tip(project_id="pid-never-seen")
+    assert tip.hash == "0" * 64
+    assert tip.sequence == 0
