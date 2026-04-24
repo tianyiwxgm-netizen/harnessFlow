@@ -105,7 +105,8 @@ class RerankService:
         self._duplicate_event_skipped_count: int = 0
 
         self._idem_lock = threading.Lock()
-        self._idem_cache: dict[str, RerankResponse] = {}
+        # P2-04: key by (project_id, rerank_id) to respect PM-14 isolation.
+        self._idem_cache: dict[tuple[str, str], RerankResponse] = {}
         self._seen_event_ids: set[str] = set()
 
     # ======================================================================
@@ -151,9 +152,10 @@ class RerankService:
             self._audit_rerank(resp)
             return resp
 
-        # 6 · idempotency
+        # 6 · idempotency (key = (project_id, rerank_id) per PM-14)
+        idem_key = (req.project_id or "", req.rerank_id)
         with self._idem_lock:
-            cached = self._idem_cache.get(req.rerank_id)
+            cached = self._idem_cache.get(idem_key)
         if cached is not None:
             return cached
 
@@ -185,9 +187,13 @@ class RerankService:
             sig_values = self._compute_signals(
                 entry_view, req.context, signals_skipped
             )
-            if len(signals_skipped) >= 5:
-                # all scorers failed → fallback raw
-                return self._fallback_raw(req, top_k, top_k_capped, warnings)
+            # Per 3-1 L2-05 §5.3 / §6.4 timeline3:
+            #   ≥ 3 signals fail → FALLBACK_RAW (raw recall order + top_k cap)
+            #   1-2 signals fail → SKIP_SIGNAL (redistribute weights)
+            if len(signals_skipped) >= 3:
+                return self._fallback_raw(
+                    req, top_k, top_k_capped, warnings, signals_skipped
+                )
             score = self._aggregate(sig_values, signals_skipped)
             scored.append((score, idx, sig_values, cand))
 
@@ -241,7 +247,7 @@ class RerankService:
         )
 
         with self._idem_lock:
-            self._idem_cache[req.rerank_id] = resp
+            self._idem_cache[idem_key] = resp
 
         self._audit_rerank(resp)
         return resp
@@ -338,6 +344,7 @@ class RerankService:
         top_k: int,
         top_k_capped: bool,
         warnings: list[str],
+        signals_skipped: set[str] | None = None,
     ) -> RerankResponse:
         entries = [
             RerankEntry(
@@ -348,6 +355,18 @@ class RerankService:
             )
             for rank, c in enumerate(req.candidates[:top_k], 1)
         ]
+        # Per 3-1 §11 error-code table:
+        #   5/5 signals failed → ALL_SCORERS_FAILED (severe bug)
+        #   3-4/5 signals failed → SCORE_COMPUTE_FAIL (3+ SKIP accumulating)
+        skipped_set = (
+            set(signals_skipped) if signals_skipped is not None else set()
+        )
+        if len(skipped_set) >= 5 or not skipped_set:
+            err_code = RerankErrorCode.ALL_SCORERS_FAILED.value
+            skipped_report = sorted(self._config.weights.keys())
+        else:
+            err_code = RerankErrorCode.SCORE_COMPUTE_FAIL.value
+            skipped_report = sorted(skipped_set)
         resp = RerankResponse(
             project_id=req.project_id,
             rerank_id=req.rerank_id,
@@ -357,10 +376,10 @@ class RerankService:
             fallback_mode="FALLBACK_RAW",
             duration_ms=0,
             weights_applied={},
-            signals_skipped=sorted(self._config.weights.keys()),
+            signals_skipped=skipped_report,
             top_k_capped=top_k_capped,
             warnings=warnings,
-            error_code=RerankErrorCode.ALL_SCORERS_FAILED.value,
+            error_code=err_code,
         )
         self._audit_rerank(resp)
         return resp

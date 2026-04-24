@@ -121,6 +121,11 @@ class Scorers:
     # ---- S5: kind_priority ------------------------------------------------
 
     def kind_priority(self, entry: Any, context: Any) -> float:
+        """Rank kinds by stage-specific priority list.
+
+        Per 3-1 L2-05 §6.2 S5, the step size is dynamic: ``1/len(active_kinds)``.
+        A 2-item list gives ranks 1.0, 0.5 instead of 1.0, 0.9.
+        """
         kind = getattr(entry, "kind", "")
         current = getattr(context, "current_stage", None)
         priority_list = _KIND_PRIORITY_BY_STAGE.get(current or "", [])
@@ -128,5 +133,6 @@ class Scorers:
             return 0.5  # neutral
         if kind in priority_list:
             idx = priority_list.index(kind)
-            return max(0.0, 1.0 - 0.1 * idx)
+            step = 1.0 / max(len(priority_list), 1)
+            return max(0.0, 1.0 - step * idx)
         return 0.0
