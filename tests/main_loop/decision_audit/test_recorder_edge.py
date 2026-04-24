@@ -101,3 +101,20 @@ def test_TC_L101_L205_E05_flush_clears_buffer_and_restores_state(
     sut.flush_buffer(force=True, reason="tick_boundary")
     assert sut.buffer_size() == 0
     assert sut.current_state() == "buffering"
+
+
+# ---------------------------------------------------------------------------
+# TC-E06 · replay no_root · replay_status 更新 + genesis 返回
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E06_replay_without_jsonl_root_sets_status_no_root(
+    sut, mock_project_id
+) -> None:
+    # sut 无 jsonl_root
+    assert sut.replay_status() == "not_started"
+    rr = sut.replay_from_jsonl(project_id=mock_project_id)
+    assert rr.replayed_count == 0
+    assert rr.latest_hash == "0" * 64
+    assert rr.hash_chain_valid is True
+    assert sut.replay_status() == "no_root"
