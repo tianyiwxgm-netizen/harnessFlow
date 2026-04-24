@@ -238,6 +238,7 @@ class EventBus:
                 correlation_id=correlation_id,
                 trace_id=trace_id,
                 span_id=span_id,
+                trigger_tick=event.trigger_tick,
             )
             link = compute_hash_chain_link(prev_hash, body)
             line_obj = {**body, "hash": link.curr_hash}
@@ -383,10 +384,12 @@ def _event_to_body(
     correlation_id: str | None = None,
     trace_id: str | None = None,
     span_id: str | None = None,
+    trigger_tick: str | None = None,
 ) -> dict[str, object]:
     """组装 hash 链参与的 body（包含 prev_hash · 不含 hash · 不含 jsonl_offset）.
 
     WP06 · correlation_id/trace_id/span_id 写入 body · 参与 hash 计算（不可篡改追溯）.
+    A-2 · trigger_tick 写入 body（若显式设）· 参与 hash 链.
     """
     body: dict[str, object] = {
         "event_id": event_id,
@@ -408,6 +411,8 @@ def _event_to_body(
         body["trace_id"] = trace_id
     if span_id is not None:
         body["span_id"] = span_id
+    if trigger_tick is not None:
+        body["trigger_tick"] = trigger_tick
     return body
 
 

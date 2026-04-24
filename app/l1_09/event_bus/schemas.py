@@ -96,6 +96,12 @@ class Event(BaseModel):
         None,
         description="相同 key 10 min 内重复 → 返 idempotent_replay",
     )
+    # A-2 · IC-09 §3.9.2 trigger_tick · L1-01 调时填 · 跨 IC 追溯
+    trigger_tick: str | None = Field(
+        None,
+        pattern=r"^tick_[0-9A-HJKMNP-TV-Z]{26}$",
+        description="L1-01 main_loop tick id · ULID · 可选",
+    )
 
 
 class AppendEventResult(BaseModel):
