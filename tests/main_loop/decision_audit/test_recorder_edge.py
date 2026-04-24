@@ -165,3 +165,24 @@ def test_TC_L101_L205_E09_peek_buffer_returns_copy_not_ref(
     assert len(snapshot) == 1
     snapshot.clear()  # mutate 外部
     assert sut.buffer_size() == 1  # 内部 buffer 未受影响
+
+
+# ---------------------------------------------------------------------------
+# TC-E10 · 三次相同 idempotency_key 返同一 audit_id(多次重试场景)
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E10_idempotency_key_triple_call_same_audit_id(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    cmd = make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick="tick-triple",
+        reason="triple retry", evidence=["e1"],
+        idempotency_key="idem-triple-001",
+    )
+    r1 = sut.record_audit(cmd)
+    r2 = sut.record_audit(cmd)
+    r3 = sut.record_audit(cmd)
+    assert r1.audit_id == r2.audit_id == r3.audit_id
+    assert sut.buffer_size() == 1
