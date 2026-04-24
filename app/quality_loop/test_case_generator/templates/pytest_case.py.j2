@@ -1,0 +1,16 @@
+{%- if include_header_comment -%}
+# auto-generated · L2-03 test_case_generator · DO NOT hand-edit
+# blueprint_id: {{ blueprint_id }} · version: {{ blueprint_version }}
+# ac_id: {{ ac_id }} · layer: {{ layer }} · seq: {{ seq }} · priority: {{ priority }}
+{% endif -%}
+
+
+def {{ func_name }}() -> None:
+    """AC-{{ ac_id }} · {{ intent_line }}
+
+    Layer: {{ layer }}
+    Priority: {{ priority }}
+    """
+    raise NotImplementedError(
+        f"AC-{{ ac_id }} ({{ slug }}): not implemented yet"
+    )
