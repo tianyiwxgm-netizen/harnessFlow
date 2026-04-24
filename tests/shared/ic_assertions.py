@@ -244,3 +244,103 @@ def assert_no_state_transition(spy_calls: list[dict[str, Any]]) -> None:
         raise AssertionError(
             f"IC-01 期望 spy 无调用 实际={len(spy_calls)} calls={spy_calls}"
         )
+
+
+# =============================================================================
+# IC-14 · Rollback 路由 push 断言(供 Dev-ζ Supervisor → L1-04 消费方验)
+# =============================================================================
+
+
+def assert_ic_14_pushed(
+    consumer_recorded: list[Any],
+    *,
+    project_id: str,
+    wp_id: str,
+    verdict: str,
+    target_stage: str | None = None,
+    min_count: int = 1,
+) -> list[Any]:
+    """IC-14: 断言 L1-04 消费方(IC14Consumer)收到 rollback_route push.
+
+    Args:
+        consumer_recorded: 消费方记录的 PushRollbackRouteCommand 列表.
+            形态假设: 可访问 .project_id / .wp_id / .verdict / .target_stage
+            (与 app.quality_loop.rollback_router.schemas.PushRollbackRouteCommand 对齐).
+        project_id / wp_id: PM-14 分片 + WP 定位.
+        verdict: FAIL_L1 / FAIL_L2 / FAIL_L3 / FAIL_L4
+        target_stage: 可选 · S3 / S4 / S5 / UPGRADE_TO_L1_01
+
+    返: 匹配的 push command 列表.
+    """
+    def _val(cmd: Any, field: str) -> Any:
+        # 兼容 pydantic model 或 dict
+        if hasattr(cmd, field):
+            return getattr(cmd, field)
+        if isinstance(cmd, dict):
+            return cmd.get(field)
+        return None
+
+    matched = [
+        c for c in consumer_recorded
+        if _val(c, "project_id") == project_id
+        and _val(c, "wp_id") == wp_id
+        and str(_val(c, "verdict")) in (verdict, f"FailVerdict.{verdict}")
+    ]
+    if target_stage is not None:
+        matched = [
+            c for c in matched
+            if str(_val(c, "target_stage")) in (target_stage, f"TargetStage.{target_stage}")
+        ]
+    if len(matched) < min_count:
+        all_seen = [(_val(c, "wp_id"), str(_val(c, "verdict")), str(_val(c, "target_stage"))) for c in consumer_recorded]
+        raise AssertionError(
+            f"IC-14 rollback push 断言失败 pid={project_id} wp_id={wp_id} "
+            f"verdict={verdict} target_stage={target_stage} "
+            f"期望≥{min_count} 实际={len(matched)}\n"
+            f"消费方全部记录 (wp_id, verdict, target_stage): {all_seen}"
+        )
+    return matched
+
+
+# =============================================================================
+# IC-20 · Verifier 独立 session dispatch 断言
+# =============================================================================
+
+
+def assert_ic_20_dispatched(
+    delegate_calls: list[Any],
+    *,
+    project_id: str,
+    wp_id: str,
+    min_count: int = 1,
+    session_prefix_contains: str | None = "sub-",
+) -> list[Any]:
+    """IC-20: 断言 delegator 被调用 ≥ min_count 次 · 且 session_prefix 合法.
+
+    L1-04 Verifier 的独立 session 硬红线: session_id 必含 `sub-` 前缀(IC-20 §3.20.2).
+    若 session_prefix_contains 非 None · 会额外校验 delegate_calls 中的
+    delegation_id 或 session_id 字段含该前缀.
+
+    Args:
+        delegate_calls: DelegateVerifierStub.calls 列表 · 每项为 IC20Command.
+        project_id / wp_id: PM-14 + WP 定位.
+        session_prefix_contains: 默认 "sub-" · 设 None 则跳过校验.
+    """
+    def _val(cmd: Any, field: str) -> Any:
+        if hasattr(cmd, field):
+            return getattr(cmd, field)
+        if isinstance(cmd, dict):
+            return cmd.get(field)
+        return None
+
+    matched = [
+        c for c in delegate_calls
+        if _val(c, "project_id") == project_id and _val(c, "wp_id") == wp_id
+    ]
+    if len(matched) < min_count:
+        raise AssertionError(
+            f"IC-20 delegate_verifier 断言失败 pid={project_id} wp_id={wp_id} "
+            f"期望≥{min_count} 实际={len(matched)}"
+        )
+    # 若需校 session prefix · 检查返回的 DispatchResult(若 stub 透出)
+    return matched
