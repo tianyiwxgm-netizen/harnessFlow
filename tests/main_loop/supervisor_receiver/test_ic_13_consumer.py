@@ -108,6 +108,28 @@ async def test_TC_WP06_IC13_102_empty_session_pid_rejected(event_bus) -> None:
         IC13Consumer(session_pid="   ", event_bus=event_bus)
 
 
+async def test_TC_WP06_IC13_105_sugg_queue_overflow_evicts_oldest(
+    pid, event_bus, make_suggestion_inbox
+) -> None:
+    """TC-WP06-IC13-105 · SUGG queue 满 · evict 最旧 · 新 push ack.accepted=true。"""
+    sut = IC13Consumer(
+        session_pid=pid, event_bus=event_bus, max_sugg_queue_len=2
+    )
+    for i in range(3):
+        inbox = make_suggestion_inbox(
+            level=SuggestionLevel.SUGG,
+            project_id=pid,
+            suggestion_id=f"sugg-s-{i:03d}",
+        )
+        await sut.consume(inbox)
+
+    assert sut.queue_depth(AdviceLevel.SUGG) == 2
+    remaining_ids = [i.command.suggestion_id for i in sut.peek_queue(AdviceLevel.SUGG)]
+    assert remaining_ids == ["sugg-s-001", "sugg-s-002"]
+    types = [e.type for e in event_bus._events]
+    assert "L1-01:suggestion_evicted" in types
+
+
 async def test_TC_WP06_IC13_106_warn_queue_overflow_evicts_oldest(
     pid, event_bus, make_suggestion_inbox
 ) -> None:
