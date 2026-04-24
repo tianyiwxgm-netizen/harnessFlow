@@ -30,6 +30,18 @@ from app.l1_09.event_bus.core import EventBus
 # automatically under tests/shared/**. 下游只要 conftest 被 pytest 收到 ·
 # 不需再手 import 各文件里的 fixture.
 from tests.shared.project_factory import project_factory, project_workspace  # noqa: F401
+from tests.shared.stubs import (
+    AuditSink,
+    CallbackWaiterStub,
+    DelegateVerifierStub,
+    FakeKBRepo,
+    FakeLLMClient,
+    FakeReranker,
+    FakeScopeChecker,
+    FakeSkillInvoker,
+    FakeToolClient,
+    StateTransitionSpy,
+)
 
 
 # =============================================================================
@@ -160,3 +172,74 @@ def no_sleep():
     async def _no_sleep(_: float) -> None:
         return None
     return _no_sleep
+
+
+# =============================================================================
+# Stubs · 跨 L1 mock 基础设施 fixture(每 TC 独立实例 · 避共享状态泄)
+# =============================================================================
+
+
+@pytest.fixture
+def state_spy() -> StateTransitionSpy:
+    """L1-02 IC-01 state_transition spy · 每 TC 独立."""
+    return StateTransitionSpy()
+
+
+@pytest.fixture
+def delegate_stub() -> DelegateVerifierStub:
+    """L1-05 IC-20 delegate_verifier stub · 每 TC 独立."""
+    return DelegateVerifierStub()
+
+
+@pytest.fixture
+def callback_waiter() -> CallbackWaiterStub:
+    """Verifier 独立 session 回调等待 stub · 每 TC 独立.
+
+    测试内手动 set output / exc 来控制:
+        callback_waiter.output = {"verdict": "PASS", ...}
+    """
+    return CallbackWaiterStub()
+
+
+@pytest.fixture
+def fake_kb_repo() -> FakeKBRepo:
+    """L1-06 KB 3 层 in-memory repo · 每 TC 独立."""
+    return FakeKBRepo()
+
+
+@pytest.fixture
+def fake_scope_checker() -> FakeScopeChecker:
+    return FakeScopeChecker()
+
+
+@pytest.fixture
+def fake_reranker() -> FakeReranker:
+    return FakeReranker()
+
+
+@pytest.fixture
+def fake_llm() -> FakeLLMClient:
+    """通用 LLM 调用替身 · 支持 responses 映射.
+
+    测试内注入:
+        fake_llm.responses["decompose_wbs"] = "..."
+    """
+    return FakeLLMClient()
+
+
+@pytest.fixture
+def fake_skill_invoker() -> FakeSkillInvoker:
+    """L1-05 skill invoker 替身 · 支持 outputs + error_queue."""
+    return FakeSkillInvoker()
+
+
+@pytest.fixture
+def fake_tool_client() -> FakeToolClient:
+    """通用工具客户端替身(L1-05/L1-08 跨工具用)."""
+    return FakeToolClient()
+
+
+@pytest.fixture
+def audit_sink() -> AuditSink:
+    """旁路 audit sink · 只记录不写盘(不取代 real_event_bus · 辅用)."""
+    return AuditSink()
