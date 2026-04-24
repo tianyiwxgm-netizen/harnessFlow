@@ -150,3 +150,62 @@ def make_halt_signal(
         return HaltSignal.from_command(cmd, received_at_ms=received_at_ms)
 
     return _factory
+
+
+# ---------- downstream · main-1 merged IC14Consumer（真实 import · 非 mock） ---------- #
+
+
+class _MockStateTransition:
+    """IC-01 state_transition mock · 仅本 suite 用 · 避免跨 suite 耦合。"""
+
+    def __init__(self, *, raise_on_call: bool = False) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self._raise = raise_on_call
+
+    async def state_transition(
+        self,
+        *,
+        project_id: str,
+        wp_id: str,
+        new_wp_state: str,
+        escalated: bool,
+        route_id: str,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        if self._raise:
+            raise RuntimeError("E_STATE_TRANSITION_FAILED")
+        self.calls.append(
+            {
+                "project_id": project_id,
+                "wp_id": wp_id,
+                "new_wp_state": new_wp_state,
+                "escalated": escalated,
+                "route_id": route_id,
+                **extra,
+            }
+        )
+        return {"transitioned": True, "project_id": project_id}
+
+
+@pytest.fixture
+def mock_state_transition() -> _MockStateTransition:
+    return _MockStateTransition()
+
+
+@pytest.fixture
+def rollback_downstream(
+    pid: str,
+    event_bus: EventBusStub,
+    mock_state_transition: _MockStateTransition,
+) -> Any:
+    """真实 main-1 merged `quality_loop.rollback_router.IC14Consumer` 实例。"""
+    # 延迟 import · 避免 conftest 顶层 import 拖慢 collection
+    from app.quality_loop.rollback_router.ic_14_consumer import (
+        IC14Consumer as QualityLoopIC14Consumer,
+    )
+
+    return QualityLoopIC14Consumer(
+        session_pid=pid,
+        state_transition=mock_state_transition,
+        event_bus=event_bus,
+    )
