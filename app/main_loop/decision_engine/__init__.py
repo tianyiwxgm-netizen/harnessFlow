@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from .engine import decide
+from .kb_reader_adapter import KBReaderAdapter
 from .schemas import (
     Candidate,
     ChosenAction,
@@ -31,6 +32,7 @@ __all__ = [
     "ChosenAction",
     "DecisionContext",
     "HistoryEntry",
+    "KBReaderAdapter",
     "KBSnippet",
     "decide",
 ]
