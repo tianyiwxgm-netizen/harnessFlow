@@ -2,18 +2,19 @@
 
 职责：
 1. 从 WP01 `CompiledDoD` 聚合根中提取 `hard` / `soft` 表达式集合。
-2. 对每个 `DoDExpression` · 调 WP01 `DoDEvaluator.eval_expression` 求值（注入 metric 作
-   data_sources_snapshot · 每个表达式一次性求值）。
-3. 汇总成 `EvaluatedDoD` · 供 `BaselineEvaluator` 消费。
+2. 对每个 `DoDExpression` · 调 WP01 `DoDEvaluator.eval_expression`（表达式已由
+   `DoDExpressionCompiler` 注册到 compiler._expressions · evaluator 通过 expr_id 查找）。
+3. 注入 metric snapshot（嵌套格式 · 与 WP01 `WHITELISTED_DATA_SOURCE_KEYS` 对齐:
+   `{"coverage": {...}, "test_result": {...}, "lint": {...}, "perf": {...}, ...}`）。
+4. 汇总成 `EvaluatedDoD` · 供 `BaselineEvaluator` 消费。
 
 **真实 import · 无 mock**：`from app.quality_loop.dod_compiler import ...`
 
-**并发策略**：WP01 `DoDEvaluator` 是 thread-safe · 本 adapter 同步顺序调用（单 WP
-评估一次性完成 · 不并发）。错误累积 · 不 short-circuit（缺 evidence 作为
-`MissingEvidence` 汇总给 Verdict）。
+**错误累积不 short-circuit**：缺 evidence / eval 失败 → `MissingEvidence` + passed=False。
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -47,7 +48,8 @@ class EvaluatedExpression(BaseModel):
     - `kind`          · hard / soft / metric（仅 hard+soft 参与 baseline 判据 · metric
                          单独走 MetricSampler）
     - `passed`        · 是否通过（WP01 `pass_`）
-    - `reason`        · WP01 返回的文字原因（≥ 10 字符）
+    - `reason`        · WP01 返回的文字原因（≥ 1 字符 · 放松 WP01 的 10 字符约束用于
+                         adapter 层兜底 "missing evidence" 等短 reason）
     - `missing_keys`  · 若 WP01 eval 因缺字段失败 · 记录 missing keys
     """
 
@@ -56,14 +58,14 @@ class EvaluatedExpression(BaseModel):
     expr_id: str = Field(..., min_length=1)
     kind: DoDExpressionKind
     passed: bool
-    reason: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=1, max_length=2000)
     missing_keys: list[str] = Field(default_factory=list)
 
 
 class EvaluatedDoD(BaseModel):
     """聚合根 VO · 一次 WP 评估的 DoD 集合结果。
 
-    - `hard`          · hard 表达式结果列表（`EvaluatedExpression.kind == HARD`）
+    - `hard`          · hard 表达式结果列表
     - `soft`          · soft 表达式结果列表
     - `missing`       · 跨集合的 missing_evidence 聚合
     - `dod_set_id`    · 来自 `CompiledDoD.set_id`
@@ -113,13 +115,19 @@ class DoDAdapter:
     """WP01 `DoDEvaluator` → L2-04 `EvaluatedDoD` 适配器。
 
     用法：
-        adapter = DoDAdapter(evaluator=DoDEvaluator(registry))
-        evaluated = adapter.evaluate(compiled_dod, metric_snapshot, project_id="p1")
+        compiler = DoDExpressionCompiler(...)
+        compile_result = compiler.compile_batch(cmd)  # 注册 expr 到 compiler._expressions
+        evaluator = DoDEvaluator(compiler)
+        adapter = DoDAdapter(evaluator=evaluator)
+        evaluated = adapter.evaluate(
+            compile_result.compiled,
+            metric_snapshot={"coverage": {"line_rate": 0.85}},
+            project_id="p1",
+        )
 
     - 不修改 WP01 内部状态。
     - 不并发；按 hard → soft 顺序评估。
-    - metric 表达式（kind=METRIC）跳过（metric 维度由 MetricSampler 独立管理 · 本
-      L2-04 MVP 不在 gate 评估中直接评估 metric 表达式）。
+    - metric 表达式（kind=METRIC）跳过 · 归 MetricSampler 管。
     """
 
     evaluator: DoDEvaluator
@@ -135,10 +143,12 @@ class DoDAdapter:
         """对 `CompiledDoD` 求值 · 返 `EvaluatedDoD`.
 
         Args:
-            compiled: WP01 产出的 `CompiledDoD`（必须带 set_id + dod_hash）。
-            metric_snapshot: metric 名 → 值的字典 · 传给 WP01 `EvalCommand.data_sources_snapshot`。
-            project_id: PM-14 顶层 · 若与 `compiled.project_id` 不一致 · 抛
-                `DoDAdapterError`。
+            compiled: WP01 产出的 `CompiledDoD`（必须带 set_id）。
+            metric_snapshot: 嵌套 data source 字典 · 传给 WP01
+                `EvalCommand.data_sources_snapshot`。格式:
+                `{"coverage": {...}, "test_result": {...}, "lint": {...}, ...}`
+                key 必须在 WP01 `WHITELISTED_DATA_SOURCE_KEYS` 内。
+            project_id: PM-14 顶层。必须与 `compiled.project_id` 一致。
 
         Returns:
             `EvaluatedDoD`（聚合 hard/soft 结果 + missing 清单）。
@@ -158,50 +168,29 @@ class DoDAdapter:
 
         for expr in compiled.hard:
             result = self._eval_one(expr, metric_snapshot, project_id)
-            if result is None:
+            hard_results.append(result)
+            if result.missing_keys:
                 missing.append(
                     MissingEvidence(
                         expr_id=expr.expr_id,
-                        missing_key=_infer_missing_key(expr, metric_snapshot),
-                        hint=f"hard expression '{expr.expr_id}' requires metric key(s) not in snapshot",
+                        missing_key=result.missing_keys[0],
+                        hint=f"hard expression '{expr.expr_id}' eval failed: {result.reason}",
                     ),
                 )
-                # 缺 evidence 记为 failed · 进入 hard_passed 计数
-                hard_results.append(
-                    EvaluatedExpression(
-                        expr_id=expr.expr_id,
-                        kind=DoDExpressionKind.HARD,
-                        passed=False,
-                        reason="missing evidence for hard predicate evaluation",
-                        missing_keys=[_infer_missing_key(expr, metric_snapshot)],
-                    ),
-                )
-            else:
-                hard_results.append(result)
 
         for expr in compiled.soft:
             result = self._eval_one(expr, metric_snapshot, project_id)
-            if result is None:
+            soft_results.append(result)
+            if result.missing_keys:
                 missing.append(
                     MissingEvidence(
                         expr_id=expr.expr_id,
-                        missing_key=_infer_missing_key(expr, metric_snapshot),
-                        hint=f"soft expression '{expr.expr_id}' requires metric key(s) not in snapshot",
+                        missing_key=result.missing_keys[0],
+                        hint=f"soft expression '{expr.expr_id}' eval failed: {result.reason}",
                     ),
                 )
-                soft_results.append(
-                    EvaluatedExpression(
-                        expr_id=expr.expr_id,
-                        kind=DoDExpressionKind.SOFT,
-                        passed=False,
-                        reason="missing evidence for soft predicate evaluation",
-                        missing_keys=[_infer_missing_key(expr, metric_snapshot)],
-                    ),
-                )
-            else:
-                soft_results.append(result)
 
-        # metric 维度在 gate 评估里跳过（MVP · metric 归 MetricSampler 管）
+        # metric 维度在 gate 评估里跳过（MVP · 归 MetricSampler 管）
         return EvaluatedDoD(
             dod_set_id=compiled.set_id,
             dod_hash=compiled.dod_hash or _synth_hash(compiled),
@@ -218,23 +207,29 @@ class DoDAdapter:
         expr: DoDExpression,
         metric_snapshot: dict[str, Any],
         project_id: str,
-    ) -> EvaluatedExpression | None:
-        """调 WP01 evaluator · 映射错误为 None（→ missing_evidence 通路）。
+    ) -> EvaluatedExpression:
+        """调 WP01 evaluator · 映射错误为 missing_keys 通路。
 
-        返 None：evaluator 因 missing key 失败（WP01 抛 `DoDEvalError`）。
-        返 EvaluatedExpression：成功（含 passed=True/False + reason）。
+        WP01 `DoDEvaluator.eval_expression(cmd)` 只接 `EvalCommand`（expr_id 查找 compiler
+        内部 registry）。失败时(DoDEvalError)返 passed=False + missing_keys=[错误分类]。
         """
         cmd = EvalCommand(
-            command_id=f"gate-eval-{expr.expr_id}",
+            command_id=f"gate-eval-{expr.expr_id}-{uuid.uuid4().hex[:8]}",
             project_id=project_id,
             expr_id=expr.expr_id,
             data_sources_snapshot=dict(metric_snapshot),
             caller=self.caller,
         )
         try:
-            result: EvalResult = self.evaluator.eval_expression(cmd, compiled_expr=expr)
-        except DoDEvalError:
-            return None
+            result: EvalResult = self.evaluator.eval_expression(cmd)
+        except DoDEvalError as exc:
+            return EvaluatedExpression(
+                expr_id=expr.expr_id,
+                kind=expr.kind,
+                passed=False,
+                reason=f"eval failed: {exc!s}"[:1900],
+                missing_keys=[type(exc).__name__],
+            )
         except Exception as exc:  # noqa: BLE001 — 防御：任何 WP01 内部异常转 adapter error
             raise DoDAdapterError(f"E_L204_EVAL_UNEXPECTED: {exc!s}") from exc
 
@@ -242,7 +237,7 @@ class DoDAdapter:
             expr_id=expr.expr_id,
             kind=expr.kind,
             passed=bool(result.pass_),
-            reason=result.reason or "eval completed",
+            reason=(result.reason or "eval completed")[:1900],
             missing_keys=[],
         )
 
@@ -253,40 +248,6 @@ def _synth_hash(compiled: CompiledDoD) -> str:
     不从真 hash 计算 · 仅作 GateVerdict 幂等 key 的 fallback。
     """
     return f"fallback-{compiled.set_id}"
-
-
-def _infer_missing_key(expr: DoDExpression, snapshot: dict[str, Any]) -> str:
-    """从表达式文本粗略推断 missing 的 metric key.
-
-    非精确（WP01 已有更精确的 predicate_eval）· 本函数仅在 adapter 兜底时给出人类可读的提示。
-    返回首个不在 snapshot 中的 key · 若推断不出 · 返 "unknown"。
-    """
-    candidates = [token for token in _tokenize(expr.expression_text) if token.isidentifier()]
-    for tok in candidates:
-        if tok not in snapshot and tok not in _PY_LITERALS:
-            return tok
-    return "unknown"
-
-
-def _tokenize(text: str) -> list[str]:
-    """拆 DoD 表达式文本 · 只保留 identifier-like 子串。"""
-    out: list[str] = []
-    buf: list[str] = []
-    for ch in text:
-        if ch.isalnum() or ch == "_":
-            buf.append(ch)
-        else:
-            if buf:
-                out.append("".join(buf))
-                buf = []
-    if buf:
-        out.append("".join(buf))
-    return out
-
-
-_PY_LITERALS: frozenset[str] = frozenset(
-    ["True", "False", "None", "and", "or", "not", "in"],
-)
 
 
 __all__ = [
