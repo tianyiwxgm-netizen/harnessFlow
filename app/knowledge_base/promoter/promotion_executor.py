@@ -23,7 +23,7 @@ import contextlib
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 from .errors import PromoterErrorCode
@@ -33,6 +33,7 @@ from .schemas import (
     VALID_FROM_SCOPES,
     VALID_REASONS,
     VALID_TO_SCOPES,
+    Approver,
     BatchResult,
     KBPromoteRequest,
     KBPromoteResponse,
@@ -40,6 +41,51 @@ from .schemas import (
     PromotedEntry,
     SingleResult,
 )
+
+
+# ---------------------------------------------------------------------------
+# ApprovalGate · Protocol + default pass-through (Review A-2 · 2026-04-23)
+# ---------------------------------------------------------------------------
+
+
+class ApprovalGate(Protocol):
+    """Pluggable approval authority for ``reason == "user_approved"`` paths.
+
+    The ``PromotionExecutor`` delegates user-approval checks to an instance
+    conforming to this protocol. The default (``_DefaultApprovalGate``) only
+    verifies that an ``Approver.user_id`` is non-empty — matching the legacy
+    inlined behaviour. Production deployments can inject a real gate (e.g. an
+    RBAC service, a real UI-backed approval flow) without modifying executor
+    core logic.
+
+    Returns ``(approved, reason_text)``:
+    - ``approved=True`` → allow the promotion to proceed.
+    - ``approved=False`` → reject with USER_APPROVAL_MISSING; the ``reason_text``
+      is surfaced in the audit trail.
+    """
+
+    def approve(
+        self,
+        *,
+        project_id: str,
+        target: PromoteTarget,
+        approver: Approver | None,
+    ) -> tuple[bool, str]: ...
+
+
+class _DefaultApprovalGate:
+    """Default gate — pass-through: accepts any non-empty user_id."""
+
+    def approve(
+        self,
+        *,
+        project_id: str,
+        target: PromoteTarget,
+        approver: Approver | None,
+    ) -> tuple[bool, str]:
+        if approver is None or not approver.user_id:
+            return False, "approver.user_id is empty"
+        return True, ""
 
 
 # ---------------------------------------------------------------------------
@@ -97,11 +143,16 @@ class PromotionExecutor:
         tier_manager: Any = None,
         event_bus: Any = None,
         target_store: InMemoryTargetStore | None = None,
+        approval_gate: ApprovalGate | None = None,
     ) -> None:
         self._observer = observer
         self._tier_manager = tier_manager
         self._event_bus = event_bus
         self._target_store = target_store or InMemoryTargetStore()
+        # Review A-2 · injectable approval authority; default = pass-through
+        self._approval_gate: ApprovalGate = (
+            approval_gate if approval_gate is not None else _DefaultApprovalGate()
+        )
 
         # idempotency keyed by (project_id, source_entry_id, to_scope)
         self._idem_lock = threading.Lock()
@@ -138,8 +189,18 @@ class PromotionExecutor:
     # ----------------------------------------------------------------- single
 
     def _promote_single(
-        self, req: KBPromoteRequest, response_id: str
+        self,
+        req: KBPromoteRequest,
+        response_id: str,
+        *,
+        source_override: Any | None = None,
     ) -> KBPromoteResponse:
+        """Single-entry promotion.
+
+        ``source_override`` · Review D-3 (2026-04-23) — when called inside a
+        batch loop, the caller can pass the pre-fetched source entry to skip
+        the per-candidate snapshot re-fetch, lowering cost from O(n²) to O(n).
+        """
         t = req.target
         if t is None:
             return self._reject(
@@ -177,9 +238,17 @@ class PromotionExecutor:
                 verdict="rejected",
             )
 
-        # user_approved requires approver.user_id
+        # user_approved → delegate to injectable ApprovalGate (Review A-2).
+        # Default gate only checks that approver.user_id is non-empty;
+        # production deployments can inject a real RBAC / UI-backed service
+        # without modifying this core path.
         if t.reason == "user_approved":
-            if t.approver is None or not t.approver.user_id:
+            approved, _reason = self._approval_gate.approve(
+                project_id=req.project_id,
+                target=t,
+                approver=t.approver,
+            )
+            if not approved:
                 return self._reject_with_single(
                     req,
                     response_id,
@@ -218,8 +287,14 @@ class PromotionExecutor:
                 ),
             )
 
-        # Fetch source entry (from observer snapshot — minimal viable path)
-        source = self._lookup_source(req.project_id, t.entry_id)
+        # Fetch source entry. Review D-3 · callers can pre-fetch a manifest
+        # and pass `source_override` to avoid O(n²) snapshot re-fetches in
+        # batch ceremonies.
+        source = (
+            source_override
+            if source_override is not None
+            else self._lookup_source(req.project_id, t.entry_id)
+        )
         if source is None:
             return self._reject_with_single(
                 req,
@@ -295,12 +370,16 @@ class PromotionExecutor:
             else:
                 self._target_store.write_global(promoted)
         except Exception:
+            # Review B-1 · any storage failure is infrastructure-level, not
+            # a rule violation. It MUST NOT populate the rejected-cannot-undo
+            # blacklist — transient errors (OSError / IOError / TimeoutError
+            # / adapter-specific) must be retryable. verdict="error".
             return self._reject_with_single(
                 req,
                 response_id,
                 PromoterErrorCode.WRITE_TARGET_FAIL,
                 t,
-                verdict="rejected",
+                verdict="error",
             )
 
         with self._idem_lock:
@@ -384,6 +463,12 @@ class PromotionExecutor:
                 )
             candidates = list(getattr(manifest, "entries", []) or [])
             result.candidates_total = len(candidates)
+            # Review D-3 · build a source lookup from the initial manifest so
+            # per-candidate `_promote_single` does not re-fetch snapshots.
+            # Degrades O(n²) snapshot reads → O(n).
+            source_by_id: dict[str, Any] = {
+                getattr(c, "entry_id", ""): c for c in candidates
+            }
 
             for cand in candidates:
                 entry_id = getattr(cand, "entry_id", "")
@@ -405,7 +490,11 @@ class PromotionExecutor:
                     request_id=f"{req.request_id}-{entry_id}",
                     target=target,
                 )
-                sub = self._promote_single(single_req, response_id=f"{response_id}-{entry_id}")
+                sub = self._promote_single(
+                    single_req,
+                    response_id=f"{response_id}-{entry_id}",
+                    source_override=source_by_id.get(entry_id),
+                )
                 sr = sub.single_result
                 if sr is None:
                     result.failed.append(
@@ -424,12 +513,13 @@ class PromotionExecutor:
                 elif sr.verdict == "rejected":
                     result.rejected.append(entry_id)
                 else:
+                    # verdict == "error" or unknown → infra failure, retryable
                     result.failed.append(
                         {
                             "entry_id": entry_id,
                             "failure_code": sr.reason_code
                             or "UNKNOWN",
-                            "will_retry": False,
+                            "will_retry": sr.verdict == "error",
                         }
                     )
 
@@ -511,11 +601,18 @@ class PromotionExecutor:
         target: PromoteTarget,
         verdict: str = "rejected",
     ) -> KBPromoteResponse:
-        # Mark rejected-cannot-undo for future calls
+        # Mark rejected-cannot-undo ONLY for content-level rule rejections.
+        # Review B-1 · verdict="error" (infra failure) MUST NOT mark_rejected.
         if verdict == "rejected":
             self._target_store.mark_rejected(req.project_id, target.entry_id)
+        # Use a distinct audit event type for infra errors vs rule rejections
+        event_type = (
+            "kb_promotion_error"
+            if verdict == "error"
+            else "kb_promotion_rejected"
+        )
         self._audit(
-            "kb_promotion_rejected",
+            event_type,
             project_id=req.project_id,
             entry_id=target.entry_id,
             error_code=code.value,
@@ -584,6 +681,7 @@ def _now_iso() -> str:
 
 
 __all__ = [
+    "ApprovalGate",
     "PromotionExecutor",
     "InMemoryTargetStore",
 ]

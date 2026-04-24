@@ -81,7 +81,12 @@ class PromotionHint:
 
 @dataclass
 class WriteSessionResponse:
-    """IC-07 return VO · 3-1 §2.3 WriteResult."""
+    """IC-07 return VO · 3-1 §2.3 WriteResult.
+
+    ``dedup_key`` surfaces the internal ``title_hash`` so downstream callers
+    (e.g. L2-04 during post-promotion reconciliation) can correlate merge
+    events across IC-07 roundtrips. Review A-1a (2026-04-23).
+    """
 
     success: bool
     action: str  # INSERTED / MERGED / REJECTED / DEGRADED
@@ -97,6 +102,7 @@ class WriteSessionResponse:
     error_code: str | None = None
     error_message: str = ""
     degraded: bool = False
+    dedup_key: str = ""  # review A-1a · internal title_hash; empty on reject
 
 
 # ---------------------------------------------------------------------------
