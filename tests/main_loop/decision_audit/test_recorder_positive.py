@@ -120,3 +120,85 @@ def test_TC_L101_L205_006_record_audit_idempotency_key_returns_same_audit_id(
     r2 = sut.record_audit(cmd)
     assert r1.audit_id == r2.audit_id
     assert sut.buffer_size() == 1
+
+
+# ---------------------------------------------------------------------------
+# query_by_tick / by_decision / by_chain
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_007_query_by_tick_hits_buffer_includes_buffered(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    tick_id = "tick-018f4a3b-7c1e-7000-8b2a-5555555555ee"
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick=tick_id,
+        reason="event_bus_trigger", evidence=["evt-1"],
+    ))
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="decision_made",
+        actor={"l1": "L1-01", "l2": "L2-02"},
+        project_id=mock_project_id, linked_tick=tick_id, linked_decision="dec-001",
+        reason="选择 invoke_skill 因 KB 命中且 reason 达到 20 字",
+        evidence=["evt-2"], payload={"decision_type": "invoke_skill"},
+    ))
+    result = sut.query_by_tick(tick_id=tick_id, project_id=mock_project_id, include_buffered=True)
+    assert result.count == 2
+    assert result.source in ("buffer", "mixed")
+    actions = [e.action for e in result.entries]
+    assert "tick_scheduled" in actions and "decision_made" in actions
+
+
+def test_TC_L101_L205_008_query_by_tick_mixed_buffer_and_index_after_flush(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    tick_id = "tick-018f4a3b-7c1e-7000-8b2a-6666666666ff"
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick=tick_id,
+        reason="flushed first", evidence=["evt-1"],
+    ))
+    sut.flush_buffer(force=True, reason="tick_boundary")
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_completed",
+        project_id=mock_project_id, linked_tick=tick_id,
+        reason="late buffered", evidence=["evt-2"],
+    ))
+    result = sut.query_by_tick(tick_id=tick_id, project_id=mock_project_id, include_buffered=True)
+    assert result.count == 2
+    assert result.source == "mixed"
+
+
+def test_TC_L101_L205_009_query_by_decision_returns_single_entry(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    decision_id = "dec-018f4a3b-7c1e-7000-8b2a-7777777777aa"
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="decision_made",
+        actor={"l1": "L1-01", "l2": "L2-02"},
+        project_id=mock_project_id, linked_decision=decision_id,
+        reason="decision 单条反查 · reason 长度足以满足 20 字最小要求",
+        evidence=["evt-dec-001"], payload={"decision_type": "invoke_skill"},
+    ))
+    entry = sut.query_by_decision(decision_id=decision_id, project_id=mock_project_id)
+    assert entry is not None
+    assert entry.linked_decision == decision_id
+    assert entry.action == "decision_made"
+
+
+def test_TC_L101_L205_010_query_by_chain_returns_multiple_entries(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    chain_id = "ch-018f4a3b-7c1e-7000-8b2a-8888888888bb"
+    for i in range(3):
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-07", action="chain_step_completed",
+            actor={"l1": "L1-01", "l2": "L2-04"},
+            project_id=mock_project_id, linked_chain=chain_id,
+            reason=f"step {i + 1} ok", evidence=[f"evt-step-{i}"],
+            payload={"chain_id": chain_id, "step_id": f"step-{i + 1}"},
+        ))
+    entries = sut.query_by_chain(chain_id=chain_id, project_id=mock_project_id)
+    assert len(entries) == 3
+    assert all(e.linked_chain == chain_id for e in entries)
