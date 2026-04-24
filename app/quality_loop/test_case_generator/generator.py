@@ -59,7 +59,8 @@ class TestCaseGenerator:
         # algo 1 · 展开 slot（含 ac_coverage=1.0 检查）
         slots = self._reader.read(blueprint)
 
-        # §6 algo 6 · suite_id 稳定派生
+        # §6 algo 6 · suite_id 稳定派生（TC-200e · 同 (blueprint_id, version, slot_ids)
+        # 两次 generate 得同一 suite_id · 基于 sha256 prefix 16 hex）
         suite_id = "suite-" + hash_blueprint_signature(
             blueprint.blueprint_id,
             blueprint.version,
