@@ -40,3 +40,21 @@ def test_TC_L101_L205_E02_query_by_chain_miss_returns_empty_list(
         chain_id="ch-never-existed", project_id=mock_project_id
     )
     assert entries == []
+
+
+# ---------------------------------------------------------------------------
+# TC-E03 · query_by_tick 未命中 · source=not_found + count=0
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E03_query_by_tick_miss_source_not_found(
+    sut, mock_project_id
+) -> None:
+    result = sut.query_by_tick(
+        tick_id="tick-never-existed",
+        project_id=mock_project_id,
+        include_buffered=True,
+    )
+    assert result.count == 0
+    assert result.entries == []
+    assert result.source == "not_found"
