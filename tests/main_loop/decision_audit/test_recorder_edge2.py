@@ -312,3 +312,28 @@ def test_TC_L101_L205_E25_sync_append_single_on_overflow(
     # overflow meta 记了一条
     metas = rec.get_recent_audits()
     assert any(m.action == "buffer_overflow" for m in metas)
+
+
+# ---------------------------------------------------------------------------
+# TC-E26 · replay 后 reverse_index 重建 · entries_by_id 可被 query 命中
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E26_replay_rebuilds_entries_by_id(
+    make_recorder, mock_project_id, pre_populated_jsonl_dir
+) -> None:
+    rec = make_recorder(
+        session_active_pid=mock_project_id,
+        jsonl_root=pre_populated_jsonl_dir,
+    )
+    assert rec.reverse_index_size() == 0
+    rec.replay_from_jsonl(project_id=mock_project_id, from_date="2026-04-20")
+    # 10 个 tick 都进 index
+    assert rec.reverse_index_size() >= 10
+    r = rec.query_by_tick(
+        tick_id="tick-historical-005",
+        project_id=mock_project_id,
+        include_buffered=False,
+    )
+    assert r.count >= 1
+    assert r.source in ("index", "mixed", "jsonl_scan")
