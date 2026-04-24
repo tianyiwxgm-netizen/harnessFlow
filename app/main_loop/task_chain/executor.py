@@ -159,7 +159,7 @@ class TaskChainExecutor:
         # 4. 可选同步等待 (测试/debug 路径)
         ic_reply: dict[str, Any] | None = None
         if await_result:
-            ic_reply = await self._await_handle(handle, state)
+            ic_reply = await self._await_handle(handle)
 
         return TaskChainResult(
             accepted=True,
@@ -221,7 +221,7 @@ class TaskChainExecutor:
             self.spawner.forget(handle.task_id, project_id=handle.project_id)
 
     async def _await_handle(
-        self, handle: TaskHandle, state: TaskChainState,
+        self, handle: TaskHandle,
     ) -> dict[str, Any] | None:
         """同步路径:等 task 结束并返回 reply (异常 → raise TaskChainError).
 

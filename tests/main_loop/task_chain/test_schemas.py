@@ -27,12 +27,13 @@ class TestRoutableDecisionTypes:
 
     def test_TC_WP05_S01_whitelist_contains_4_types(self) -> None:
         """4 类 decision_type 均在白名单."""
-        assert ROUTABLE_DECISION_TYPES == frozenset({
+        expected = frozenset({
             "state_transition",
             "get_next_wp",
             "assign_wp",
             "invoke_skill",
         })
+        assert expected == ROUTABLE_DECISION_TYPES
 
     def test_TC_WP05_S02_whitelist_immutable(self) -> None:
         """frozenset · 不可修改."""
@@ -50,11 +51,12 @@ class TestTaskStatus:
 
     def test_TC_WP05_S04_terminal_statuses_subset(self) -> None:
         """TERMINAL = COMPLETED | FAILED | CANCELED."""
-        assert TERMINAL_STATUSES == frozenset({
+        expected = frozenset({
             TaskStatus.COMPLETED,
             TaskStatus.FAILED,
             TaskStatus.CANCELED,
         })
+        assert expected == TERMINAL_STATUSES
 
     def test_TC_WP05_S05_pending_not_terminal(self) -> None:
         """PENDING / RUNNING 不在 TERMINAL."""

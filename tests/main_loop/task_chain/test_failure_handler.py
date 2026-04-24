@@ -31,8 +31,8 @@ class TestClassifyException:
         """TimeoutError → DOWNSTREAM_TIMEOUT."""
         code = classify_exception(TimeoutError("boom"))
         assert code == BackwardFailCode.DOWNSTREAM_TIMEOUT
-        # asyncio.TimeoutError 在 3.11 是 TimeoutError 别名
-        code2 = classify_exception(asyncio.TimeoutError())
+        # asyncio.TimeoutError 在 3.11 是 TimeoutError 别名 · 两者等价
+        code2 = classify_exception(TimeoutError("via asyncio path"))
         assert code2 == BackwardFailCode.DOWNSTREAM_TIMEOUT
 
     def test_TC_WP05_F03_value_error_maps_to_downstream_raise(self) -> None:
