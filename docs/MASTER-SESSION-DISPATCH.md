@@ -76,59 +76,59 @@ updated_at: 2026-04-22
 
 ---
 
-## §2.6 波 1-3 · 实际进度快照（2026-04-23 19:00 audit）
+## §2.6 波 1-3 · 实际进度快照（2026-04-23 深夜 update）
 
-> 主会话基于 git log / standup-logs / code-review 报告 audit。
+> 主会话每次 agent 完成后更新。
 
-| Dev | L1 | WP 完成 / 总 | 分支 · 位置 | merge 状态 | Review verdict |
-|:---:|:---:|:---:|:---|:---:|:---:|
-| **Dev-α** | L1-09 | **7 / 13**（α1 批 WP00-06）| `main`（直接提交）| ✅ merged | 🟡 未 review |
-| **Dev-β** | L1-06 | **2 / 6**（WP01-02）| `main`（直接提交）| ✅ merged | 🟡 未 review |
-| **Dev-γ** | L1-05 | **6 / 6** ✅ | `origin/feat/dev-gamma-l1-05` | ⚠️ 未 merge | ❌ REQUEST_CHANGES（1 P0 + 3 P1）|
-| **Dev-δ** | L1-02 | **8 / 8** ✅ | `main`（直接提交）| ✅ merged | 🟡 未 review |
-| **Dev-ε** | L1-03 | **6 / 6** ✅ | `origin/feat/dev-epsilon-l1-03` | ⚠️ 未 merge | ❌ REQUEST_CHANGES（2 P1）|
-| **Dev-ζ** | L1-07 | **1 / 7**（仅 WP01）| `worktree-dev-zeta1-L1-07-supervisor`（本地）| ⚠️ 未 push | ✅ ACCEPT（WP01）|
-| **Dev-η** | L1-08 | **5 / 5** ✅ | `feat/dev-eta-l1-08`（本地）| ⚠️ 未 push | ❌ REQUEST_CHANGES（2 P1）|
-| **Dev-θ** | L1-10 | **4 / 9**（θ1 批）| `feat/dev-theta-l1-10`（本地）| ⚠️ 未 push | ✅ ACCEPT · ⚠️ L0 Vite 冲突待用户裁 |
+| Dev | L1 | WP 完成 / 总 | Review | 最终状态 |
+|:---:|:---:|:---:|:---:|:---|
+| **Dev-α** | L1-09 | **7 / 13**（α1 批 WP00-06）| 🔴 **BLOCK**（1 CRIT + 4 HIGH）| **fix agent 跑中** · `fix/dev-alpha-α1-review`（预计 0.5-1 天完）|
+| **Dev-β** | L1-06 | **2 / 6 → 推进中** | 🟡 CONDITIONAL（P0 plan 已修 · 1 P1 + 3 P2 待修）| **WP03-06 agent 跑中** · `feat/dev-beta-wp03-06`（预计 1-2 天完）|
+| **Dev-γ** | L1-05 | **6 / 6** ✅ | ✅ fix 完（223 TC · 89.43%）| ✅ **merged main**（`c605d3d`）|
+| **Dev-δ** | L1-02 | **8 / 8** ✅ | ✅ fix 完（198 TC · 89.05%）| ✅ **merged main**（`9e773d8`）|
+| **Dev-ε** | L1-03 | **6 / 6** ✅ | ✅ fix 完（230 TC · 94.1%）| ✅ **merged main**（`edd3e74`）|
+| **Dev-ζ** | L1-07 | **1 / 7**（仅 WP01）| ✅ ACCEPT（WP01）| ⏸ 待派 · ζ1 WP02-03 + ζ2 WP04-07（合计 6 WP）· 按仲裁严格落 IC-13/14/15 |
+| **Dev-η** | L1-08 | **5 / 5** ✅ | ✅ fix 完（225 TC · 93.12% · P99 0.29ms）| ✅ **merged main**（`994d31a`）|
+| **Dev-θ** | L1-10 | **4 / 9**（θ1 批）| ✅ ACCEPT（θ1）· L0 Vite C 方案已应用 | ⏸ θ1 可 merge · θ2（WP05-09）**依赖 block**（等 main-2/Dev-α WP04/Dev-δ IC-16/Dev-β IC-06）|
 
-**真正全完**：Dev-δ（L1-02 · 8/8 WP · 157 TC · 合 main）
-**代码全完但 review 拦**：Dev-γ / Dev-ε / Dev-η（3 组 · 必修 P0/P1）
-**部分完成**：Dev-α（7/13 · α1 批）· Dev-β（2/6）· Dev-ζ（1/7）· Dev-θ（4/9 · θ1 批）
+**merged main**：4/8（Dev-γ/δ/ε/η · 合计 876 TC）
+**fix 跑中**：2/8（Dev-α α1 · Dev-β WP03-06）
+**待派**：1/8（Dev-ζ · 6 WP · 最大独立任务）
+**延后**：1/8（Dev-θ θ2 · 依赖未到）
 
-**剩余 WP 估算**：~20-22 WP 未做（α 6 + β 4 + ζ 6 + θ2 5 + misc fix）· 估约 **8-12 天墙钟**才能真正跑完波 1-3。
+**剩余 WP 估算**（修订）：~18 WP 未做（α 6 α2 + β 4 WP03-06 + ζ 6 + θ 5）· 估约 **5-8 天墙钟**（原估 8-12 · 实际并发 + fix agent 推得快）。
+
+**关键风险**：
+- 🔴 **Dev-α α1 L1-09 BLOCK** · 脊柱代码 · 其他 Dev 真实 IC-09 依赖都受牵连 · 本周必须清（fix agent 已派）
+- 🟡 **commit 混淆事故 2 起** · 共享 worktree 导致 · 新规矩已立（禁 `git add -A`）
 
 ---
 
-## §2.7 下一步行动清单（2026-04-23 起）
+## §2.7 下一步行动清单（2026-04-23 深夜更新）
 
-### A · 立即（今晚 / 明天）
+### A · 进行中（agent 跑）
 
-| 优先级 | 动作 | 会话 | 预估 |
+| 优先级 | 动作 | agent | ETA |
 |:---:|:---|:---:|:---:|
-| 🔴 P0 | **用户裁定 L0 Vite 冲突**（A 回退 / B 修 L0 / C 混合）· 阻塞 Dev-θ merge | 用户 | 即时 |
-| 🔴 P0 | Dev-γ 修 P0-01（IntentSelector RuntimeError → CapabilityNotFoundError）+ 3 P1 | Dev-γ 新会话 | 1 天 |
-| 🟠 P1 | Dev-ε 修 2 P1（EventBusStub IC-09 签名 + FailureCounter dedup）| Dev-ε 新会话 | 0.5 天 |
-| 🟠 P1 | Dev-η 修 2 P1（ts 硬编码 + IC-12 SLO bench）+ push 分支 | Dev-η 新会话 | 0.5 天 |
-| 🟡 P2 | Dev-θ θ1 修 3 P1/P2（trim_profile state note + axios interceptor + pid 双源）· 等 Vite 裁定 | Dev-θ 新会话 | 0.5 天 |
+| 🔴 P0 | Dev-α α1 fix 9 条（1 CRIT DiskFull halt + 4 HIGH meta/fsync/assert/context + 4 P2 契约字段）| `a02a3317` | ~0.5-1 h |
+| 🟠 P1 | Dev-β WP03-06 推进（4 WP · IC-06/07/08 + 集成）+ 顺手 1 P1 + 3 P2 fix | `a720a8d4` | ~1-2 h |
 
-### B · 本周（并行推 · 不阻塞）
+### B · 待派（等 A 中 1-2 完再派 · 防 rate limit）
 
-| 动作 | 会话 | 预估 | 依赖 |
+| 动作 | agent | 预估 | 依赖 |
 |:---|:---:|:---:|:---|
-| **Dev-α α2 批** · WP07-13（L2-02 lock_manager + L2-03 audit + L2-04 checkpoint + L2-06 shutdown）| Dev-α 新会话 | 3-4 天 | α1 merged ✅ |
-| **Dev-β WP03-06** · L2-02/03/04/06 KB 完整栈 | Dev-β 新会话 | 2-3 天 | β WP02 merged ✅ |
-| **Dev-ζ ζ1 剩余** WP02（event_sender · IC-13/14/15 · 100ms bench）+ WP03（escalator）| Dev-ζ 新会话 | 2 天 | WP01 已 ACCEPT |
-| **Dev-ζ ζ2 批** WP04（deviation_judge）+ WP05（red_line）+ WP06（soft_drift）+ WP07（集成）| Dev-ζ 新会话 | 4-5 天 | ζ1 全完 |
-| **code review** · Dev-α / Dev-β / Dev-δ（3 组未审 · 已 merge main 存风险）| 主会话派 agent | 0.5-1 天 | - |
+| **Dev-ζ ζ1 WP02-03 推进**（event_sender 严格按仲裁落 IC-13/14/15 · halt_requester 100ms bench · escalator）| 待派 | 2 天 | WP01 已 ACCEPT · 无依赖 |
+| **Dev-α α2 批 WP07-13 推进**（L2-02 lock_manager + L2-03 audit + L2-04 checkpoint + L2-06 shutdown · 6 WP · 最大）| 待派 | 3-4 天 | **α1 fix merge** 后 |
+| **Dev-ζ ζ2 批 WP04-07 推进**（deviation_judge + red_line + soft_drift + 集成）| 待派 | 4-5 天 | ζ1 全完 |
+| **Dev-β WP03-06 review**（agent 完后 review · 找 bug）| 待派 | 0.5 天 | WP03-06 agent 完 |
 
-### C · 主会话动作（本周内）
+### C · 主会话动作（已完）
 
-| 动作 | 产物 | 预估 |
-|:---|:---|:---:|
-| 应用 Dev-θ 仲裁 3 条源文档改动（待 Vite 裁定后批量改）| arch §4 / L2-01 §1.5 / Dev-θ exe-plan enum | 1h |
-| pyproject.toml 夜晚合并（fastapi + uvicorn + httpx + 其他 Dev 追加 deps）| pyproject.toml | 0.5 day |
-| Dev-ε / Dev-γ / Dev-η merge（等 fix 后主会话 merge 分支到 main · 清冲突）| main 同步 | 1 day |
-| 3 组已 merge 的 code review（Dev-α / Dev-β / Dev-δ）| 3 份 review md | 1 day |
+- ✅ Dev-γ / Dev-ε / Dev-η / Dev-δ 4 分支 merge main + push（173 files · +24K 行）
+- ✅ pyproject.toml 夜晚合并（13 新 deps + 6 packages 统一）
+- ✅ Dev-θ 仲裁 4 条全应用（L0/tech-stack + L1-10 arch + Dev-θ exe-plan）
+- ✅ Vite C 方案文档落实
+- ✅ 3 组 review 完成（Dev-ε + Dev-ζ WP01 + Dev-δ + Dev-β + Dev-η + Dev-γ + Dev-α α1 + Dev-θ θ1）· 共 8 份 review md 产出
 
 ### D · 延后（依赖未 ready · 不可开）
 

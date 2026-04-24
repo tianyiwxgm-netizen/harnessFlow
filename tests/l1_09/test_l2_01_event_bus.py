@@ -86,14 +86,17 @@ def bus(tmp_fs: Path) -> EventBus:
 # =========================================================
 
 class TestAppendPositive:
-    def test_first_append_seq_zero_prev_genesis(self, bus: EventBus) -> None:
-        """首次 append: sequence=0 · prev_hash=GENESIS · hash 64 hex · 文件落盘."""
+    def test_first_append_seq_one_prev_genesis(self, bus: EventBus) -> None:
+        """首次 append: sequence=1 · prev_hash=GENESIS · hash 64 hex · 文件落盘.
+
+        A-4 修复 · IC-09 §3.9.3 sequence minimum: 1（原测 seq=0 错）.
+        """
         pid = "proj-demo"
         evt = _make_event(project_id=pid)
         result = bus.append(evt)
 
         assert isinstance(result, AppendEventResult)
-        assert result.sequence == 0
+        assert result.sequence == 1  # A-4 · 首个 event seq=1
         assert result.prev_hash == "GENESIS"
         assert len(result.hash) == 64
         assert all(c in "0123456789abcdef" for c in result.hash)
@@ -103,29 +106,29 @@ class TestAppendPositive:
         assert result.idempotent_replay is False
 
     def test_consecutive_append_seq_monotonic(self, bus: EventBus) -> None:
-        """连续 append: sequence 单调 +1 · prev 链接正确."""
+        """连续 append: sequence 单调 +1 · prev 链接正确（A-4 起 1）."""
         pid = "proj-demo"
         r1 = bus.append(_make_event(project_id=pid))
         r2 = bus.append(_make_event(project_id=pid))
         r3 = bus.append(_make_event(project_id=pid))
 
-        assert r1.sequence == 0
-        assert r2.sequence == 1
-        assert r3.sequence == 2
+        assert r1.sequence == 1
+        assert r2.sequence == 2
+        assert r3.sequence == 3
         assert r2.prev_hash == r1.hash
         assert r3.prev_hash == r2.hash
 
     def test_meta_persisted(self, bus: EventBus, tmp_fs: Path) -> None:
-        """append 后 meta 持久化 · 重启新 bus 仍可续 seq."""
+        """append 后 meta 持久化 · 重启新 bus 仍可续 seq（A-4 · seq=1,2,3,4）."""
         pid = "proj-demo"
         bus.append(_make_event(project_id=pid))
         bus.append(_make_event(project_id=pid))
         last_hash_before = bus.append(_make_event(project_id=pid)).hash
 
-        # 新 bus 实例（同 root）读 meta
+        # 新 bus 实例（同 root）读 meta · 第 4 个 event seq=4
         bus2 = EventBus(root=tmp_fs)
         r = bus2.append(_make_event(project_id=pid))
-        assert r.sequence == 3
+        assert r.sequence == 4
         assert r.prev_hash == last_hash_before
 
     def test_hash_chain_verifiable(self, bus: EventBus) -> None:
@@ -163,14 +166,14 @@ class TestAppendPositive:
 
 class TestPM14Isolation:
     def test_multi_project_independent_seq(self, bus: EventBus) -> None:
-        """两 project 独立 seq · 无串话."""
+        """两 project 独立 seq · 无串话（A-4 · 各自从 1 起）."""
         ra1 = bus.append(_make_event(project_id="proj-a"))
         rb1 = bus.append(_make_event(project_id="proj-b"))
         ra2 = bus.append(_make_event(project_id="proj-a"))
         rb2 = bus.append(_make_event(project_id="proj-b"))
 
-        assert ra1.sequence == 0 and ra2.sequence == 1
-        assert rb1.sequence == 0 and rb2.sequence == 1
+        assert ra1.sequence == 1 and ra2.sequence == 2
+        assert rb1.sequence == 1 and rb2.sequence == 2
         # hash 链独立
         assert ra2.prev_hash == ra1.hash
         assert rb2.prev_hash == rb1.hash
@@ -208,7 +211,7 @@ class TestEventSchemaValidation:
     def test_is_meta_flag(self, bus: EventBus) -> None:
         """is_meta=True 可 append · 不触发递归（WP05 广播侧强制）."""
         r = bus.append(_make_event(is_meta=True))
-        assert r.sequence == 0
+        assert r.sequence == 1  # A-4 · 首个 event seq=1
 
 
 # =========================================================
@@ -312,9 +315,9 @@ class TestHaltSemantics:
         monkeypatch.setattr("app.l1_09.crash_safety.appender.os.fsync", real_fsync)
         assert bus.halt_guard.clear_halt(admin_token="super-secret-xyz") is True
         assert bus.halt_guard.is_halted() is False
-        # 再 append 正常
+        # 再 append 正常（A-4 · 首 event seq=1）
         r = bus.append(_make_event())
-        assert r.sequence == 0
+        assert r.sequence == 1
 
 
 # =========================================================
@@ -356,20 +359,29 @@ class TestWriteFailure:
 
 class TestContract:
     def test_append_event_result_schema_stable(self, bus: EventBus) -> None:
+        """A-1 · IC-09 §3.9.3 字段名 ts_persisted / storage_path / persisted.
+
+        旧字段 persisted_at / file_path 仍可通过 property 访问（deprecated alias）.
+        """
         r = bus.append(_make_event())
         dump = r.model_dump()
+        # A-1 · 新字段（§3.9.3 required）
         required = {
             "event_id",
             "sequence",
             "hash",
             "prev_hash",
-            "persisted_at",
+            "ts_persisted",  # IC-09 §3.9.3 required
+            "persisted",  # IC-09 §3.9.3 required
             "jsonl_offset",
-            "file_path",
+            "storage_path",  # IC-09 §3.9.3
             "broadcast_enqueued",
             "idempotent_replay",
         }
         assert required.issubset(dump.keys())
+        # 旧字段通过 property 访问（不在 model_dump）
+        assert r.persisted_at is not None  # type: ignore[attr-defined]
+        assert r.file_path == r.storage_path  # type: ignore[attr-defined]
         # pydantic frozen
         with pytest.raises(Exception):
             r.sequence = 999  # type: ignore[misc]

@@ -13,7 +13,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # 合法 L1 前缀 · §3.2 TypePrefixValidator
 VALID_L1_PREFIXES: tuple[str, ...] = (
@@ -30,6 +32,22 @@ VALID_ACTORS: tuple[str, ...] = (
 VALID_STATES: tuple[str, ...] = (
     "NOT_EXIST", "INIT", "PLAN", "EXEC", "CLOSE", "CLOSED", "HALTED",
 )
+
+# A-3 · IC-09 §3.9.2 project_id_or_system · "system" 保留值允许
+# 系统级事件（halt / startup / crash-recovery）用 project_id="system"
+_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9_-]{1,40}$")
+_SYSTEM_PROJECT_VALUES: frozenset[str] = frozenset({"system"})
+
+
+def _validate_project_id_or_system(value: str) -> str:
+    """Allow normal `[a-z0-9_-]{1,40}` OR reserved `'system'` literal."""
+    if value in _SYSTEM_PROJECT_VALUES:
+        return value
+    if not isinstance(value, str) or not _PROJECT_ID_PATTERN.match(value):
+        raise ValueError(
+            f"project_id must match ^[a-z0-9_-]{{1,40}}$ or be 'system' · got {value!r}"
+        )
+    return value
 
 
 class BusState(StrEnum):
@@ -56,10 +74,10 @@ class Event(BaseModel):
     )
 
     # === 路由必填 ===
+    # A-3 · IC-09 §3.9.2 project_id_or_system · "system" 保留值允许
     project_id: str = Field(
         ...,
-        pattern=r"^[a-z0-9_-]{1,40}$",
-        description="PM-14 分片键 · ≤ 40 chars snake-case",
+        description="PM-14 分片键 · ≤ 40 chars snake-case 或 'system' 保留值",
     )
     # === 事件本体 ===
     type: str = Field(
@@ -96,30 +114,77 @@ class Event(BaseModel):
         None,
         description="相同 key 10 min 内重复 → 返 idempotent_replay",
     )
+    # A-2 · IC-09 §3.9.2 trigger_tick · L1-01 调时填 · 跨 IC 追溯
+    trigger_tick: str | None = Field(
+        None,
+        pattern=r"^tick_[0-9A-HJKMNP-TV-Z]{26}$",
+        description="L1-01 main_loop tick id · ULID · 可选",
+    )
+
+    @field_validator("project_id")
+    @classmethod
+    def _check_project_id_or_system(cls, value: str) -> str:
+        """A-3 · project_id 必为普通 pattern 或 'system' 保留值."""
+        return _validate_project_id_or_system(value)
 
 
 class AppendEventResult(BaseModel):
-    """append() 成功返回 · §3.2 response_ok schema."""
+    """append() 成功返回 · IC-09 §3.9.3 response_ok schema.
+
+    A-1 修复 · 对齐 §3.9.3 required: [event_id, sequence, hash, persisted, ts_persisted]
+    + storage_path. 旧字段 persisted_at / file_path 保留为兼容别名（deprecated · V2 移除）.
+    """
     model_config = ConfigDict(frozen=True)
 
     event_id: str = Field(..., pattern=r"^evt_[0-9A-HJKMNP-TV-Z]{26}$")
-    sequence: int = Field(..., ge=0)
+    sequence: int = Field(..., ge=1, description="A-4 · IC-09 §3.9.3 minimum: 1")
     hash: str = Field(..., pattern=r"^[a-f0-9]{64}$")
     prev_hash: str = Field(..., description="^[a-f0-9]{64}$ 或 'GENESIS'")
-    persisted_at: datetime
+    # A-1 · IC-09 §3.9.3 ts_persisted（ISO-8601 str）+ persisted（bool）+ storage_path
+    ts_persisted: str = Field(
+        ...,
+        description="ISO-8601 UTC timestamp · §3.9.3 required",
+    )
+    persisted: bool = Field(default=True, description="§3.9.3 required · always True on success")
     jsonl_offset: int = Field(..., ge=0)
-    file_path: str
+    storage_path: str = Field(..., description="§3.9.3 storage_path · events.jsonl 绝对路径")
     broadcast_enqueued: bool = Field(default=False)
     # 幂等重放标志（§3.2 E_BUS_IDEMPOTENT_REPLAY）
     idempotent_replay: bool = Field(default=False)
 
+    # ======================================================
+    # Deprecated alias properties（旧名字兼容 · V2 移除）
+    # ======================================================
+
+    @property
+    def persisted_at(self) -> datetime:
+        """[DEPRECATED · use ts_persisted] datetime alias.
+
+        旧调用点：result.persisted_at → datetime. 保留兼容.
+        """
+        return datetime.fromisoformat(self.ts_persisted.replace("Z", "+00:00"))
+
+    @property
+    def file_path(self) -> str:
+        """[DEPRECATED · use storage_path] 旧字段 alias.
+
+        旧调用点：result.file_path → str. 保留兼容.
+        """
+        return self.storage_path
+
 
 class ProjectMeta(BaseModel):
-    """project 内 seq + last_hash 持久化 · §6.3 SequenceAllocator 配套."""
+    """project 内 seq + last_hash 持久化 · §6.3 SequenceAllocator 配套.
+
+    A-4 修复 · IC-09 §3.9.3 sequence minimum: 1.
+    `last_sequence` 初值 = 0 · 首个 event 分配 sequence = last_sequence + 1 = 1.
+    """
     model_config = ConfigDict(frozen=False)  # 可变 · 随 append 更新
 
     project_id: str
-    last_sequence: int = Field(default=-1, ge=-1)
+    last_sequence: int = Field(
+        default=0, ge=0, description="A-4 · 初值 0 · 首 event seq=1"
+    )
     last_hash: str = Field(default="GENESIS", description="64-hex 或 GENESIS")
     updated_at: datetime | None = None
 

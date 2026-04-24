@@ -248,7 +248,7 @@ class TestEventBusSubscriberIntegration:
 
         r = bus.append(_make_event())
         assert r.broadcast_enqueued is True  # 有订阅者 · broadcast=True
-        assert received == [0]
+        assert received == [1]  # A-4 · 首个 event seq=1
 
     def test_no_subscribers_broadcast_false(self, bus: EventBus) -> None:
         r = bus.append(_make_event())
@@ -302,21 +302,24 @@ class TestReadRange:
             bus.append(_make_event(project_id=pid))
         items = list(bus.read_range(pid))
         assert len(items) == 5
-        assert [it["sequence"] for it in items] == [0, 1, 2, 3, 4]
+        # A-4 · sequence 从 1 起（§3.9.3）
+        assert [it["sequence"] for it in items] == [1, 2, 3, 4, 5]
 
     def test_read_with_from_seq(self, bus: EventBus) -> None:
         pid = "proj-demo"
         for _ in range(5):
             bus.append(_make_event(project_id=pid))
-        items = list(bus.read_range(pid, from_seq=2))
-        assert [it["sequence"] for it in items] == [2, 3, 4]
+        # A-4 · 从 seq=3 起
+        items = list(bus.read_range(pid, from_seq=3))
+        assert [it["sequence"] for it in items] == [3, 4, 5]
 
     def test_read_with_to_seq(self, bus: EventBus) -> None:
         pid = "proj-demo"
         for _ in range(5):
             bus.append(_make_event(project_id=pid))
-        items = list(bus.read_range(pid, from_seq=1, to_seq=3))
-        assert [it["sequence"] for it in items] == [1, 2, 3]
+        # A-4 · seq=[2, 4] 闭区间
+        items = list(bus.read_range(pid, from_seq=2, to_seq=4))
+        assert [it["sequence"] for it in items] == [2, 3, 4]
 
     def test_read_exclude_meta(self, bus: EventBus) -> None:
         pid = "proj-demo"
@@ -360,7 +363,7 @@ class TestReadRange:
             list(bus.read_range("proj-nonexistent"))
 
     def test_read_large_streaming(self, bus: EventBus) -> None:
-        """大文件流式 · 仅取前 10 条 · 内存不应增长."""
+        """大文件流式 · 仅取前 10 条 · 内存不应增长（A-4 · seq 从 1 起）."""
         pid = "proj-demo"
         for _ in range(100):
             bus.append(_make_event(project_id=pid))
@@ -371,4 +374,4 @@ class TestReadRange:
             first_ten.append(body["sequence"])
             if i + 1 == 10:
                 break
-        assert first_ten == list(range(10))
+        assert first_ten == list(range(1, 11))

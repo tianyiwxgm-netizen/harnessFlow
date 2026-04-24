@@ -238,6 +238,7 @@ class EventBus:
                 correlation_id=correlation_id,
                 trace_id=trace_id,
                 span_id=span_id,
+                trigger_tick=event.trigger_tick,
             )
             link = compute_hash_chain_link(prev_hash, body)
             line_obj = {**body, "hash": link.curr_hash}
@@ -259,6 +260,14 @@ class EventBus:
                     correlation_id=event_id,
                 ) from exc
             except DiskFullError as exc:
+                # B-1 · IC-09 §3.9.4: E_EVT_DISK_FULL → halt 整个系统
+                # disk full 属数据完整性响应面 4 · marker 必落盘 · 跨进程可见
+                self.halt_guard.mark_halt(
+                    reason=f"disk full on {events_path}",
+                    source="L2-01:append:disk_full",
+                    correlation_id=event_id,
+                )
+                self._state = BusState.HALTED
                 raise BusDiskFull(
                     f"disk full on {events_path}",
                     cause=repr(exc),
@@ -284,8 +293,14 @@ class EventBus:
                     correlation_id=event_id,
                 ) from exc
             except OSError as exc:
-                # ENOSPC 的原始捕获兜底
+                # ENOSPC 的原始捕获兜底 · B-1 · 也需 halt
                 if exc.errno == errno.ENOSPC:
+                    self.halt_guard.mark_halt(
+                        reason=f"disk full on {events_path}",
+                        source="L2-01:append:disk_full",
+                        correlation_id=event_id,
+                    )
+                    self._state = BusState.HALTED
                     raise BusDiskFull(
                         f"disk full on {events_path}", cause=repr(exc), correlation_id=event_id
                     ) from exc
@@ -296,9 +311,39 @@ class EventBus:
                 ) from exc
 
             # Step 11: 更新 meta
+            # B-2 · save_meta 必须包在 try/except · 失败 → halt
+            # 原因: append_atomic 已成功落盘 · 但 save_meta fsync 失败
+            # 会造成 stale meta (last_sequence/last_hash 未更新)
+            # 下次 append 分配同 seq → hash 链断裂 · 必须 halt 止损
             meta.last_sequence = sequence
             meta.last_hash = link.curr_hash
-            save_meta(project_dir, meta)
+            try:
+                save_meta(project_dir, meta)
+            except FsyncFailed as meta_exc:
+                self.halt_guard.mark_halt(
+                    reason=f"save_meta fsync failed · stale meta risk · {project_dir}",
+                    source="L2-01:append:save_meta_fsync",
+                    correlation_id=event_id,
+                )
+                self._state = BusState.HALTED
+                raise BusFsyncFailed(
+                    f"save_meta fsync failed · halt · target={project_dir}",
+                    cause=repr(meta_exc),
+                    correlation_id=event_id,
+                ) from meta_exc
+            except CrashSafetyError as meta_exc:
+                # 其他 save_meta 错误（write_atomic 内部重试耗尽等）· 同样 halt
+                self.halt_guard.mark_halt(
+                    reason=f"save_meta failed · stale meta risk · {project_dir}",
+                    source="L2-01:append:save_meta",
+                    correlation_id=event_id,
+                )
+                self._state = BusState.HALTED
+                raise BusWriteFailed(
+                    f"save_meta failed · halt · target={project_dir}",
+                    cause=repr(meta_exc),
+                    correlation_id=event_id,
+                ) from meta_exc
 
             # Step 12: dispatch 给订阅者（fire_and_forget · 同步 · 异常吞）
             subs = self._subscribers.snapshot()
@@ -308,14 +353,16 @@ class EventBus:
                 _delivered, _failures = dispatch(subs, body_for_dispatch)
                 broadcast_enqueued = True
 
+            # A-1 · IC-09 §3.9.3 · ts_persisted (ISO-8601 str) · storage_path · persisted
             result = AppendEventResult(
                 event_id=event_id,
                 sequence=sequence,
                 hash=link.curr_hash,
                 prev_hash=prev_hash if prev_hash != GENESIS_HASH else "GENESIS",
-                persisted_at=persisted_at,
+                ts_persisted=persisted_at.isoformat().replace("+00:00", "Z"),
+                persisted=True,
                 jsonl_offset=append_result.offset,
-                file_path=str(events_path),
+                storage_path=str(events_path),
                 broadcast_enqueued=broadcast_enqueued,
                 idempotent_replay=False,
             )
@@ -337,10 +384,12 @@ def _event_to_body(
     correlation_id: str | None = None,
     trace_id: str | None = None,
     span_id: str | None = None,
+    trigger_tick: str | None = None,
 ) -> dict[str, object]:
     """组装 hash 链参与的 body（包含 prev_hash · 不含 hash · 不含 jsonl_offset）.
 
     WP06 · correlation_id/trace_id/span_id 写入 body · 参与 hash 计算（不可篡改追溯）.
+    A-2 · trigger_tick 写入 body（若显式设）· 参与 hash 链.
     """
     body: dict[str, object] = {
         "event_id": event_id,
@@ -362,6 +411,8 @@ def _event_to_body(
         body["trace_id"] = trace_id
     if span_id is not None:
         body["span_id"] = span_id
+    if trigger_tick is not None:
+        body["trigger_tick"] = trigger_tick
     return body
 
 

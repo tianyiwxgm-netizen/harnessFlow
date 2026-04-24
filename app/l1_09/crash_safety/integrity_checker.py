@@ -19,7 +19,6 @@ recover_partial_write 修复策略：
 """
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import os
@@ -31,6 +30,7 @@ from app.l1_09.crash_safety.canonical_json import canonical_json_without_hash
 from app.l1_09.crash_safety.hash_chain import GENESIS_HASH, compute_hash_chain_link
 from app.l1_09.crash_safety.schemas import (
     TMP_ORPHAN_AGE_HOURS,
+    FsyncFailed,
     IntegrityMethod,
     IntegrityReport,
     IntegrityState,
@@ -334,12 +334,22 @@ def _find_good_prefix_offset(target_path: Path, good_line_count: int) -> int:
 
 
 def _truncate_jsonl(target_path: Path, good_offset: int) -> int:
-    """truncate 到 good_offset · fsync · 返被截断字节数."""
+    """truncate 到 good_offset · fsync · 返被截断字节数.
+
+    B-3 · fsync-no-retry 铁律: fsync 失败必抛 FsyncFailed · 不得 suppress.
+    否则 truncate 未持久化 · 下次 crash 文件状态未定义.
+    """
     original_size = target_path.stat().st_size
     with open(target_path, "r+b") as f:
         f.truncate(good_offset)
-        with contextlib.suppress(OSError):
+        try:
             os.fsync(f.fileno())
+        except OSError as e:
+            raise FsyncFailed(
+                f"fsync failed after truncate on {target_path}",
+                errno=e.errno,
+                target=str(target_path),
+            ) from e
     return original_size - good_offset
 
 
