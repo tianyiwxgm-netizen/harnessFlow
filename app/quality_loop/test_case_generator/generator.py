@@ -1,4 +1,4 @@
-"""L2-03 TestCaseGenerator 主入口（WP03 scope · TC-200 + 200b/c/d/e + 002）。
+"""L2-03 TestCaseGenerator 主入口（WP03 scope · TC-200 + 200b/c/d/e/f + 002）。
 
 WP03 TDD 逐步构建：
   - TC-200  · generate 产 READY TestSuite
@@ -6,6 +6,8 @@ WP03 TDD 逐步构建：
   - TC-200c · 生成即红灯（全部 CaseState.RED）
   - TC-200d · §10.1 locked · suite.ac_coverage_pct == 1.0
   - TC-200e · suite_id 稳定（hash_blueprint_signature）
+  - TC-200f · PM-14 · case.file_path 前缀 projects/<pid>/testing/generated/
+             （pytest_renderer.build_file_path 组装 · generator 传递 options.project_id）
   - TC-002  · §6.10 algo 10 · 同 (blueprint_id, version, project_id) 幂等
              · 第二次调用直接返回 cache · 不再 render
 """
