@@ -112,7 +112,7 @@ class PushRollbackRouteCommand(BaseModel):
 
     route_id: str = Field(..., pattern=r"^route-[A-Za-z0-9_-]{3,}")
     project_id: str = Field(..., min_length=1)
-    wp_id: str = Field(..., pattern=r"^wp-[A-Za-z0-9_-]{2,}")
+    wp_id: str = Field(..., pattern=r"^wp-[A-Za-z0-9_-]+")
     verdict: FailVerdict
     target_stage: TargetStage
     level_count: int = Field(..., ge=1)
