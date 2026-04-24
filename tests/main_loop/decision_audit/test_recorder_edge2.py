@@ -78,3 +78,28 @@ def test_TC_L101_L205_E15_flush_empty_buffer_noop(
     assert fr.last_hash == "0" * 64
     mock_event_bus.append_event.assert_not_called()
     assert sut.current_state() == "buffering"
+
+
+# ---------------------------------------------------------------------------
+# TC-E16 · _captured_events 钩子 · flush 后内含 hash+sequence+audit_id
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E16_captured_events_hook_exposes_flush_meta(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    for i in range(2):
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick=f"tick-e16-{i}",
+            reason=f"r{i}", evidence=[f"e{i}"],
+        ))
+    assert sut._captured_events == []  # flush 前为空
+    sut.flush_buffer(force=True, reason="tick_boundary")
+    captured = sut._captured_events
+    assert len(captured) == 2
+    assert captured[0]["sequence"] == 1
+    assert captured[1]["sequence"] == 2
+    # 第 2 条 prev = 第 1 条 hash(链式)
+    assert captured[1]["prev_hash"] == captured[0]["hash"]
+    assert all("audit_id" in c and len(c["hash"]) == 64 for c in captured)
