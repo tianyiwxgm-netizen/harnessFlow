@@ -307,6 +307,145 @@ def assert_ic_14_pushed(
 # =============================================================================
 
 
+# =============================================================================
+# IC-06 · L1-06 KB read response 断言
+# =============================================================================
+
+
+def assert_kb_read_returned(
+    read_result: Any,
+    *,
+    project_id: str,
+    min_entries: int = 1,
+    must_contain_kind: str | None = None,
+    must_contain_id: str | None = None,
+) -> list[Any]:
+    """IC-06: 断言 KBReadService.read() 返回非空 entries · 且 meta.project_id 一致(PM-14).
+
+    Args:
+        read_result: ReadResult(含 entries + meta).
+        project_id: PM-14 · 必校 meta.project_id 一致.
+        min_entries: 默认 ≥ 1 条.
+        must_contain_kind: 可选 · 必含某 kind(如 "pattern" / "gotcha").
+        must_contain_id: 可选 · 必含指定 id 的 entry.
+
+    返: entries 列表.
+    """
+    entries = list(getattr(read_result, "entries", []) or [])
+    meta = getattr(read_result, "meta", None)
+    if meta is None:
+        raise AssertionError(f"IC-06 read_result.meta 缺失 result={read_result}")
+    meta_pid = getattr(meta, "project_id", None)
+    if meta_pid != project_id:
+        raise AssertionError(
+            f"IC-06 PM-14 违反 期望 meta.project_id={project_id} 实际={meta_pid}"
+        )
+    if len(entries) < min_entries:
+        raise AssertionError(
+            f"IC-06 entries 不足 pid={project_id} 期望≥{min_entries} 实际={len(entries)}"
+        )
+    if must_contain_kind is not None:
+        if not any(getattr(e, "kind", None) == must_contain_kind for e in entries):
+            raise AssertionError(
+                f"IC-06 entries 未含 kind={must_contain_kind} 实际 kinds="
+                f"{[getattr(e, 'kind', None) for e in entries]}"
+            )
+    if must_contain_id is not None:
+        if not any(getattr(e, "id", None) == must_contain_id for e in entries):
+            raise AssertionError(
+                f"IC-06 entries 未含 id={must_contain_id} 实际 ids="
+                f"{[getattr(e, 'id', None) for e in entries]}"
+            )
+    return entries
+
+
+def assert_kb_read_degraded(
+    read_result: Any,
+    *,
+    expected: bool = True,
+    reason_contains: str | None = None,
+) -> None:
+    """IC-06: 断言 read_result.meta.degraded 的值(降级路径/未降级路径)."""
+    meta = getattr(read_result, "meta", None)
+    actual = getattr(meta, "degraded", None)
+    if actual is not expected:
+        raise AssertionError(
+            f"IC-06 meta.degraded 期望={expected} 实际={actual}"
+        )
+    if reason_contains is not None:
+        reason = getattr(meta, "fallback_reason", None) or ""
+        if reason_contains not in str(reason):
+            raise AssertionError(
+                f"IC-06 meta.fallback_reason 未含 {reason_contains!r} 实际={reason!r}"
+            )
+
+
+# =============================================================================
+# IC-15 · L1-09 halt 事件断言
+# =============================================================================
+
+
+def assert_ic_15_halt_emitted(
+    event_bus_root: Path,
+    *,
+    project_id: str = "system",
+    reason_contains: str | None = None,
+) -> dict[str, Any]:
+    """IC-15: 断言 bus_halted 事件被 emit(系统级 · pid='system' 约定).
+
+    Halt 是系统级事件 · 默认查 "system" 分片.
+
+    Args:
+        project_id: 默认 "system" · halt 以 system 入账(3-1 L1-09 §3.15 约定).
+        reason_contains: 可选 · 校验 payload.reason 子串.
+
+    返: 命中的第一条事件.
+    """
+    events = list_events(event_bus_root, project_id, type_exact="L1-09:bus_halted")
+    if not events:
+        raise AssertionError(
+            f"IC-15 bus_halted 未 emit pid={project_id} "
+            f"(检查是否 HaltGuard 被触发 · 或事件在其他 pid 分片)"
+        )
+    first = events[0]
+    if reason_contains is not None:
+        reason = str(first.get("payload", {}).get("reason", ""))
+        if reason_contains not in reason:
+            raise AssertionError(
+                f"IC-15 halt reason 未含 {reason_contains!r} 实际={reason!r}"
+            )
+    return first
+
+
+# =============================================================================
+# IC-17 · Panic → PAUSED 100ms 硬约束断言
+# =============================================================================
+
+
+def assert_panic_within_100ms(
+    start_monotonic_s: float,
+    end_monotonic_s: float,
+    *,
+    budget_ms: float = 100.0,
+) -> float:
+    """IC-17: 断言 panic_request → PAUSED 落定在 budget_ms 内(默认 100ms).
+
+    Args:
+        start_monotonic_s: time.monotonic() 前.
+        end_monotonic_s: time.monotonic() 后.
+        budget_ms: 默认 100ms(HRL-04 release blocker).
+
+    返: 实际耗时 ms(供额外断言 / benchmark 统计).
+    """
+    elapsed_ms = (end_monotonic_s - start_monotonic_s) * 1000.0
+    if elapsed_ms > budget_ms:
+        raise AssertionError(
+            f"IC-17 panic 超时 期望≤{budget_ms}ms 实际={elapsed_ms:.2f}ms "
+            f"(HRL-04 release blocker 硬红线)"
+        )
+    return elapsed_ms
+
+
 def assert_ic_20_dispatched(
     delegate_calls: list[Any],
     *,
