@@ -26,3 +26,17 @@ def test_TC_L101_L205_E01_query_by_decision_miss_returns_none(
         decision_id="dec-never-existed", project_id=mock_project_id
     )
     assert entry is None
+
+
+# ---------------------------------------------------------------------------
+# TC-E02 · query_by_chain 未命中返空 list(非异常)
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E02_query_by_chain_miss_returns_empty_list(
+    sut, mock_project_id
+) -> None:
+    entries = sut.query_by_chain(
+        chain_id="ch-never-existed", project_id=mock_project_id
+    )
+    assert entries == []
