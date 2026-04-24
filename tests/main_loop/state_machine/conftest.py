@@ -42,11 +42,18 @@ def transition_id_factory() -> Callable[[], str]:
     return _make
 
 
+_SENTINEL = object()
+
+
 @pytest.fixture
 def make_request(
     project_id: str, transition_id_factory: Callable[[], str]
 ) -> Callable[..., TransitionRequest]:
-    """DSL · 快速拼 TransitionRequest · 可覆盖任意字段。"""
+    """DSL · 快速拼 TransitionRequest · 可覆盖任意字段。
+
+    `transition_id` / `project_id_override` 传 None 走默认;
+    传 "" 则**真的**用空串 (负向测试用)。sentinel 区分。
+    """
 
     def _make(
         *,
@@ -57,12 +64,18 @@ def make_request(
         evidence_refs: tuple[str, ...] = ("ev-1",),
         ts: str = "2026-04-23T00:00:00.000Z",
         gate_id: str | None = None,
-        transition_id: str | None = None,
-        project_id_override: str | None = None,
+        transition_id=_SENTINEL,
+        project_id_override=_SENTINEL,
     ) -> TransitionRequest:
+        tid = (
+            transition_id_factory()
+            if transition_id is _SENTINEL
+            else transition_id
+        )
+        pid = project_id if project_id_override is _SENTINEL else project_id_override
         return TransitionRequest(
-            transition_id=transition_id or transition_id_factory(),
-            project_id=project_id_override or project_id,
+            transition_id=tid,
+            project_id=pid,
             from_state=from_state,
             to_state=to_state,
             reason=reason,
