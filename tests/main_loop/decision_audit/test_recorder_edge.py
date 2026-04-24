@@ -205,3 +205,29 @@ def test_TC_L101_L205_E11_event_type_mapped_from_source_ic_action(
     ))
     buf = sut.peek_buffer()
     assert buf[-1].event_type == "L1-01:state_transition"
+
+
+# ---------------------------------------------------------------------------
+# TC-E12 · flush 后 reverse_index 增加 · 支持后续 query
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E12_reverse_index_grows_after_flush(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    assert sut.reverse_index_size() == 0
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick="tick-idx-01",
+        reason="r", evidence=["e"],
+    ))
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-07", action="chain_step_completed",
+        actor={"l1": "L1-01", "l2": "L2-04"},
+        project_id=mock_project_id, linked_chain="ch-idx-01",
+        reason="step", evidence=["e"],
+        payload={"chain_id": "ch-idx-01", "step_id": "step-1"},
+    ))
+    sut.flush_buffer(force=True, reason="tick_boundary")
+    # 1 tick + 1 chain = 2 个索引键
+    assert sut.reverse_index_size() >= 2
