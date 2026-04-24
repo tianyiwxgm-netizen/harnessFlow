@@ -252,3 +252,28 @@ def test_TC_L101_L205_015_get_hash_tip_after_flush_increments(
     tip = sut.get_hash_tip(project_id=mock_project_id)
     assert tip.sequence == 3
     assert tip.hash != "0" * 64
+
+
+# ---------------------------------------------------------------------------
+# replay_from_jsonl · TC-013 (fixture 驱动)
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_013_replay_rebuilds_reverse_index(
+    make_recorder, jsonl_fixture_file, mock_project_id
+) -> None:
+    # 构造一个指向 jsonl_root(tmp_path)的 recorder
+    # jsonl_path:tmp_path/projects/<pid>/audit/l1-01/<file>.jsonl · parents[4] = tmp_path
+    jsonl_root = jsonl_fixture_file.parents[4]
+    rec = make_recorder(session_active_pid=mock_project_id, jsonl_root=jsonl_root)
+    rr = rec.replay_from_jsonl(
+        project_id=mock_project_id,
+        from_date="2026-04-15",
+        max_entries=100_000,
+    )
+    assert rr.replayed_count >= 3
+    assert rr.hash_chain_valid is True
+    assert rr.latest_hash and len(rr.latest_hash) == 64
+    tip = rec.get_hash_tip(project_id=mock_project_id)
+    assert tip.hash == rr.latest_hash
+    assert tip.sequence == rr.replayed_count
