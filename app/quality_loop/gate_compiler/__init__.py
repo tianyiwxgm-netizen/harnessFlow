@@ -48,6 +48,12 @@ from app.quality_loop.gate_compiler.dod_adapter import (
     EvaluatedDoD,
     EvaluatedExpression,
 )
+from app.quality_loop.gate_compiler.gate import (
+    EvaluateGateCommand,
+    GateCompiler,
+    GateEvaluateResult,
+    RewordCounter,
+)
 from app.quality_loop.gate_compiler.metric_sampler import (
     MetricSample,
     MetricSampler,
@@ -74,15 +80,19 @@ __all__ = [
     "DEFAULT_TOLERATED_FLOOR",
     "DoDAdapter",
     "DoDAdapterError",
+    "EvaluateGateCommand",
     "EvaluatedDoD",
     "EvaluatedExpression",
     "GateAction",
+    "GateCompiler",
     "GateCompilerError",
+    "GateEvaluateResult",
     "GateVerdict",
     "MetricSample",
     "MetricSampler",
     "MetricSamplerError",
     "MissingEvidence",
+    "RewordCounter",
     "VerdictReason",
     "classify_baseline",
 ]
