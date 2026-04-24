@@ -144,9 +144,11 @@ class ObserveAccumulator:
         self._strict_pm14 = strict_pm14
 
         # Idempotency cache keyed by (project_id, idempotency_key).
+        # Value = (response, payload_fingerprint). Fingerprint enables §6.1 D5
+        # "same key, divergent payload → IDEMPOTENCY_KEY_CONFLICT". Review A-1b.
         self._idem_lock = threading.Lock()
         self._idem_cache: dict[
-            tuple[str, str], WriteSessionResponse
+            tuple[str, str], tuple[WriteSessionResponse, str]
         ] = {}
         # Fine-grained merge lock per (project_id, kind, title_hash).
         self._merge_locks: dict[tuple[str, str, str], threading.Lock] = {}
@@ -205,18 +207,27 @@ class ObserveAccumulator:
             )
 
         # 5 · idempotency
+        # Compute payload fingerprint first so we can detect §6.1 D5 conflicts
+        # (same idem key + divergent payload → IDEMPOTENCY_KEY_CONFLICT).
         idem_key = (req.project_id, req.idempotency_key)
+        payload_sig = _payload_fingerprint(req)
         if req.idempotency_key:
             with self._idem_lock:
-                cached = self._idem_cache.get(idem_key)
-            if cached is not None:
-                # Compare payloads; different payload with same key → conflict.
-                if not self._payload_matches_cache(cached, req):
+                cached_entry = self._idem_cache.get(idem_key)
+            if cached_entry is not None:
+                cached_resp, cached_sig = cached_entry
+                # Review A-1b · real content divergence detection.
+                if cached_sig != payload_sig:
                     return self._reject(
                         req,
                         ObserverErrorCode.IDEMPOTENCY_KEY_CONFLICT,
                     )
-                return cached
+                if cached_resp.project_id != req.project_id:
+                    return self._reject(
+                        req,
+                        ObserverErrorCode.IDEMPOTENCY_KEY_CONFLICT,
+                    )
+                return cached_resp
 
         # 6 · normalise title + hash
         norm_title = _normalize_title(req.entry.title)
@@ -287,12 +298,15 @@ class ObserveAccumulator:
             promotion_hint=hint,
             trace_id=req.trace_id,
             audit_event_id=f"ev-{uuid4()}",
+            # Review A-1a · surface internal title_hash so L2-04 can correlate
+            # merge events across IC-07 roundtrips (§3.7 WriteResult).
+            dedup_key=stored.title_hash,
         )
 
-        # 12 · cache idempotency
+        # 12 · cache idempotency (store response + payload fingerprint)
         if req.idempotency_key:
             with self._idem_lock:
-                self._idem_cache[idem_key] = resp
+                self._idem_cache[idem_key] = (resp, payload_sig)
 
         # 13 · audit
         self._audit(
@@ -549,18 +563,6 @@ class ObserveAccumulator:
         )
         return resp
 
-    def _payload_matches_cache(
-        self,
-        cached: WriteSessionResponse,
-        req: WriteSessionRequest,
-    ) -> bool:
-        """Best-effort idempotency conflict check."""
-        if cached.project_id != req.project_id:
-            return False
-        if not cached.entry_id:  # rejected cached resp
-            return True
-        return True  # same key+pid → treat as replay (tests set new payloads to new keys)
-
     def _audit(self, event_type: str, **payload: Any) -> None:
         record = {"event_type": event_type, "payload": payload}
         self._audit_log.append(record)
@@ -581,6 +583,40 @@ def _normalize_title(title: str) -> str:
 
 def _hash_title(normalized: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
+
+
+def _payload_fingerprint(req: WriteSessionRequest) -> str:
+    """Stable SHA-256 signature of the idempotency-relevant payload fields.
+
+    Review A-1b (2026-04-23) · §6.1 D5 — same idempotency_key + divergent
+    payload must raise IDEMPOTENCY_KEY_CONFLICT. The fingerprint covers the
+    fields a caller expects to stay constant across replays of the same
+    logical write (kind, normalised title, content, applicable_context,
+    source_links). ``project_id`` and ``idempotency_key`` are implicit in
+    the cache key so they are not re-hashed here.
+    """
+    import json
+
+    norm_title = _normalize_title(req.entry.title)
+    ctx = req.entry.applicable_context
+    ctx_sig: list[Any] = (
+        [
+            sorted(ctx.stage),
+            sorted(ctx.task_type),
+            sorted(ctx.tech_stack),
+        ]
+        if ctx is not None
+        else []
+    )
+    material = {
+        "kind": req.entry.kind,
+        "title_norm": norm_title,
+        "content": req.entry.content if isinstance(req.entry.content, dict) else None,
+        "context": ctx_sig,
+        "source_links": sorted(req.entry.source_links),
+    }
+    payload = json.dumps(material, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _now_iso() -> str:
