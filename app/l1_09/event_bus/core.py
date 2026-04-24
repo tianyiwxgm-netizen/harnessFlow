@@ -166,12 +166,14 @@ class EventBus:
     ):
         """§3.4 流式 iterator · 供 L2-04 checkpoint 扫描."""
         events_path = self._events_path(project_id)
+        project_dir = self._project_dir(project_id)
         return _read_range_module(
             events_path,
             from_seq=from_seq,
             to_seq=to_seq,
             include_meta=include_meta,
             verify_hash_on_read=verify_hash_on_read,
+            project_dir=project_dir,
         )
 
     def append(self, event: Event) -> AppendEventResult:

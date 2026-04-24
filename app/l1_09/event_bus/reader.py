@@ -38,6 +38,7 @@ def read_range(
     to_seq: int | None = None,
     include_meta: bool = True,
     verify_hash_on_read: bool = False,
+    project_dir: Path | None = None,
 ) -> Iterator[dict]:
     """流式读 events.jsonl 的 [from_seq, to_seq] 闭区间.
 
@@ -47,15 +48,24 @@ def read_range(
         to_seq: 结束 sequence（含）· None = 读到文件尾
         include_meta: False 过滤 is_meta=True 行
         verify_hash_on_read: True 逐行验 hash chain · 断则 raise
+        project_dir: 可选 · project 目录（用于 E-2 fix · 区分"未注册"vs"空"）
 
     Yields:
         dict · jsonl 每行的 body
 
     Raises:
-        BusProjectNotRegistered · 文件不存在
+        BusProjectNotRegistered · project 目录不存在（未注册）
         ReadHashBrokenError · 启用 verify 时 hash 断裂
+
+    Notes:
+        E-2 fix: events_path 不存在但 project_dir 存在 · 返回空迭代器（空 project）
+        events_path 和 project_dir 都不存在 · raise BusProjectNotRegistered（未注册）
     """
     if not events_path.exists():
+        # E-2 fix: 区分"未注册"（dir 不存在）vs"空"（dir 在 · events 未生成）
+        if project_dir is not None and project_dir.exists():
+            # 空 project · 返空 iterator（不 raise）
+            return
         raise BusProjectNotRegistered(f"events file not found: {events_path}")
 
     assert from_seq >= 0, "from_seq must be ≥ 0"
