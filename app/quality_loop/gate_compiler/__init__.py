@@ -36,6 +36,12 @@ from app.quality_loop.gate_compiler.baseline_evaluator import (
     BaselineEvaluator,
     classify_baseline,
 )
+from app.quality_loop.gate_compiler.checklist_compiler import (
+    AcceptanceChecklist,
+    ChecklistCompiler,
+    ChecklistCompilerError,
+    ChecklistItem,
+)
 from app.quality_loop.gate_compiler.dod_adapter import (
     DoDAdapter,
     DoDAdapterError,
@@ -57,8 +63,12 @@ from app.quality_loop.gate_compiler.schemas import (
 )
 
 __all__ = [
+    "AcceptanceChecklist",
     "Baseline",
     "BaselineEvaluator",
+    "ChecklistCompiler",
+    "ChecklistCompilerError",
+    "ChecklistItem",
     "DEFAULT_REWORK_ABORT_THRESHOLD",
     "DEFAULT_SOFT_PASS_THRESHOLD",
     "DEFAULT_TOLERATED_FLOOR",
