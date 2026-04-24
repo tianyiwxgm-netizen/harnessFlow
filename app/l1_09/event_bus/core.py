@@ -310,9 +310,39 @@ class EventBus:
                 ) from exc
 
             # Step 11: 更新 meta
+            # B-2 · save_meta 必须包在 try/except · 失败 → halt
+            # 原因: append_atomic 已成功落盘 · 但 save_meta fsync 失败
+            # 会造成 stale meta (last_sequence/last_hash 未更新)
+            # 下次 append 分配同 seq → hash 链断裂 · 必须 halt 止损
             meta.last_sequence = sequence
             meta.last_hash = link.curr_hash
-            save_meta(project_dir, meta)
+            try:
+                save_meta(project_dir, meta)
+            except FsyncFailed as meta_exc:
+                self.halt_guard.mark_halt(
+                    reason=f"save_meta fsync failed · stale meta risk · {project_dir}",
+                    source="L2-01:append:save_meta_fsync",
+                    correlation_id=event_id,
+                )
+                self._state = BusState.HALTED
+                raise BusFsyncFailed(
+                    f"save_meta fsync failed · halt · target={project_dir}",
+                    cause=repr(meta_exc),
+                    correlation_id=event_id,
+                ) from meta_exc
+            except CrashSafetyError as meta_exc:
+                # 其他 save_meta 错误（write_atomic 内部重试耗尽等）· 同样 halt
+                self.halt_guard.mark_halt(
+                    reason=f"save_meta failed · stale meta risk · {project_dir}",
+                    source="L2-01:append:save_meta",
+                    correlation_id=event_id,
+                )
+                self._state = BusState.HALTED
+                raise BusWriteFailed(
+                    f"save_meta failed · halt · target={project_dir}",
+                    cause=repr(meta_exc),
+                    correlation_id=event_id,
+                ) from meta_exc
 
             # Step 12: dispatch 给订阅者（fire_and_forget · 同步 · 异常吞）
             subs = self._subscribers.snapshot()
