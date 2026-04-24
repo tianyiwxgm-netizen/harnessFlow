@@ -259,6 +259,14 @@ class EventBus:
                     correlation_id=event_id,
                 ) from exc
             except DiskFullError as exc:
+                # B-1 · IC-09 §3.9.4: E_EVT_DISK_FULL → halt 整个系统
+                # disk full 属数据完整性响应面 4 · marker 必落盘 · 跨进程可见
+                self.halt_guard.mark_halt(
+                    reason=f"disk full on {events_path}",
+                    source="L2-01:append:disk_full",
+                    correlation_id=event_id,
+                )
+                self._state = BusState.HALTED
                 raise BusDiskFull(
                     f"disk full on {events_path}",
                     cause=repr(exc),
@@ -284,8 +292,14 @@ class EventBus:
                     correlation_id=event_id,
                 ) from exc
             except OSError as exc:
-                # ENOSPC 的原始捕获兜底
+                # ENOSPC 的原始捕获兜底 · B-1 · 也需 halt
                 if exc.errno == errno.ENOSPC:
+                    self.halt_guard.mark_halt(
+                        reason=f"disk full on {events_path}",
+                        source="L2-01:append:disk_full",
+                        correlation_id=event_id,
+                    )
+                    self._state = BusState.HALTED
                     raise BusDiskFull(
                         f"disk full on {events_path}", cause=repr(exc), correlation_id=event_id
                     ) from exc
