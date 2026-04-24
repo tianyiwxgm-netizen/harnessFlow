@@ -48,6 +48,9 @@ def _utcnow_iso() -> str:
 class TestCaseGenerator:
     """L2-03 主编排 · factory.generate 入口（§2 正向）。"""
 
+    # pytest 别把类名以 Test 开头的当作测试类收（我们是产线代码）
+    __test__ = False
+
     _reader: BlueprintReader
     _renderer: PytestRenderer
     _cache: dict
