@@ -26,6 +26,11 @@ import pytest
 
 from app.l1_09.event_bus.core import EventBus
 
+# Re-export fixtures from sibling modules so `pytest` sees them
+# automatically under tests/shared/**. 下游只要 conftest 被 pytest 收到 ·
+# 不需再手 import 各文件里的 fixture.
+from tests.shared.project_factory import project_factory, project_workspace  # noqa: F401
+
 
 # =============================================================================
 # PM-14 分片根字段 · project_id
