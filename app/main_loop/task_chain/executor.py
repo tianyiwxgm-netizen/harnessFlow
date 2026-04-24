@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -266,7 +266,3 @@ __all__ = [
     "TaskChainExecutor",
     "build_noop_resolver",
 ]
-
-
-# Awaitable export for typing ergonomics
-_unused_awaitable_alias = Awaitable  # noqa: F841 (keep name exposed implicitly)
