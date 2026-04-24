@@ -231,3 +231,27 @@ def test_TC_L101_L205_E22_query_by_decision_cross_project_raises(
             decision_id="dec-e22", project_id="pid-other-team"
         )
     assert exc.value.error_code == E_AUDIT_CROSS_PROJECT
+
+
+# ---------------------------------------------------------------------------
+# TC-E23 · get_hash_tip · 多批 flush 后 sequence 累加 · hash 变更
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E23_get_hash_tip_sequence_accumulates(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    tip0 = sut.get_hash_tip(project_id=mock_project_id)
+    assert tip0.sequence == 0
+    assert tip0.hash == "0" * 64
+    for batch in range(3):
+        sut.record_audit(make_audit_cmd(
+            source_ic="IC-L2-05", action="tick_scheduled",
+            project_id=mock_project_id, linked_tick=f"tick-e23-{batch}",
+            reason=f"r{batch}", evidence=[f"e{batch}"],
+        ))
+        sut.flush_buffer(force=True, reason="tick_boundary")
+    tip = sut.get_hash_tip(project_id=mock_project_id)
+    assert tip.sequence == 3
+    assert tip.hash != "0" * 64
+    assert len(tip.hash) == 64
