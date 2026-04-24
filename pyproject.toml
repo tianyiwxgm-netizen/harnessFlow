@@ -91,6 +91,7 @@ source = [
     "app/l1_03",              # Dev-ε
     "app/multimodal",         # Dev-η
     "app/quality_loop",       # main-1 · L1-04
+    "app/main_loop",          # main-2 · L1-01 (WP01-09)
 ]
 branch = true
 omit = ["*/__init__.py", "*/schemas.py", "app/skill_dispatch/_mocks/*"]
