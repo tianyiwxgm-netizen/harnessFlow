@@ -278,6 +278,42 @@ class TestInputValidation:
             )
 
 
+class TestInputThresholdValidation:
+    """阈值参数非法输入 · 覆盖 classify_baseline 的阈值校验分支。"""
+
+    def test_TC_L204_BL_080_soft_pass_threshold_zero_raises(self) -> None:
+        """TC-L204-BL-080 · soft_pass_threshold=0 · E_L204_BL_THRESHOLD_INVALID."""
+        with pytest.raises(ValueError, match="E_L204_BL_THRESHOLD_INVALID"):
+            classify_baseline(
+                hard_total=1, hard_passed=1, soft_total=0, soft_passed=0,
+                rework_count=0, soft_pass_threshold=0.0,
+            )
+
+    def test_TC_L204_BL_081_soft_pass_threshold_over_one_raises(self) -> None:
+        """TC-L204-BL-081 · soft_pass_threshold=1.5 · E_L204_BL_THRESHOLD_INVALID."""
+        with pytest.raises(ValueError, match="E_L204_BL_THRESHOLD_INVALID"):
+            classify_baseline(
+                hard_total=1, hard_passed=1, soft_total=0, soft_passed=0,
+                rework_count=0, soft_pass_threshold=1.5,
+            )
+
+    def test_TC_L204_BL_082_tolerated_floor_gt_soft_pass_raises(self) -> None:
+        """TC-L204-BL-082 · tolerated_floor > soft_pass_threshold · E_L204_BL_THRESHOLD_INVALID."""
+        with pytest.raises(ValueError, match="E_L204_BL_THRESHOLD_INVALID"):
+            classify_baseline(
+                hard_total=1, hard_passed=1, soft_total=0, soft_passed=0,
+                rework_count=0, soft_pass_threshold=0.8, tolerated_floor=0.9,
+            )
+
+    def test_TC_L204_BL_083_rework_abort_threshold_zero_raises(self) -> None:
+        """TC-L204-BL-083 · rework_abort_threshold=0 · E_L204_BL_THRESHOLD_INVALID."""
+        with pytest.raises(ValueError, match="E_L204_BL_THRESHOLD_INVALID"):
+            classify_baseline(
+                hard_total=1, hard_passed=1, soft_total=0, soft_passed=0,
+                rework_count=0, rework_abort_threshold=0,
+            )
+
+
 class TestBaselineEvaluatorFromEvaluated:
     """BaselineEvaluator · 从 EvaluatedDoD 计算 baseline."""
 
