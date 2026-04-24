@@ -103,7 +103,7 @@ class AppendEventResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     event_id: str = Field(..., pattern=r"^evt_[0-9A-HJKMNP-TV-Z]{26}$")
-    sequence: int = Field(..., ge=0)
+    sequence: int = Field(..., ge=1, description="A-4 · IC-09 §3.9.3 minimum: 1")
     hash: str = Field(..., pattern=r"^[a-f0-9]{64}$")
     prev_hash: str = Field(..., description="^[a-f0-9]{64}$ 或 'GENESIS'")
     persisted_at: datetime
@@ -115,11 +115,17 @@ class AppendEventResult(BaseModel):
 
 
 class ProjectMeta(BaseModel):
-    """project 内 seq + last_hash 持久化 · §6.3 SequenceAllocator 配套."""
+    """project 内 seq + last_hash 持久化 · §6.3 SequenceAllocator 配套.
+
+    A-4 修复 · IC-09 §3.9.3 sequence minimum: 1.
+    `last_sequence` 初值 = 0 · 首个 event 分配 sequence = last_sequence + 1 = 1.
+    """
     model_config = ConfigDict(frozen=False)  # 可变 · 随 append 更新
 
     project_id: str
-    last_sequence: int = Field(default=-1, ge=-1)
+    last_sequence: int = Field(
+        default=0, ge=0, description="A-4 · 初值 0 · 首 event seq=1"
+    )
     last_hash: str = Field(default="GENESIS", description="64-hex 或 GENESIS")
     updated_at: datetime | None = None
 

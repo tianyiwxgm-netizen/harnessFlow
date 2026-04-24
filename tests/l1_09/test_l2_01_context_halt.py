@@ -128,7 +128,7 @@ class TestHaltGuardAdminToken:
         assert bus.halt_guard.clear_halt(admin_token="secret-match") is True
         assert bus.halt_guard.is_halted() is False
         r = bus.append(_make_event())
-        assert r.sequence == 0
+        assert r.sequence == 1  # A-4 · 首 event seq=1
 
     def test_halt_info_json_parseable(
         self, bus: EventBus, monkeypatch: pytest.MonkeyPatch
