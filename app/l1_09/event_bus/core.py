@@ -352,14 +352,16 @@ class EventBus:
                 _delivered, _failures = dispatch(subs, body_for_dispatch)
                 broadcast_enqueued = True
 
+            # A-1 · IC-09 §3.9.3 · ts_persisted (ISO-8601 str) · storage_path · persisted
             result = AppendEventResult(
                 event_id=event_id,
                 sequence=sequence,
                 hash=link.curr_hash,
                 prev_hash=prev_hash if prev_hash != GENESIS_HASH else "GENESIS",
-                persisted_at=persisted_at,
+                ts_persisted=persisted_at.isoformat().replace("+00:00", "Z"),
+                persisted=True,
                 jsonl_offset=append_result.offset,
-                file_path=str(events_path),
+                storage_path=str(events_path),
                 broadcast_enqueued=broadcast_enqueued,
                 idempotent_replay=False,
             )

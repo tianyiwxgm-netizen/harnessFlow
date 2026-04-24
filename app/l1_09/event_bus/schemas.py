@@ -99,19 +99,48 @@ class Event(BaseModel):
 
 
 class AppendEventResult(BaseModel):
-    """append() 成功返回 · §3.2 response_ok schema."""
+    """append() 成功返回 · IC-09 §3.9.3 response_ok schema.
+
+    A-1 修复 · 对齐 §3.9.3 required: [event_id, sequence, hash, persisted, ts_persisted]
+    + storage_path. 旧字段 persisted_at / file_path 保留为兼容别名（deprecated · V2 移除）.
+    """
     model_config = ConfigDict(frozen=True)
 
     event_id: str = Field(..., pattern=r"^evt_[0-9A-HJKMNP-TV-Z]{26}$")
     sequence: int = Field(..., ge=1, description="A-4 · IC-09 §3.9.3 minimum: 1")
     hash: str = Field(..., pattern=r"^[a-f0-9]{64}$")
     prev_hash: str = Field(..., description="^[a-f0-9]{64}$ 或 'GENESIS'")
-    persisted_at: datetime
+    # A-1 · IC-09 §3.9.3 ts_persisted（ISO-8601 str）+ persisted（bool）+ storage_path
+    ts_persisted: str = Field(
+        ...,
+        description="ISO-8601 UTC timestamp · §3.9.3 required",
+    )
+    persisted: bool = Field(default=True, description="§3.9.3 required · always True on success")
     jsonl_offset: int = Field(..., ge=0)
-    file_path: str
+    storage_path: str = Field(..., description="§3.9.3 storage_path · events.jsonl 绝对路径")
     broadcast_enqueued: bool = Field(default=False)
     # 幂等重放标志（§3.2 E_BUS_IDEMPOTENT_REPLAY）
     idempotent_replay: bool = Field(default=False)
+
+    # ======================================================
+    # Deprecated alias properties（旧名字兼容 · V2 移除）
+    # ======================================================
+
+    @property
+    def persisted_at(self) -> datetime:
+        """[DEPRECATED · use ts_persisted] datetime alias.
+
+        旧调用点：result.persisted_at → datetime. 保留兼容.
+        """
+        return datetime.fromisoformat(self.ts_persisted.replace("Z", "+00:00"))
+
+    @property
+    def file_path(self) -> str:
+        """[DEPRECATED · use storage_path] 旧字段 alias.
+
+        旧调用点：result.file_path → str. 保留兼容.
+        """
+        return self.storage_path
 
 
 class ProjectMeta(BaseModel):
