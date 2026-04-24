@@ -1,11 +1,13 @@
-"""L2-03 TestCaseGenerator 主入口（WP03 scope · TC-200 + 200b/c/d）。
+"""L2-03 TestCaseGenerator 主入口（WP03 scope · TC-200 + 200b/c/d/e + 002）。
 
 WP03 TDD 逐步构建：
   - TC-200  · generate 产 READY TestSuite
   - TC-200b · suite.cases 数 = slot 矩阵展开数
   - TC-200c · 生成即红灯（全部 CaseState.RED）
   - TC-200d · §10.1 locked · suite.ac_coverage_pct == 1.0
-             （aggregate property 派生 · blueprint_reader 已硬锁 AC 全覆盖）
+  - TC-200e · suite_id 稳定（hash_blueprint_signature）
+  - TC-002  · §6.10 algo 10 · 同 (blueprint_id, version, project_id) 幂等
+             · 第二次调用直接返回 cache · 不再 render
 """
 
 from __future__ import annotations
@@ -55,7 +57,26 @@ class TestCaseGenerator:
         *,
         options: RenderOptions,
     ) -> TestSuite:
-        """§2 正向 · 蓝图 → TestSuite（READY）· skeleton 版（TC-200）。"""
+        """§2 正向 · 蓝图 → TestSuite（READY）。
+
+        algo 顺序：
+          1. §6.10 algo 10 · 幂等：命中 cache 直接返回 READY 实例
+          2. algo 1 · blueprint_reader.read（含 ac_coverage=1.0 硬检）
+          3. §6 algo 6 · suite_id 稳定派生
+          4. INITIALIZING → GENERATING · 逐 slot 渲染
+          5. GENERATING → READY + 落 cache
+        """
+        cache_key = (
+            blueprint.blueprint_id,
+            blueprint.version,
+            options.project_id,
+        )
+
+        # §6.10 algo 10 · 幂等（命中即返回 · 不再 render）
+        cached = self._cache.get(cache_key)
+        if cached is not None and cached.state == SuiteState.READY:
+            return cached
+
         # algo 1 · 展开 slot（含 ac_coverage=1.0 检查）
         slots = self._reader.read(blueprint)
 
@@ -104,6 +125,8 @@ class TestCaseGenerator:
         for c in suite.cases:
             c.state = CaseState.RED
 
+        # §6.10 落 cache（下次同 key 直接返回同一实例）
+        self._cache[cache_key] = suite
         return suite
 
     @staticmethod
