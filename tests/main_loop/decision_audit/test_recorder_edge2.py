@@ -40,3 +40,25 @@ def test_TC_L101_L205_E13_decision_made_registers_and_marks_audited(
     assert sut.traceability.is_audited("dec-e13-001")
     rep = sut.traceability.report()
     assert rep.is_full_coverage
+
+
+# ---------------------------------------------------------------------------
+# TC-E14 · query_by_tick · 其它 project 查询 · raise CROSS_PROJECT
+# ---------------------------------------------------------------------------
+
+
+def test_TC_L101_L205_E14_query_by_tick_cross_project_raises(
+    sut, mock_project_id, make_audit_cmd
+) -> None:
+    sut.record_audit(make_audit_cmd(
+        source_ic="IC-L2-05", action="tick_scheduled",
+        project_id=mock_project_id, linked_tick="tick-e14",
+        reason="owner", evidence=["e1"],
+    ))
+    with pytest.raises(AuditError) as exc:
+        sut.query_by_tick(
+            tick_id="tick-e14",
+            project_id="pid-not-owner",
+            include_buffered=True,
+        )
+    assert exc.value.error_code == E_AUDIT_CROSS_PROJECT
