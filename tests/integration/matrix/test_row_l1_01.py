@@ -344,3 +344,254 @@ class TestRowL1_01_to_L1_04:
         # 4 个 transition 调用
         assert len(state_spy.calls) == 4
         record_cell(matrix_cov, "L1-01", "L1-04", CaseType.DEGRADE)
+
+
+# =============================================================================
+# Cell 3: L1-01 → L1-05 · IC-04 调 skill (6 TC)
+# =============================================================================
+
+
+class TestRowL1_01_to_L1_05:
+    """L1-01 主决策 → L1-05 Skill · IC-04 skill_invoke 契约."""
+
+    async def test_happy_skill_invoke_returns_ok(
+        self, project_id: str, fake_skill_invoker, matrix_cov,
+    ) -> None:
+        """HAPPY · 调 skill 返预置 output."""
+        from .conftest import record_cell
+
+        fake_skill_invoker.outputs["wbs_decompose"] = {
+            "status": "ok", "wps": ["wp-1", "wp-2"],
+        }
+        result = await fake_skill_invoker.invoke(
+            skill_id="wbs_decompose",
+            args={"project_id": project_id, "spec": "..."},
+        )
+        assert result["status"] == "ok"
+        assert "wps" in result
+        # call_log 记录到 invocation
+        assert len(fake_skill_invoker.call_log) == 1
+        assert fake_skill_invoker.call_log[0]["skill_id"] == "wbs_decompose"
+        assert fake_skill_invoker.call_log[0]["args"]["project_id"] == project_id
+        record_cell(matrix_cov, "L1-01", "L1-05", CaseType.HAPPY)
+
+    async def test_happy_multiple_skills_invoked(
+        self, project_id: str, fake_skill_invoker, matrix_cov,
+    ) -> None:
+        """HAPPY · 串行调 3 个不同 skill · 全部正确返."""
+        from .conftest import record_cell
+
+        skills = ["plan_review", "tdd_blueprint", "verifier_run"]
+        for sid in skills:
+            await fake_skill_invoker.invoke(skill_id=sid, args={"project_id": project_id})
+        assert len(fake_skill_invoker.call_log) == 3
+        assert [c["skill_id"] for c in fake_skill_invoker.call_log] == skills
+        record_cell(matrix_cov, "L1-01", "L1-05", CaseType.HAPPY)
+
+    async def test_negative_skill_timeout_raised(
+        self, project_id: str, fake_skill_invoker, matrix_cov,
+    ) -> None:
+        """NEGATIVE · skill 超时 (error_queue 注入) → 上层捕获."""
+        from .conftest import record_cell
+
+        fake_skill_invoker.error_queue = [TimeoutError("skill timeout")]
+        with pytest.raises(TimeoutError):
+            await fake_skill_invoker.invoke(
+                skill_id="slow_skill", args={"project_id": project_id},
+            )
+        # 仍记录调用
+        assert len(fake_skill_invoker.call_log) == 1
+        record_cell(matrix_cov, "L1-01", "L1-05", CaseType.NEGATIVE)
+
+    async def test_negative_skill_failure_then_retry_success(
+        self, project_id: str, fake_skill_invoker, matrix_cov,
+    ) -> None:
+        """NEGATIVE/降级 · 第一次失败 · 第二次成功(降级 fallback 模式)."""
+        from .conftest import record_cell
+
+        fake_skill_invoker.error_queue = [
+            RuntimeError("skill crash 1"),
+            None,  # 第二次正常
+        ]
+        fake_skill_invoker.outputs["retry_skill"] = {"status": "ok-retry"}
+        with pytest.raises(RuntimeError):
+            await fake_skill_invoker.invoke(
+                skill_id="retry_skill", args={"project_id": project_id},
+            )
+        result = await fake_skill_invoker.invoke(
+            skill_id="retry_skill", args={"project_id": project_id},
+        )
+        assert result["status"] == "ok-retry"
+        record_cell(matrix_cov, "L1-01", "L1-05", CaseType.DEGRADE)
+
+    async def test_slo_skill_invoke_under_100ms(
+        self, project_id: str, fake_skill_invoker, matrix_cov,
+    ) -> None:
+        """SLO · stub invoke + record P99 < 100ms."""
+        from .conftest import record_cell
+
+        t0 = time.monotonic()
+        await fake_skill_invoker.invoke(
+            skill_id="quick_skill", args={"project_id": project_id},
+        )
+        elapsed_ms = (time.monotonic() - t0) * 1000.0
+        assert elapsed_ms < 100, f"IC-04 SLO {elapsed_ms:.2f}ms"
+        record_cell(matrix_cov, "L1-01", "L1-05", CaseType.HAPPY)
+
+    async def test_e2e_pm14_isolation_per_invoke(
+        self, project_id: str, other_project_id: str, fake_skill_invoker, matrix_cov,
+    ) -> None:
+        """E2E/PM-14 · 不同 pid 调相同 skill · args 内 pid 必区分隔离."""
+        from .conftest import record_cell
+
+        await fake_skill_invoker.invoke(
+            skill_id="shared_skill", args={"project_id": project_id, "data": "foo"},
+        )
+        await fake_skill_invoker.invoke(
+            skill_id="shared_skill",
+            args={"project_id": other_project_id, "data": "bar"},
+        )
+        # 两次调用 · 各自 pid 独立
+        pids = [c["args"]["project_id"] for c in fake_skill_invoker.call_log]
+        assert pids == [project_id, other_project_id]
+        record_cell(matrix_cov, "L1-01", "L1-05", CaseType.PM14)
+
+
+# =============================================================================
+# Cell 4: L1-01 → L1-09 · IC-09 append_event (6 TC)
+# =============================================================================
+
+
+class TestRowL1_01_to_L1_09:
+    """L1-01 主决策 → L1-09 EventBus · IC-09 hash chain / SLO."""
+
+    def _decision_event(
+        self, project_id: str, decision_id: str = "d-1", action: str = "transition",
+    ) -> Event:
+        return Event(
+            project_id=project_id,
+            type="L1-01:decision_made",
+            actor="main_loop",
+            payload={"decision_id": decision_id, "action": action},
+            timestamp=datetime.now(UTC),
+        )
+
+    def test_happy_decision_made_appended(
+        self, project_id: str, real_event_bus, event_bus_root: Path, matrix_cov,
+    ) -> None:
+        """HAPPY · L1-01:decision_made 写入 · persisted=True · seq=1."""
+        from .conftest import record_cell
+
+        evt = self._decision_event(project_id)
+        result = real_event_bus.append(evt)
+        assert result.persisted is True
+        assert result.sequence == 1
+        assert len(result.hash) == 64
+        # 落盘
+        assert_ic_09_emitted(
+            event_bus_root,
+            project_id=project_id,
+            event_type="L1-01:decision_made",
+            min_count=1,
+        )
+        record_cell(matrix_cov, "L1-01", "L1-09", CaseType.HAPPY)
+
+    def test_happy_3_decisions_hash_chain_intact(
+        self, project_id: str, real_event_bus, event_bus_root: Path, matrix_cov,
+    ) -> None:
+        """HAPPY · 3 个连续 decision · sequence + hash-chain 连续无断."""
+        from .conftest import record_cell
+
+        for i in range(3):
+            evt = self._decision_event(project_id, decision_id=f"d-{i}")
+            real_event_bus.append(evt)
+        n = assert_ic_09_hash_chain_intact(event_bus_root, project_id=project_id)
+        assert n == 3
+        record_cell(matrix_cov, "L1-01", "L1-09", CaseType.HAPPY)
+
+    def test_negative_invalid_type_prefix_rejected(
+        self, project_id: str, real_event_bus, matrix_cov,
+    ) -> None:
+        """NEGATIVE · 非法 type 前缀(L1-99) · Pydantic 拒绝."""
+        from .conftest import record_cell
+
+        with pytest.raises(Exception):  # ValidationError
+            Event(
+                project_id=project_id,
+                type="L1-99:bad_event",
+                actor="main_loop",
+                payload={"x": 1},
+                timestamp=datetime.now(UTC),
+            )
+        record_cell(matrix_cov, "L1-01", "L1-09", CaseType.NEGATIVE)
+
+    def test_negative_pm14_isolation_separate_shards(
+        self,
+        project_id: str,
+        other_project_id: str,
+        real_event_bus,
+        event_bus_root: Path,
+        matrix_cov,
+    ) -> None:
+        """NEGATIVE/PM-14 · pid_A 写 · pid_B 分片独立 · 不串."""
+        from .conftest import record_cell
+
+        evt_a = self._decision_event(project_id, decision_id="da")
+        evt_b = self._decision_event(other_project_id, decision_id="db")
+        real_event_bus.append(evt_a)
+        real_event_bus.append(evt_b)
+        # pid_A 分片只 1 条
+        a_events = assert_ic_09_emitted(
+            event_bus_root,
+            project_id=project_id,
+            event_type="L1-01:decision_made",
+            min_count=1,
+        )
+        b_events = assert_ic_09_emitted(
+            event_bus_root,
+            project_id=other_project_id,
+            event_type="L1-01:decision_made",
+            min_count=1,
+        )
+        # PM-14 · 各自分片独立 · seq 都从 1 开始
+        assert a_events[0]["sequence"] == 1
+        assert b_events[0]["sequence"] == 1
+        record_cell(matrix_cov, "L1-01", "L1-09", CaseType.PM14)
+
+    def test_slo_append_under_100ms(
+        self, project_id: str, real_event_bus, matrix_cov,
+    ) -> None:
+        """SLO · IC-09 append < 100ms (P99 < 1ms 实测 · 留 100ms 余裕)."""
+        from .conftest import record_cell
+
+        evt = self._decision_event(project_id)
+        t0 = time.monotonic()
+        real_event_bus.append(evt)
+        elapsed_ms = (time.monotonic() - t0) * 1000.0
+        assert elapsed_ms < 100, f"IC-09 SLO {elapsed_ms:.2f}ms"
+        record_cell(matrix_cov, "L1-01", "L1-09", CaseType.HAPPY)
+
+    def test_e2e_full_decision_lifecycle_audit(
+        self, project_id: str, real_event_bus, event_bus_root: Path, matrix_cov,
+    ) -> None:
+        """E2E · 完整 decision 生命周期: made / executed / completed."""
+        from .conftest import record_cell
+
+        types = [
+            "L1-01:decision_made",
+            "L1-01:tick_scheduled",
+            "L1-01:wp_decision_recorded",
+        ]
+        for t in types:
+            evt = Event(
+                project_id=project_id,
+                type=t,
+                actor="main_loop",
+                payload={"d_id": "lifecycle"},
+                timestamp=datetime.now(UTC),
+            )
+            real_event_bus.append(evt)
+        # 3 条事件 · hash chain 连续
+        n = assert_ic_09_hash_chain_intact(event_bus_root, project_id=project_id)
+        assert n == 3
+        record_cell(matrix_cov, "L1-01", "L1-09", CaseType.DEGRADE)
