@@ -125,6 +125,23 @@ def ic14_consumer(
 
 
 @pytest.fixture
+def emit_audit_factory(real_event_bus: EventBus, project_id: str):
+    """工厂 · 直接 append L1-09 用于模拟 verifier / L1-04 自身 emit."""
+
+    def _emit(event_type: str, payload: dict, actor: str = "verifier") -> str:
+        evt = Event(
+            project_id=project_id,
+            type=event_type,
+            actor=actor,
+            timestamp=datetime.now(UTC),
+            payload=payload,
+        )
+        return real_event_bus.append(evt).event_id
+
+    return _emit
+
+
+@pytest.fixture
 def make_route_cmd(project_id: str):
     """工厂 · verdict + target_stage + level_count → PushRollbackRouteCommand."""
 
