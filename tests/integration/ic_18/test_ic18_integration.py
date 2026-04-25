@@ -115,3 +115,18 @@ class TestIC18Integration:
         latencies.sort()
         p95 = latencies[int(len(latencies) * 0.95)]
         assert p95 < 500.0, f"IC-18 P95 SLO 超时 {p95:.1f}ms"
+
+    # ---- TC-6 · 缺 pid: PM-14 守护 (AuditProjectRequired) ----
+    def test_missing_pid_raises_pm14(
+        self, audit_query, seed_events,
+    ) -> None:
+        from app.l1_09.audit import Anchor, AnchorType, AuditProjectRequired
+
+        # anchor.project_id 空 → PM-14 守护 raise
+        bad_anchor = Anchor(
+            anchor_type=AnchorType.PROJECT_ID,
+            anchor_id="any-id",
+            project_id="",
+        )
+        with pytest.raises(AuditProjectRequired):
+            audit_query.query_audit_trail(bad_anchor)

@@ -88,3 +88,24 @@ class TestIC12Integration:
         # IC-12 §3.12 snapshot_captured payload 含 snapshot_id + trigger
         assert payload["snapshot_id"] == snap.snapshot_id
         assert payload["trigger"] == TriggerSource.TICK.value
+
+    # ---- TC-6 · 多次 tick: cache 稳定 + 每次都 emit IC-09 ----
+    def test_multi_tick_each_emits_ic09(
+        self, collector, event_bus_stub, project_id: str,
+    ) -> None:
+        """5 次 tick · 各 emit 1 个 snapshot_captured · cache 持续刷新."""
+        snaps = []
+        for _ in range(5):
+            s = run_async(collector.tick_collect(project_id=project_id))
+            snaps.append(s)
+
+        # 5 个不同 snapshot_id
+        assert len({s.snapshot_id for s in snaps}) == 5
+
+        # IC-09 联动: 每次 tick 各发 1 条 snapshot_captured
+        events = run_async(event_bus_stub.read_event_stream(
+            project_id=project_id,
+            types=["L1-07:snapshot_captured"],
+            window_sec=60,
+        ))
+        assert len(events) == 5

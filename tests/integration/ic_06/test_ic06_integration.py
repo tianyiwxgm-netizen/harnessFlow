@@ -114,3 +114,22 @@ class TestIC06Integration:
         latencies.sort()
         p95 = latencies[int(len(latencies) * 0.95)] if latencies else 0
         assert p95 < 500.0, f"IC-06 P95 SLO 超时 {p95:.1f}ms"
+
+    # ---- TC-6 · cross-IC e2e · IC-09 audit emit (kb_read_performed 路径) ----
+    def test_cross_ic09_audit_emitted_on_read(
+        self, reader, fake_repo, audit_sink, make_entry, make_request, project_id: str,
+    ) -> None:
+        """读路径成功 · audit_sink 收到 kb_read_performed 事件 (IC-06 → IC-09 联动)."""
+        fake_repo.session_entries = [
+            make_entry(entry_id="kbe-cross", title="cross"),
+        ]
+
+        result = reader.read(make_request(trace_id="trace-cross-09"))
+        assert result.meta.project_id == project_id
+
+        # IC-09 联动: audit_sink 应至少收到 kb_read_performed
+        types = [e["type"] for e in audit_sink.events]
+        assert "kb_read_performed" in types
+        # 命中 trace_id 透传
+        performed = [e for e in audit_sink.events if e["type"] == "kb_read_performed"]
+        assert performed[0]["payload"].get("trace_id") == "trace-cross-09"

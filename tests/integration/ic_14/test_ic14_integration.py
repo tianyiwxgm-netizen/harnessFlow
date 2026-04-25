@@ -48,7 +48,7 @@ class TestIC14Integration:
         deps = VerifierDeps(
             delegator=delegator,
             callback_waiter=waiter,
-            audit_emitter=audit_emitter,
+            audit_emitter=audit_emitter.emit,
             sleep=no_sleep,
         )
 
@@ -73,7 +73,7 @@ class TestIC14Integration:
         deps = VerifierDeps(
             delegator=delegator,
             callback_waiter=waiter,
-            audit_emitter=audit_emitter,
+            audit_emitter=audit_emitter.emit,
             sleep=no_sleep,
         )
 
@@ -93,7 +93,7 @@ class TestIC14Integration:
         deps = VerifierDeps(
             delegator=delegator,
             callback_waiter=waiter,
-            audit_emitter=audit_emitter,
+            audit_emitter=audit_emitter.emit,
             sleep=no_sleep,
         )
 
@@ -124,7 +124,7 @@ class TestIC14Integration:
         deps = VerifierDeps(
             delegator=delegator,
             callback_waiter=waiter,
-            audit_emitter=audit_emitter,
+            audit_emitter=audit_emitter.emit,
             sleep=no_sleep,
         )
 
@@ -144,7 +144,7 @@ class TestIC14Integration:
         deps = VerifierDeps(
             delegator=delegator,
             callback_waiter=waiter,
-            audit_emitter=audit_emitter,
+            audit_emitter=audit_emitter.emit,
             sleep=no_sleep,
         )
 
@@ -155,3 +155,24 @@ class TestIC14Integration:
         assert result.verdict == VerifierVerdict.PASS
         # IC-14 mock 路径 SLO · 不应超 1s
         assert elapsed_ms < 1000.0, f"IC-14 orchestrate 超时 {elapsed_ms:.1f}ms"
+
+    # ---- TC-6 · cross-IC e2e · audit 事件 (IC-09 联动) ----
+    def test_cross_ic09_audit_started_and_dispatched(
+        self, make_trace, delegator: ControlledDelegator, audit_emitter,
+    ) -> None:
+        """orchestrate 全链 · audit_emitter 收到至少 started + dispatched 两事件 (IC-09 联动)."""
+        trace = make_trace()
+        waiter = ControlledWaiter(output=out_pass())
+        deps = VerifierDeps(
+            delegator=delegator,
+            callback_waiter=waiter,
+            audit_emitter=audit_emitter.emit,
+            sleep=no_sleep,
+        )
+
+        run_async(orchestrate_s5(trace, deps))
+
+        types = [t for t, _ in audit_emitter.events]
+        assert "L1-04:verifier_orchestrate_started" in types
+        # 至少有 dispatched 或 verdict 之一 (绿路径)
+        assert any("dispatched" in t or "verdict" in t for t in types)

@@ -102,3 +102,21 @@ class TestIC07Integration:
         p95 = latencies[int(len(latencies) * 0.95)]
         # IC-07 SLO §3.7 · P95 ≤ 100ms · in-memory 远低
         assert p95 < 100.0, f"IC-07 P95 SLO 超时 {p95:.1f}ms"
+
+    # ---- TC-6 · cross-IC e2e · IC-09 audit emit + 跨 IC-08 promotion link ----
+    def test_cross_ic_audit_emit_on_each_write(
+        self, accumulator, fake_event_bus, make_request,
+    ) -> None:
+        """IC-07 写入 → bus.append 收到 audit emit (IC-09) 链接验证."""
+        # 第 1 次 INSERTED · 第 2 次 MERGED · 应各发 audit
+        r1 = accumulator.kb_write_session(make_request(trace_id="t-cross-1"))
+        r2 = accumulator.kb_write_session(make_request(trace_id="t-cross-2"))
+
+        assert r1.success is True
+        assert r2.success is True
+        # ObserveAccumulator 通过 event_bus.append(event_type=, payload=) 发 audit
+        # 至少 2 次 (insert + merge)
+        assert fake_event_bus.append.call_count >= 2
+        # 第 2 次 MERGED 触发 promotion_hint · 上游可走 IC-08 (跨 IC link)
+        assert r2.promotion_hint is not None
+        assert r2.promotion_hint.session_to_project_eligible is True
