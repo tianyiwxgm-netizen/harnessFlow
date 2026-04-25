@@ -119,3 +119,24 @@ def record_cell(
     参数顺序: upstream(producer) → downstream(consumer).
     """
     matrix_cov.record(upstream, downstream, case_type)
+
+
+# =============================================================================
+# Collection ordering · 确保 aggregate 跑在所有 row 文件之后
+# =============================================================================
+# 默认 pytest alphabetical collection: test_matrix_aggregate.py 排在
+# test_row_l1_NN.py 之前(m < r) · 导致 T1 在 row 跑完前断言空 covered.
+# 用 pytest_collection_modifyitems 把 aggregate 文件的 item 全部 push 到末尾.
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: ARG001
+    aggregate, row_items, others = [], [], []
+    for it in items:
+        path = str(it.fspath)
+        if "test_matrix_aggregate.py" in path:
+            aggregate.append(it)
+        elif "test_row_l1_" in path:
+            row_items.append(it)
+        else:
+            others.append(it)
+    items[:] = others + row_items + aggregate
