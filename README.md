@@ -2,9 +2,11 @@
 
 > **AI 驱动软件开发的"审慎脚手架"** —— 给 Claude 当 PM + 架构师 + 码农 · 一句话需求到完整项目交付 · 每一步有审计 + 监督 + 质量 Gate 兜底。
 
-[![pytest](https://img.shields.io/badge/pytest-2758%2B_passed-brightgreen)]()
-[![coverage](https://img.shields.io/badge/coverage-85%25%2B-brightgreen)]()
-[![halt](https://img.shields.io/badge/halt_P99-103μs-brightgreen)]()
+[![version](https://img.shields.io/badge/version-1.0.0-blue)]()
+[![pytest](https://img.shields.io/badge/E2E_pytest-753%20passed-brightgreen)]()
+[![halt](https://img.shields.io/badge/halt_P99-0.04ms-brightgreen)]()
+[![panic](https://img.shields.io/badge/panic_P99-0.02ms-brightgreen)]()
+[![docs](https://img.shields.io/badge/docs-154%20files%20%E2%80%A2%20165kL-brightgreen)]()
 [![license](https://img.shields.io/badge/license-MIT-blue)]()
 
 ---
@@ -20,9 +22,9 @@
 
 ---
 
-## ⚠️ 当前状态:**Alpha · v1.0 开发中**
+## ✅ 当前状态:**v1.0.0 stable · 2026-04-25**
 
-截至本文 · 波 4 main-1 完 · 波 5 main-2 ~60% · 波 6/7 待启动。**release v1.0 尚未打包** · 不可生产使用。想体验请从源码装。
+10 L1 全交付 · 753 E2E 测试 0 flake / 41.72s · 7 SLO 全实测（halt P99=0.04ms / panic P99=0.02ms · 余量 27-5000x）· 12 acceptance scenario 端到端绿 · 154 份 3-Solution 文档 ~165k 行 · 20 IC 契约锁定 · 30/30 跨 L1 矩阵 cell 全 covered。详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 📋 Prerequisites
 
