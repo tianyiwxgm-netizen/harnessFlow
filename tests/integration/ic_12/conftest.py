@@ -49,6 +49,3 @@ def collector(
         event_bus=event_bus_stub,
         clock=frozen_clock,
     )
-
-
-pytest_plugins: list[str] = []
