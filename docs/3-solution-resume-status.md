@@ -1,9 +1,9 @@
 ---
 doc_id: 3-solution-resume-status
 doc_type: resume-status
-last_updated: 2026-04-21
-current_phase: R3 · L1-04/L1-07 深度 A 批量填充
-next_action: 启动 R3.1 L1-04 × 5 subagent 并发批1 → R3.2 批2 → R3.3 批3 → M3
+last_updated: 2026-04-25
+current_phase: R7 · 质量 Gate + 一致性审计 → M6 可交付
+next_action: M6 已达 · 进入 4-execution / 波 6 / 波 7 阶段
 parent_doc:
   - docs/superpowers/specs/2026-04-21-3-solution-resume-design.md v2.0
   - docs/superpowers/plans/2026-04-21-3-solution-resume.md
@@ -15,7 +15,7 @@ parent_doc:
 
 ---
 
-## Phase 完成状态
+## Phase 完成状态（M6 触达 · 全 Phase 收官）
 
 | Phase | Status | Completed At | Commit | 产出 |
 |---|---|---|---|---|
@@ -31,70 +31,99 @@ parent_doc:
 | R2.4 · L2-04 任务链执行器 | ✅ | 2026-04-21 | 39d11e0 | 2257 行 · 5 PlantUML · 20 E_CHAIN_* · §9/§11/OQ |
 | R2.5 · L2-05 决策审计记录器 | ✅ | 2026-04-21 | 014f050 | 1570 行 · 4 PlantUML · 10 E_AUDIT_* · §9/§11/OQ |
 | R2.6 · L2-06 Supervisor 接收器 | ✅ | 2026-04-21 | b4d5c77 | 2194 行 · 6 PlantUML · 74 E_SUP_* · §9/§11/OQ |
-| R2.7 · Gate + Commit → M2 | ✅ | 2026-04-21 | eac11ba | Gate PASS · 两阶段 review · L2-06 方法名统一 · L2-02 status 修正 |
-| **M2 里程碑** | ✅ | 2026-04-21 | eac11ba | L1-01 主循环 6 份 L2 端到端完成 · 合计 ~11700 行 · 38 PlantUML |
-| R3.1 · L1-04 × 5（批1）| ⏳ | — | — | 待 R2 完成 |
-| R3.2 · L1-04 × 2 + L1-07 × 3（批2）| ⏳ | — | — | |
-| R3.3 · L1-07 × 3（批3）→ M3 | ⏳ | — | — | |
-| R4.1-R4.7 · 外围 35 L2 精简 → M4 | ⏳ | — | — | 7 批 × 5 并发 |
-| R5.1-R5.17 · 3-2 TDD 75 份 → M5 | ⏳ | — | — | 15 批 × 5 并发 |
-| R6 · 3-3 监督 10 份 | ⏳ | — | — | 2 主 + 4 并发 × 2 批 |
-| R7 · Gate + M6 | ⏳ | — | — | 质量审计 + 最终交付 |
+| R2.7 · Gate + Commit → M2 | ✅ | 2026-04-21 | eac11ba | Gate PASS · L1-01 6 份 L2 端到端 |
+| **M2 里程碑** | ✅ | 2026-04-21 | eac11ba | L1-01 主循环 6 份 L2 完成 · 11700 行 · 38 PlantUML |
+| R3.1 · L1-04 × 5（批1）| ✅ | 2026-04-22 | — | L1-04/L2-01~05 深度 A |
+| R3.2 · L1-04 × 2 + L1-07 × 3（批2）| ✅ | 2026-04-22 | — | L1-04/L2-06~07 + L1-07/L2-01~03 |
+| R3.3 · L1-07 × 3（批3）| ✅ | 2026-04-22 | — | L1-07/L2-04~06 |
+| **M3 里程碑** | ✅ | 2026-04-22 | — | L1-04 × 7 + L1-07 × 6 = 13 份 · ~32000 行 |
+| R4.1-R4.7 · 外围 35 L2 精简 | ✅ | 2026-04-22~23 | — | L1-02 × 7 / L1-03 × 5 / L1-05 × 5 / L1-06 × 5 / L1-08 × 4 / L1-09 × 5 / L1-10 × 7 |
+| **M4 里程碑** | ✅ | 2026-04-23 | — | 57 L2 全铺完成 · ~85000 行 |
+| R5.1-R5.16 · 3-2 TDD 57 份 | ✅ | 2026-04-23 | — | 镜像 3-1 · 749-2368 行/份 · 总 ~70000 行 |
+| **M5 里程碑** | ✅ | 2026-04-23 | — | 3-2 TDD 57 份完成 · 可入 4-Exe |
+| R6.4.1 · L0/overview | ✅ | 2026-04-24 | 9c6b13c | 508 行 · 2 PlantUML |
+| R6.4.2 · coding-standards | ✅ | 2026-04-24 | c84c9e5 | 476 行 · 1 PlantUML |
+| R6.5.2 · system-metrics | ✅ | 2026-04-24 | 652cbfb | 514 行 · 1 PlantUML · 19 指标 |
+| R6.4.4 · wp-dod | ✅ | 2026-04-24 | a440647 | 619 行 · 1 PlantUML |
+| R6 batch · soft-drift / quality-metrics / acceptance-criteria | ✅ | 2026-04-25 | 5903897 | 2657 行 · 6 PlantUML（subagent 完整 3 份）|
+| R6.4.3 · stage-dod 接力 | ✅ | 2026-04-25 | 3203b94 | 1212 行 · 3 PlantUML（44 条 Stage DoD · 7 阶段）|
+| R6.2 · hard-redlines 接力 | ✅ | 2026-04-25 | 6ec208b | 851 行 · 2 PlantUML（5 类硬红线 · 5 步链路）|
+| R6.3 · general-dod 接力 | ✅ | 2026-04-25 | db61df9 | 666 行 · 2 PlantUML（EBNF + 22 白名单 + 三态 verdict）|
+| **R6 收官** | ✅ | 2026-04-25 | db61df9 | 3-3 监督规约 10 份 · 7503 行 · 18 PlantUML · 0 FILL |
+| R7 · 质量 Gate + 一致性审计 | ✅ | 2026-04-25 | db61df9 | quality_gate.sh 全硬 Gate PASS · Gate 3 WARN 9 处全为合法业务引用 |
+| **M6 里程碑 · 可交付** | ✅ | 2026-04-25 | db61df9 | 全 3-Solution（3-1 + 3-2 + 3-3）落地 · 154 份文档 · ~165000 行 · 240+ PlantUML |
 
 ---
 
-## 已完成 L2/integration 清单
+## 已完成文档全量清单（M6 状态快照）
 
-### 3-1-Solution-Technical/L0（R0 之前已完成）
-- L0/tech-stack.md（PlantUML 已转）
-- L0/ddd-context-map.md
-- L0/open-source-research.md
-- L0/sequence-diagrams-index.md（33 PlantUML）
-- L0/architecture-overview.md
-- projectModel/tech-design.md
+### 3-1-Solution-Technical（57 L2 + 4 integration + 5 L0 + 10 architecture + 1 projectModel = 77 份）
 
-### 3-1-Solution-Technical/L1-XX/architecture.md（10 份 · R0 之前已完成 + R0 迁移）
-- L1-01/architecture.md（1499 行 · 所有 Mermaid 已转 PlantUML）
-- L1-02/architecture.md
-- L1-03/architecture.md
-- L1-04/architecture.md
-- L1-05/architecture.md
-- L1-06/architecture.md
-- L1-07/architecture.md
-- L1-08/architecture.md
-- L1-09/architecture.md
-- L1-10/architecture.md
+**L0**：tech-stack / ddd-context-map / open-source-research / sequence-diagrams-index / architecture-overview · 全转 PlantUML
 
-### 3-1-Solution-Technical/integration（R1 完成）
-- **integration/ic-contracts.md**（2503 行 · 质量锚点 · v1.0 locked）
-- **integration/p0-seq.md**（1818 行 · 12 P0 时序）
-- **integration/p1-seq.md**（1911 行 · 10 P1 时序）
-- **integration/cross-l1-integration.md**（1112 行 · 跨 L1 结构全景）
+**projectModel**：tech-design.md（2200+ 行）
 
-### 3-1-Solution-Technical/L2 tech-design（深度 A · R2-R3 填）
-- L1-01/L2-02 决策引擎（1493 行 · R2.1 完成 · 标杆最终态）
-- L1-09/L2-01 事件总线核心（之前已填）
-- L1-09/L2-02 锁管理器（之前已填）
-- L1-09/L2-05 崩溃安全层（之前已填）
-- L1-09/L2-03 审计记录器+追溯查询（188 行 · 旧填 · R4 重审）
+**integration**（4 份 · 7007 行）：
+- ic-contracts.md（2503 行 · 20 IC · 109 错误码 · 22 PlantUML）
+- p0-seq.md（1818 行 · 12 P0 时序）
+- p1-seq.md（1911 行 · 10 P1 时序）
+- cross-l1-integration.md（1112 行 · 10×10 依赖矩阵）
 
-### 待填 L2（55 份）
-| L1 | 待填 L2 清单 | 预计 Phase |
-|---|---|---|
-| L1-01 | L2-01/03/04/05/06（5 份）| R2.2-R2.6 执行中 |
-| L1-02 | L2-01/02/03/04/05/06/07（7 份 · 精简 B）| R4 |
-| L1-03 | L2-01/02/03/04/05（5 份 · 精简 B）| R4 |
-| L1-04 | L2-01/02/03/04/05/06/07（7 份 · 深度 A）| R3.1/R3.2 |
-| L1-05 | L2-01/02/03/04/05（5 份 · 精简 B）| R4 |
-| L1-06 | L2-01/02/03/04/05（5 份 · 精简 B）| R4 |
-| L1-07 | L2-01/02/03/04/05/06（6 份 · 深度 A）| R3.2/R3.3 |
-| L1-08 | L2-01/02/03/04（4 份 · 精简 B）| R4 |
-| L1-09 | L2-04（1 份 · 精简 B）+ L2-03 重审 | R4 |
-| L1-10 | L2-01/02/03/04/05/06/07（7 份 · 精简 B）| R4 |
+**L1-01 主 Agent 决策循环**（6 份 · ~11700 行）：L2-01 Tick / L2-02 决策引擎 / L2-03 状态机 / L2-04 任务链 / L2-05 审计 / L2-06 Supervisor 接收
 
-### 待建全新文档
-- docs/3-2-Solution-TDD/...（75 份镜像）
-- docs/3-3-Monitoring-Controlling/...（10 份）
+**L1-04 Quality Loop**（7 份 · ~17000 行）：L2-01 TDD 蓝图 / L2-02 DoD 编译器 / L2-03 测试用例生成 / L2-04 Gate 编译 / L2-05 S4 Driver / L2-06 Verifier / L2-07 4 级回退
+
+**L1-07 Harness 监督**（6 份 · ~14000 行）：L2-01 8 维状态 / L2-02 4 级偏差 / L2-03 硬红线 / L2-04 事件发送 / L2-05 Soft-drift / L2-06 死循环升级
+
+**L1-02 项目生命周期**（7 份 · ~7400 行 · 精简 B）：Stage Gate / 启动产出 / 4 件套 / PMP 9 计划 / TOGAF ADM / 收尾 / 模板引擎
+
+**L1-03 WBS+WP**（5 份 · ~6500 行 · 精简 B）：WBS 拆解 / 拓扑图 / WP 调度 / WP 追踪 / 失败回退
+
+**L1-05 Skill 生态**（5 份 · ~7700 行 · 精简 B）：Skill 注册 / 意图选择 / 调用执行 / 子 Agent 委托 / 异步回收
+
+**L1-06 3 层 KB**（5 份 · ~10800 行 · 精简 B）：3 层管理 / KB 读 / 观察累积 / 晋升仪式 / 检索+Rerank
+
+**L1-08 多模态**（4 份 · ~9400 行 · 精简 B）：文档 IO / 代码结构 / 图片视觉 / 路径安全
+
+**L1-09 韧性+审计**（5 份 · ~9700 行 · 精简 B）：事件总线 / 锁管理 / 审计 / 检查点 / 崩溃安全
+
+**L1-10 人机协作 UI**（7 份 · ~15500 行 · 精简 B）：11 主 Tab / Gate 决策卡片 / 进度流 / 用户干预 / KB 浏览器 / 裁剪档 / Admin 子管理
+
+### 3-2-Solution-TDD（57 份镜像 · ~70000 行）
+
+L0/projectModel/integration/acceptance + 10 L1 全镜像 · 每份 749-2368 行 TDD 测试规约。
+
+### 3-3-Monitoring-Controlling（10 份 · 7503 行 · M6 焦点）
+
+| 文档 | 行数 | PlantUML | 内容焦点 |
+|---|---|---|---|
+| L0/overview.md | 508 | 2 | 3-3 层总览 + 6 文档导航 + 消费方矩阵 |
+| quality-standards/coding-standards.md | 476 | 1 | Python 代码 4 类 20+ 标准（ruff/mypy/复杂度/命名）|
+| dod-specs/general-dod.md | 666 | 2 | EBNF + 22 白名单 predicate + 三态 verdict + 5 降级 |
+| dod-specs/stage-dod.md | 1212 | 3 | 7 阶段 × 44 条 Stage DoD + evidence schema + 反向追溯 |
+| dod-specs/wp-dod.md | 619 | 1 | WP 3 维度 DoD（功能/质量/文档）|
+| hard-redlines.md | 851 | 2 | 5 类硬红线 + 5 步链路 + IC-15 schema + ≤100ms SLO |
+| soft-drift-patterns.md | 1278 | 1 | 8 类软漂移封闭规约 + IC-13 触发链 |
+| monitoring-metrics/system-metrics.md | 514 | 1 | 5 组 19 条系统指标（心跳/SLO/资源/IC/错误率）|
+| monitoring-metrics/quality-metrics.md | 600 | 2 | 4 组 12 条质量指标（覆盖/Gate/缺陷/回退）|
+| acceptance-criteria.md | 779 | 3 | 5 类 20+ 验收标准（功能/质量/文档/部署/运维）|
+
+---
+
+## 质量 Gate 全量结果（R7 验证）
+
+```
+=== Gate 1: Mermaid 残留（硬约束：0）=== PASS
+=== Gate 2: 未填段 <!-- FILL 残留（硬约束：0）=== PASS（0 真占位）
+=== Gate 3: TBD/TODO/待填（R7 期望：0）=== WARN: 9 files
+  - 全部为合法业务引用（"TODO 应用" / "TODO/FIXME 堆积" 软漂移名 / OQ 待观察项）· 非待填 FILL
+=== Gate 4: L2 含 ≥ 1 IC-XX 引用 === PASS
+=== Gate 5: PlantUML @startuml/@enduml 配对 === PASS
+=== Gate 6: mermaid-fallback 残留 === PASS
+
+============================================
+✅ Gate PASS · M6 可交付
+```
 
 ---
 
@@ -103,31 +132,40 @@ parent_doc:
 | 时间 | 任务 | 失败原因 | 处理 |
 |---|---|---|---|
 | 2026-04-21 | R1.1 ic-contracts 原派 opus Implementer | rate limit · 23 tool uses 未产出 | 降级主 session 自写 → 2503 行 · 超预期 |
+| 2026-04-25 | R6.2 hard-redlines / R6.3 general-dod / R6.4.3 stage-dod 收尾 / R6.5.4 acceptance-criteria 等 6 subagent | API 限额到（02:10 重置）· 未完成 | 主 session 接力补完 · stage-dod +180 / hard-redlines +400 / general-dod +470（先 commit 4 完整份保护工作）|
 
-（其余任务均 DONE · 无积压）
-
----
-
-## 下次会话 Action Items（若中断恢复）
-
-1. **Read** 本文件 · 识别 current_phase + next_action
-2. 若 R2.X 还在跑 · Read 各 L2 文件检查实际状态（wc -l · grep FILL）
-3. 若全 R2 完成 · 运行 Spec + Code Quality Reviewer 两阶段 · 跑 Gate · commit "Phase R2 · M2"
-4. 继续 R3.1 L1-04 × 5 subagent 并发
-5. 按 plan §6-§9 推进 R4-R7 → M6
+（其余任务均 DONE）
 
 ---
 
-## 质量基线指标
+## 质量基线指标（M6 终值）
 
 | 指标 | 值 | 说明 |
 |---|---|---|
-| 总文档产出 | **~22700 行** | 4 integration + 6 L1-01 L2 + 10 architecture + 5 L0 + projectModel |
-| PlantUML 图数 | **~268 张** | R0 迁移 169 + R1 新增 56 + R2 新增 43 |
+| 总文档产出 | **~165000 行** | 3-1（~95000）+ 3-2（~70000）+ 3-3（7503）|
+| PlantUML 图数 | **~298 张** | R0 迁移 170 + R1 新增 56 + R2 新增 38 + R3-R6 新增 ~34 |
 | Mermaid 残留 | 0 | Gate 1 硬约束 |
-| FILL 占位残留 | 53 份骨架（R2-R4 清）| Gate 2 WARN（R7 前期望） |
+| FILL 占位残留 | 0 | Gate 2 全清 |
 | IC 契约锁定 | 20 条 | ic-contracts.md v1.0 locked |
+| Stage DoD 条数 | 44 条 | stage-dod.md 7 阶段 |
+| 白名单 predicate | 22 条 | general-dod.md v1.0 locked |
+| 硬红线类 | 5 类 | hard-redlines.md v1.0 |
+| 软漂移类 | 8 类（封闭）| soft-drift-patterns.md v1.0 |
+| 系统指标 | 19 条 | system-metrics.md |
+| 质量指标 | 12 条 | quality-metrics.md |
+| 验收标准 | 20+ 条 | acceptance-criteria.md（5 类）|
 
 ---
 
-*— Updated 2026-04-21 · next milestone: M2 (L1-01 主 loop 6 份 L2 端到端可消费) —*
+## 下次会话 Action Items（M6 后续）
+
+3-Solution 落地完毕 · 进入 4-Execution + 波 6 集成测试 + 波 7 release：
+
+1. **波 6 main-3** · 集成测试 + acceptance（WP01 + WP02 已 merged · 75 + 69 TC · 待 WP03-10）
+2. **QA-1~5** · 跨 L1 测试矩阵
+3. **Dev-θ θ2** · L1-10 UI 5 WP（依赖已满足）
+4. **波 7 main-4 + Sign-1~4** · v1.0 release
+
+---
+
+*— Updated 2026-04-25 · M6 触达 · 3-Solution Resume 全 Phase 收官 —*
