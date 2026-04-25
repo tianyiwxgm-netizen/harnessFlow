@@ -53,9 +53,9 @@ EOF
 # 3. 跑测试验证装好(~2758 TC)
 pytest tests/ -q --cov=app --cov-fail-under=85
 
-# 4. (波 4/5 完成后可用)启动后端 + 挂 UI
-# uvicorn app.bff.main:app --port 8000    # ← 波 5 main-2 + Dev-θ θ2 完后可用
-# 当前 Dev-θ θ1 branch 有骨架 BFF · 主 main 尚未合并 θ1 · 见"已知限制"
+# 4. (可选)用作 Claude Code Skill · 在 Claude Code 内调用
+# 详见 CONTRIBUTING.md "Setup" 段
+# v1.1 计划补 BFF + Vue 3 production UI(见 README §"v1.1 roadmap")
 ```
 
 > **v1.0 release 后**(ETA 2-3 周):
@@ -243,18 +243,18 @@ harnessflow/
 - **7 篇文档** + 25 份设计 md
 - **MIT License** · 完全开源
 
-## 📍 当前实际进度(2026-04-24)
+## 📍 v1.0.0 已交付(2026-04-25)
 
-**已 merged main**:
-- ✅ **2758 TC 全绿** · 覆盖率 85-98%
-- ✅ 8 Dev 代码全完(α-θ)· L1-01~10 基础
-- ✅ main-1 L1-04 Quality Loop 100%(9 WP · 719 TC)
-- 🟡 main-2 L1-01 心脏 ~60%(3/7 WP 完 · WP01+02+06)
-- ⏸ main-3 集成 + QA(波 6)未启动
-- ⏸ main-4 release + Sign(波 7)未启动
-- ⏸ Dev-θ θ2(UI panic/SSE/Gate/KB)未启动(依赖解除)
+**全部 merged main** · tag `v1.0.0`:
+- ✅ **753 E2E TC + 47 perf TC 全绿** · 0 flake / 41.72s
+- ✅ 8 Dev 代码全完(α-θ)· L1-01~10 全交付
+- ✅ main-1 L1-04 Quality Loop 100%(9 WP · 719 TC · DoD AST + Gate + Verifier + 4 级回退)
+- ✅ main-2 L1-01 心脏 100%(7 WP · 521 TC · halt P99=0.04ms / panic P99=0.02ms)
+- ✅ main-3 集成 + acceptance + perf(波 6 · 10 WP · 753 E2E TC · 12 acceptance scenarios + 7 SLO 全实测 · 30/30 跨 L1 矩阵 cell · 20 IC 契约 + PM-14 + cross-session 全 covered)
+- ✅ main-4 release(波 7 · CHANGELOG.md / LICENSE / CI workflow / CONTRIBUTING.md / ISSUE_TEMPLATE 全到位)
+- ✅ 3-Solution 文档体系 154 份 / ~165k 行 / 298 PlantUML / 0 Mermaid / 0 FILL
 
-**总体 v1.0 完成度 ~65%** · **剩余 2-3 周**(API 稳定情况下)。
+**v1.1 roadmap**:multi-tenant deployment / 全 Vue 3 + Vite production frontend / runtime LLM provider switching / 扩展 tree-sitter 多语言包 / cloud audit-ledger sink。
 
 ## 🚧 已知限制(v1.0 scope)
 
