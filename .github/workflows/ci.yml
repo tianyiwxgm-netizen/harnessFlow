@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint (ruff + mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check app/ tests/
+      - run: mypy app/
+
+  test:
+    name: pytest (${{ matrix.test-suite }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test-suite:
+          - "tests/shared"
+          - "tests/integration"
+          - "tests/acceptance"
+          - "tests/performance"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest ${{ matrix.test-suite }} -v --tb=short
+
+  quality-gate:
+    name: Quality Gate (3-Solution docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/quality_gate.sh
+
+  build-skill:
+    name: Skill packaging dry-run
+    runs-on: ubuntu-latest
+    needs: [lint, test, quality-gate]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install build
+      - run: python -m build --wheel --outdir dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harnessflow-wheel
+          path: dist/*.whl
+          retention-days: 7
