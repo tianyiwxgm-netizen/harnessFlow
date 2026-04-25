@@ -108,12 +108,17 @@ class _AsyncEventBusAdapter:
     ) -> str:
         from app.l1_09.event_bus.schemas import Event
 
+        # L1-09 Event schema 没有 evidence_refs 顶层字段 · 写入 payload 副本
+        # 以便 audit 查询时仍可校验证据链
+        merged_payload = dict(payload)
+        if evidence_refs:
+            merged_payload["evidence_refs"] = list(evidence_refs)
         evt = Event(
             project_id=project_id,
             type=type,
             actor="supervisor",
             timestamp=datetime.now(UTC),
-            payload=payload,
+            payload=merged_payload,
         )
         result = self._bus.append(evt)
         return result.event_id
