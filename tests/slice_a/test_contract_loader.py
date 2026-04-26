@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import pytest
 
-from pipelines.contract_loader import load_contract, get_node_def, NodeDef
+from pipelines.contract_loader import (
+    NodeDef,
+    emit_pipeline_graph,
+    get_node_def,
+    load_contract,
+)
 
 
 def test_load_contract_returns_13_nodes():
@@ -37,9 +42,6 @@ def test_n13_is_dag_terminal_no_forward_edges():
     assert forward_edges == [], f"N13 should have no forward edges, got: {forward_edges}"
 
 
-from pipelines.contract_loader import emit_pipeline_graph
-
-
 def test_emit_pipeline_graph_for_size_m_writes_13_nodes(empty_task_board):
     graph = emit_pipeline_graph(empty_task_board)
     assert graph is not None
@@ -60,3 +62,4 @@ def test_emit_pipeline_graph_includes_edges(empty_task_board):
     assert "parallel_split" in edge_kinds
     assert "converge" in edge_kinds
     assert "rollback" in edge_kinds
+    assert "augment" in edge_kinds
