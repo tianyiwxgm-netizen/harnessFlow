@@ -71,12 +71,42 @@ CLAUDE.md / 用户显式指令 > **harnessFlow 主 skill** > gstack skill routin
 
 2. **读 CLAUDE.md** 找已有 `goal-anchor` block（若有），作为跨 session resume 的锚；若无，推迟到 § 3 生成
 
-3. **读 memory**（/Users/zhongtianyi/.claude/projects/-Users-zhongtianyi-work-code/memory/MEMORY.md）捞相关 feedback：
-   - `feedback_real_completion.md`
-   - `feedback_prp_flow.md`
-   - `feedback_workflow_scheme_c.md`
-   - `feedback_quality_over_speed.md`
-   （具体内容按需 Read；不一次性全装入 prompt）
+3. **bootstrap 强制装载 must-load memory**（v1.5 fix defects-report-2026-04-26.md P1 #2）：
+
+   ```python
+   from archive.sequence_verifier.loader import (
+       list_must_load_memories,
+       routing_decision_basis_record,
+   )
+
+   memory_dir = Path("/Users/zhongtianyi/.claude/projects/-Users-zhongtianyi-work-code/memory")
+   must_load = list_must_load_memories(memory_dir)  # 解析 MEMORY.md 链接
+   loaded = []
+   for p in must_load:
+       Read(p)              # 真 Read 真装入 prompt 上下文，不允许"按需"或跳过
+       loaded.append(p.name)
+   ```
+
+   - **必须装载清单**：MEMORY.md 中文件名以 `feedback_workflow_` 或 `feedback_prp_` 开头的 *.md（v1.5 起由 `loader.MUST_LOAD_PREFIXES` 定义）
+   - **缺一个**（must_load 列表里有但 Read 失败 / 跳过） → 立即 `PAUSED_ESCALATED` + Supervisor `BLOCK` `MEMORY_LOAD_INCOMPLETE` 红线
+   - **理由**：v1.4 以前 "按需 Read" 让 LLM 自由裁量，导致 PRP 流程偏好（`feedback_prp_flow.md`、`feedback_workflow_scheme_c.md`）被忽略，路由决策偏离用户既有约定（defects-report P1 #2 直击点）
+
+3.5. **写 `routing_decision_basis` 到 task-board**（v1.5 fix defects #2）：
+
+   ```python
+   task_board["routing_decision_basis"] = routing_decision_basis_record(
+       memory_dir=memory_dir,
+       loaded_files=loaded,  # 实际 Read 过的 basename 列表
+   )
+   # 期望：{"complete": True, "missing": [], "must_load_memories": [...], "loaded_memories": [...]}
+   if not task_board["routing_decision_basis"]["complete"]:
+       supervisor_log("BLOCK", "MEMORY_LOAD_INCOMPLETE",
+                      f"missing={task_board['routing_decision_basis']['missing']}")
+       transition(task_board, "PAUSED_ESCALATED")
+       return
+   ```
+
+   该字段是 § 4 路由决策的**可审计 trace** —— 路由后 retro § 4.2 必须引用，证明路由依据已对齐用户既有 memory。
 
 4. **向用户打招呼（1 句话）**：
    > "已拉起 harnessFlow（task_id=<short id>）。下面我会用 2-3 轮澄清对齐任务三维 (size, task_type, risk)，然后推荐路线。请用一句话描述任务。"
@@ -233,6 +263,21 @@ def should_exit_clarify(task_board) -> bool:
 def execute_route(route_id: str, task_board: dict):
     # 读 flow-catalog 对应 § 查具体调度序列
     seq = load_route_sequence(route_id)  # e.g. from flow-catalog.md § 4 for C
+
+    # v1.5 fix defects #2：调度任何 ECC/SP skill 前先 verify planned_steps 与 flow-catalog 一致
+    # 防止 LLM 自由裁量 substitute（例如把 ECC:prp-plan 偷换成 SP:writing-plans）
+    from archive.sequence_verifier.verifier import verify_route_sequence
+    planned_steps = [step["tool"] for step in seq]            # e.g. ["SP:brainstorming", "ECC:prp-prd", ...]
+    flow_catalog_path = Path(__file__).resolve().parent / "flow-catalog.md"
+    verify_report = verify_route_sequence(
+        route_id, planned_steps, flow_catalog_path,
+        allow_missing_steps=task_board.get("c_lite_skipped_steps", []),  # C-lite 降级允许省略的 step
+    )
+    task_board.setdefault("sequence_verifications", []).append(verify_report)
+    if not verify_report["match"]:
+        supervisor_log("BLOCK", verify_report["reason_code"], verify_report["reason_msg"])
+        transition(task_board, "PAUSED_ESCALATED")
+        return  # 主 skill 等用户 / Supervisor 决议，禁止静默推进
 
     # sidecar 拉起（§ 6）
     supervisor = spawn_supervisor(task_board)
@@ -752,9 +797,18 @@ def sanity_check(task_board):
 
 - v1.0（2026-04-16）：Phase 5 首版产出
 - v1.1（计划）：Phase 6 Supervisor/Verifier subagent 落地后回写本 skill 的具体 subagent_type 名称
+- v1.2（Phase 6 落地）：Supervisor + Verifier subagent + DoD 原语库（commit f6b78b9）
+- v1.3（2026-04-18）：Supervisor wake PostToolUse 桥（fix defects #1，commit 59dcb25）
+- v1.4（2026-04-26）：Stop hook AUTO-RETRO-CLOSE 自动驱动收尾（fix defects #4，commit 3af6850）
+- **v1.5（2026-04-26，本次）：调度序列双层防御（fix defects-report-2026-04-26.md P1 #2）**
+  - 新增 `archive/sequence_verifier/` 包：`loader.py` + `verifier.py` + `__init__.py`
+  - § 2.1 step 3 改硬约束：`list_must_load_memories()` + 必读 `feedback_workflow_*` / `feedback_prp_*`，缺则 `MEMORY_LOAD_INCOMPLETE` 红线
+  - § 2.1 step 3.5 新增：`routing_decision_basis_record()` 写 task-board，提供路由依据可审计 trace
+  - § 5.1 `execute_route()` 调度前调 `verify_route_sequence()` 校验 planned_steps 与 flow-catalog 一致；mismatch → `PAUSED_ESCALATED` + Supervisor BLOCK
+  - 新增 19 测试 case（archive/tests/test_sequence_verifier.py），全 archive suite 119 PASS
 
 ---
 
 *主 skill 就位。下游依赖 Phase 6（Supervisor + Verifier subagent）+ Phase 7（failure-archive schema + auto-retro）+ Phase 8（三任务端到端验证）。主 skill 本身不再扩；所有进化通过进化候选走 retro → 人审批 → 外部文档版本化。*
 
-*— v1.0 end —*
+*— v1.5 (defects #2) —*
