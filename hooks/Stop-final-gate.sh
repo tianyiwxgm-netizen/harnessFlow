@@ -84,6 +84,12 @@ if state in ("CLOSED", "ABORTED") and closed_at_str:
 if state == "PAUSED_ESCALATED":
     # 人工 review 中，不强制 archive（恢复后会重新进 RETRO_CLOSE 补写）
     sys.exit(0)
+
+# 空任务豁免：INIT/CLARIFY + clarify_rounds==0 → 用户打开 harness 但未描述任务就退出
+# 无实质工作发生，不需要 ABORT 仪式 / archive，静默跳过
+if state in ("INIT", "CLARIFY") and not tb.get("clarify_rounds", 0):
+    sys.exit(0)
+
 if state == "ABORTED":
     # Phase 7 补强：ABORTED 也要归档一条（subagent md § 1.1 规定）。放行条件：
     #   - A 路线：豁免

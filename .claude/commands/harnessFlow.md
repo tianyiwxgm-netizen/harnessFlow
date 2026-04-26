@@ -32,11 +32,14 @@ $ARGUMENTS
 
 ## 第一步
 
-如果 `$ARGUMENTS` 为空：问用户他要做什么任务。
+如果 `$ARGUMENTS` 为空：
+- **只问一句**："请用一句话描述你要做的任务。" 
+- **不要**提前生成 task_id 或写 task-board.json —— 等用户回复后再进行 bootstrap
+- 收到回复后，把用户描述当作 `$ARGUMENTS` 继续下方流程
 
-否则按 `harnessFlow-skill.md § 1-2` 启动流程：
+否则（`$ARGUMENTS` 非空）按 `harnessFlow-skill.md § 1-2` 启动流程：
 1. **Generate task_id**（`p-<短描述>-<ts>` 格式）
-2. **初始化 task-board.json** (INIT 态)
+2. **初始化 task-board.json** (INIT 态) —— 此时已有真实任务描述，才落盘
 3. **进入 CLARIFY 阶段**：问 2-3 轮澄清问题识别 `(size, task_type, risk)` 三维
 4. 其余流程严格按 harnessFlow-skill.md 走（**不要省略 Verifier / retro / archive**）
 
