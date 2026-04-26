@@ -1,6 +1,6 @@
 # harnessFlow
 
-> **AI 驱动软件开发的"审慎脚手架"** —— 给 Claude 当 PM + 架构师 + 码农 · 一句话需求到完整项目交付 · 每一步有审计 + 监督 + 质量 Gate 兜底。
+> **防"假完成"AI 编排引擎** —— 给 Claude 当 PM + 架构师 + 质检员 · 一句话需求到完整项目交付 · 每步有监督 + 审计 + 质量 Gate 兜底 · 永不宣称"完成"直到有真凭据。
 
 [![version](https://img.shields.io/badge/version-1.0.0-blue)]()
 [![pytest](https://img.shields.io/badge/E2E_pytest-753%20passed-brightgreen)]()
@@ -11,54 +11,129 @@
 
 ---
 
-## 🎯 是什么
+## 🎯 是什么 · 解决什么问题
 
-**harnessFlow** = 开源 **Claude Code Skill**。
+**harnessFlow** 是一个开源 **Claude Code Skill**，专门解决 AI 编程的最大痛点：
 
-你给它一句话需求 · 它**自主驱动一个完整软件项目**:
-**需求澄清 → 方案设计 → 代码开发 → TDD 测试 → 质量 Gate → 验证 → 交付归档**。
+> *AI 说"完成了"——但代码跑不起来、测试没写、需求没对上。*
 
-过程由 **10 个 L1 能力**协同推进 · **监督 Agent** 兜底不失控 · **审计链 100% 可追溯** · **硬红线 ≤100ms 响应**。
+harnessFlow 的核心机制：**任务完成 ≡ 用户可直接消费的 artifact**，而非"pipeline 无 error"。
+通过 **路由矩阵 → 三引擎监督 → Verifier 独立收口 → 结构化归档** 四道关卡，让 AI 真正完成任务。
 
 ---
 
-## ✅ 当前状态:**v1.0.0 stable · 2026-04-25**
+## ✨ 核心功能
 
-10 L1 全交付 · 753 E2E 测试 0 flake / 41.72s · 7 SLO 全实测（halt P99=0.04ms / panic P99=0.02ms · 余量 27-5000x）· 12 acceptance scenario 端到端绿 · 154 份 3-Solution 文档 ~165k 行 · 20 IC 契约锁定 · 30/30 跨 L1 矩阵 cell 全 covered。详见 [CHANGELOG.md](CHANGELOG.md)。
+| 功能 | 描述 |
+|:---|:---|
+| **42-cell 路由矩阵** | 按 `(size, task_type, risk)` 三维自动选最优执行路线(A-F 6 种)，避免大炮打蚊子 |
+| **Supervisor 侧挂监听** | 任务全程后台运行，检测 8 维偏移 + 5 硬红线，触发自动回滚或暂停升级 |
+| **Verifier 独立收口** | 任务"完成"时由独立 subagent 用 DoD 布尔表达式验证——不是 AI 自评，是独立评审 |
+| **结构化失败归档** | 每次失败写 `failure-archive.jsonl`，11 段 retro 复盘，知识持续积累 |
+| **硬红线 ≤100ms** | halt / panic / IC-15 硬约束实测 P99 = 0.04ms，余量 970×，随时可急停 |
+| **100% 审计可追溯** | 每次决策写 `events.jsonl`，hash chain 确保不可篡改 |
+| **跨 session 恢复** | 4 层恢复机制，Claude crash / 重启后从 checkpoint 继续，不丢进度 |
+| **任务看板 UI** | `/harnessFlow-ui` 一键启动 Web 界面，查看任务时间轴 + KB + 产出物 |
 
-## 📋 Prerequisites
+---
 
-- **Python 3.11+**(必须)
-- **Claude Code**(建议 · harnessFlow 面向 Claude Code Skill)
-- **LLM 凭据**(择一):Anthropic API Key / 豆包 API / DeepSeek · 详 `.env`
-- **磁盘**:≥ 500MB(含依赖)
-- **内存**:≥ 2GB(单 project 运行约 600-800MB)
-- **Node 20+**(仅 Dev 贡献者 build frontend 时需要 · End User **零 Node**)
+## ⚙️ 工作机制
 
-## 🚀 快速开始(从源码)
+### 三引擎架构
+
+```
+用户输入一句话需求
+       ↓
+  ┌─────────────────────────────────────────┐
+  │          harnessFlow 主编排器            │
+  │  CLARIFY(2-3轮) → ROUTE → PLAN → IMPL  │
+  └──────────┬──────────────────────────────┘
+             │ 全程
+    ┌─────────┴──────────┐
+    │  Supervisor sidecar │  ← 侧挂监听，检测偏移，发 WARN/BLOCK
+    └─────────────────────┘
+             │ 任务"完成"时
+    ┌─────────┴──────────┐
+    │  Verifier subagent  │  ← 独立 spawn，DoD 布尔表达式验证
+    └─────────────────────┘
+             │ 通过后
+    ┌─────────┴──────────┐
+    │  failure-archive +  │  ← 11段retro + JSONL归档 + 知识积累
+    │  retro-generator    │
+    └─────────────────────┘
+```
+
+### 7 Stage 自动流水线
+
+| Stage | 名称 | 产出 |
+|:---:|:---|:---|
+| S1 | **Kickoff** | 4 件套：需求(REQ)/ 目标(GOAL)/ 验收标准(AC)/ 质检清单(QS) |
+| S2 | **Planning** | PMP 9 计划 + TOGAF 架构 → Gate 卡（等用户 Go/Reject） |
+| S3 | **TDD Plan** | TDD blueprint + pytest 骨架 → Gate 卡 |
+| S4 | **Executing** | 多 WP 并发：代码 → 单元测试 → 质量 Gate 5 基线 |
+| S5 | **Verifier** | Verifier 独立双签验证 + IC-20 invoke_verifier |
+| S6 | **Closing** | 11 段 retro + artifacts 整理 |
+| S7 | **Archive** | `tar.zst` 压缩 + PM-14 归档，`projects/<pid>/artifacts/` |
+
+### 6 条执行路线（自动选）
+
+| 路线 | 适用场景 | 特点 |
+|:---:|:---|:---|
+| **A** | XS 任务（改个字符串、读文件） | 极简，跳过重 skill |
+| **B** | S/M 标准功能开发 | brainstorm→plan→implement→review |
+| **C** | L/XL 复杂项目 | 加 Supervisor + 全量 Gate |
+| **D** | 重构 / 架构迁移 | 分析优先，渐进式 |
+| **E** | 纯文档 / 研究 | 知识库驱动 |
+| **F** | 高风险 / 不可逆操作 | 强制暂停确认，双签 |
+
+---
+
+## 🚀 快速上手
+
+### 方式一：作为 Claude Code Slash Command（推荐）
 
 ```bash
-# 1. clone + 装依赖
 git clone https://github.com/tianyiwxgm-netizen/harnessFlow.git
 cd harnessFlow
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
 
-# 2. 准备 .env
-cat > .env <<EOF
-LLM_PROVIDER=claude       # claude / deepseek / doubao / local
-ANTHROPIC_API_KEY=sk-...  # 若 LLM_PROVIDER=claude
-EOF
+# 自动注册到 Claude（全局可用）
+bash scripts/register.sh
 
-# 3. 跑测试验证装好(753 E2E TC · ~41s)
-pytest tests/ -q --cov=app --cov-fail-under=85
-
-# 4. 用作 Claude Code Skill · 在 Claude Code 内调用 /harnessFlow
-# 详见 harnessFlow-skill.md 和 CONTRIBUTING.md "Setup" 段
+# 验证安装
+bash scripts/self-test.sh    # 期望：12/12 PASS
 ```
 
-> **v1.0 现状**:通过 `pytest` + Claude Code Skill 驱动 · 无独立 CLI 可执行文件。
-> v1.1 roadmap:生产级 BFF + Vue 3 frontend + `harnessflow` CLI 入口。
+在 **任意项目** 的 Claude Code 里：
+```
+/harnessFlow 做一个 FastAPI + Vue TODO App，含用户认证
+```
+
+查看任务看板：
+```
+/harnessFlow-ui
+```
+
+### 方式二：仅在 harnessFlow 目录下使用
+
+直接 clone 后在 Claude Code 里打开该目录，`/harnessFlow` 和 `/harnessFlow-ui` 自动可用（无需运行注册脚本）。
+
+---
+
+## ✅ 当前状态：v1.0.0 stable · 2026-04-25
+
+10 L1 全交付 · 753 E2E 测试 0 flake / 41.72s · 7 SLO 全实测（halt P99=0.04ms · 余量 970×）· 12 acceptance scenario 端到端绿 · 154 份 3-Solution 文档 ~165k 行 · 20 IC 契约锁定 · 30/30 跨 L1 矩阵 cell。详见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 📋 环境要求
+
+| 依赖 | 版本 | 说明 |
+|:---|:---:|:---|
+| Python | 3.11+ | 必须 |
+| Claude Code | 任意 | Skill / slash command 载体 |
+| LLM 凭据 | - | Anthropic / DeepSeek / 豆包 · 详 `.env` |
+| 磁盘 | ≥ 500MB | 含依赖 |
+| Node 20+ | 可选 | 仅贡献者 build frontend 时需要，普通用户零 Node |
 
 ---
 

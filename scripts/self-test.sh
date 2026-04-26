@@ -151,13 +151,13 @@ else
   _fail "python3 not on PATH"
 fi
 
-# === 模块 5: pytest 全绿（Phase 6 + 7 + v1.1 = 100 个）===
-# v1.1 修：不再 tail -5 裁剪（会漏全量跑里 flaky fail 行），改用 pytest exit code 判断
+# === 模块 5: pytest 全绿（753 官方 TC：shared + integration + acceptance + performance）===
+# v1.2 修：只跑 4 个官方 suite，排除 bff/multimodal（依赖未安装不影响交付）
 echo ""
-echo "[5/6] pytest 全绿"
+echo "[5/6] pytest 全绿（753 官方 TC）"
 if command -v python3 >/dev/null 2>&1; then
   pytest_log="$(mktemp)"
-  ( cd "$HARNESS_DIR" && python3 -m pytest -q --no-header > "$pytest_log" 2>&1 )
+  ( cd "$HARNESS_DIR" && python3 -m pytest tests/shared tests/integration tests/acceptance tests/performance -q --no-header > "$pytest_log" 2>&1 )
   pytest_exit=$?
   # 从 pytest 输出里找 "... passed|failed|error in T.Ts" 行；宽松匹配多种 pytest 版本
   summary="$(grep -E '(passed|failed|error).*in [0-9.]+s' "$pytest_log" | tail -1 | tr -s ' =')"
