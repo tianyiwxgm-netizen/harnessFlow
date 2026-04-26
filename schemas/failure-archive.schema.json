@@ -72,7 +72,8 @@
     },
     "route": {
       "type": "string",
-      "enum": ["A", "B", "C", "D", "E", "F"]
+      "description": "v1.7 fix: 与 task-board.schema.json route_id 对齐，加入 C-lite/D-mini/E-lite 三种简化路线。原 strict A-F 让所有 C-lite 任务在 Stop hook 校验失败。",
+      "enum": ["A", "B", "C", "D", "E", "F", "C-lite", "D-mini", "E-lite"]
     },
     "node": {
       "type": "string",
