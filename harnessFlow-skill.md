@@ -260,9 +260,51 @@ def should_exit_clarify(task_board) -> bool:
 请回复 "选 C" / "选 B" / "都不对，理由是：…"
 ```
 
+### 4.2.bis 可审计 trace 落字段 (v1.8 fix defects #3 — hard gate)
+
+**根因**：§ 4.1/4.2 仅以 prompt 文字描述"应呈现 top-2 + 分数 + risk overlay"，无可执行 enforcement —— LLM 在 context 紧 / 自由裁量时直接说"推荐 C 路线"跳过查表，路由决策无审计 trace，事后无法 validate 是否真查表。
+
+**修复**：呈现给用户**之前**必须落 `task-board.routing_matrix_consultation` 字段，缺 / 形态错则**BLOCK** `ROUTE_SELECT → PLAN`。
+
+```python
+from archive.routing_consultation import build_consultation, validate_consultation_record
+
+# § 4.1 查表完成后立即构造 + 落盘 + 校验
+consultation = build_consultation(
+    size=task_board["size"],
+    task_type=task_board["task_type"],
+    risk=task_board["risk"],
+    top_candidates=[
+        {"route_id": top1["route_id"], "raw_score": top1["raw"], "adjusted_score": top1["adj"], "reason": top1["why"]},
+        {"route_id": top2["route_id"], "raw_score": top2["raw"], "adjusted_score": top2["adj"], "reason": top2["why"]},
+    ],
+    decision=top1["route_id"],            # auto_pick_top1 时直接 top1，否则用户 pick 后回填
+    rationale=f"size={size} task_type={tt} risk={risk} → {top1.route_id} 主路线;{top2.route_id} 备选已 risk overlay 调到 {top2.adj}。",
+    risk_overlay_applied=True,
+    auto_pick_top1=(top1.adj >= 0.9 and top2.adj <= 0.6),
+)
+task_board["routing_matrix_consultation"] = consultation
+
+result = validate_consultation_record(consultation)
+if not result["complete"]:
+    supervisor_log(
+        "BLOCK",
+        result["reason_code"],         # ROUTING_CONSULTATION_MISSING / _MALFORMED
+        f"routing-matrix consultation 不完整：{result['missing']}",
+    )
+    transition(task_board, "PAUSED_ESCALATED")
+    return
+# 通过后才允许进入 § 4.2 呈现 + § 4.3 用户 pick + ROUTE_SELECT → PLAN 转移
+```
+
+**Stop hook**：`hooks/Stop-final-gate.sh` 校验 `task-board.routing_matrix_consultation` 字段存在且通过 schema（`task-board.schema.json` § routing_matrix_consultation 段 minItems:2 / minLength:10）。
+
+**用户 pick 后**：若用户改选 top-2，回写 `consultation["decision"] = top2.route_id` + 重 validate（rationale 长度 / candidate 完整性已在 build 时落，仅需更新 decision）。
+
 ### 4.3 用户 pick 后
 
 - 写 task-board `route_id`
+- 复用 § 4.2.bis `consultation`：若 decision 与用户 pick 不一致，回写 `consultation["decision"]` 并重跑 `validate_consultation_record()`，仍 BLOCK 则 PAUSED_ESCALATED
 - 若用户拒绝 top-2（"都不对"）→ 回 `CLARIFY` 重新分诊（路由误判自身是进化信号，写 `routing_events[]`）
 - 若用户显式要求跳路线（"别走 C，用 B"）→ 遵从，写 `route_changes[]` + audit entry
 
@@ -864,14 +906,22 @@ def sanity_check(task_board):
   - `schemas/task-board.schema.json` `artifacts` 改为 strict `array-of-object` + `required:[path]`，配合 § 7.1 schema gate 写入端拦截
   - § 7.1 状态转移写入新增 step 5：`jsonschema.validate` 写盘前强校验，违例 → `SCHEMA_INVALID` BLOCK + `PAUSED_ESCALATED`，不污染盘上 board
   - 新增 9 测试 case（archive/tests/test_ui_artifacts_robustness.py），全 archive suite 128 PASS
-- **v1.7（2026-04-26，本次）：bootstrap task-board 路径解析单一入口（fix defects-report-2026-04-26.md P1 #6）**
+- v1.7（2026-04-26）：bootstrap task-board 路径解析单一入口（fix defects-report-2026-04-26.md P1 #6，commit 7c0389e）
   - 新增 `archive/path_resolver.py`：`resolve_harnessflow_root()` / `resolve_task_board_path(task_id)` / `resolve_retros_dir()` / `resolve_supervisor_events_dir()` / `resolve_failure_archive_path()`
   - 解析优先级：`HARNESSFLOW_DIR` env > `git rev-parse --show-toplevel` (且 repo.name=harnessFlow) > 默认绝对路径 `/Users/zhongtianyi/work/code/harnessFlow`
   - § 2.1 step 1 重写：废弃 `harnessFlow /task-boards/<task_id>.json`（末尾空格 typo），改 `resolve_task_board_path(task_id)` 单一入口；§ 8.2 skills_invoked.jsonl 同步
   - 新增 11 测试 case（archive/tests/test_path_resolver.py），全 archive suite 139 PASS
+  - 配套 hotfix（commit c6c6fa3）：`failure-archive.schema.json` route enum 与 `task-board.schema.json` route_id 对齐，加入 `C-lite/D-mini/E-lite`，否则 v1.7 (route=C-lite) 走 Stop hook 校验直接 FAIL
+- **v1.8（2026-04-26，本次）：routing matrix 决策 hard gate（fix defects-report-2026-04-26.md P2 #3）**
+  - 新增 `archive/routing_consultation.py`：`build_consultation()` / `validate_consultation_record()` / `REQUIRED_FIELDS` / `REQUIRED_CANDIDATE_FIELDS`
+  - 完整定义：`task_dimensions` (size/task_type/risk 都 str) + `top_candidates` (≥2 dict, 各含 route_id/raw_score/adjusted_score) + `decision` (str) + `rationale` (≥10 chars)
+  - 校验失败返 `ROUTING_CONSULTATION_MISSING`（顶层缺字段）/ `ROUTING_CONSULTATION_MALFORMED`（嵌套形态错）
+  - § 4.2.bis 新增 hard gate：呈现用户**之前**调 `build_consultation` + 落 `task-board.routing_matrix_consultation` + `validate_consultation_record` BLOCK 不通过则 PAUSED_ESCALATED，杜绝 LLM 跳过查表 / 自由裁量"推荐 C 路线"
+  - `schemas/task-board.schema.json` 新增 `routing_matrix_consultation` 字段：required [task_dimensions, top_candidates, decision, rationale] + top_candidates minItems:2 + items.required[route_id, raw_score, adjusted_score] + rationale.minLength:10，配合 § 7.1 schema gate 写盘前拦截
+  - 新增 13 测试 case（archive/tests/test_routing_consultation.py：9 unit + 4 schema），全 archive suite 152 PASS
 
 ---
 
 *主 skill 就位。下游依赖 Phase 6（Supervisor + Verifier subagent）+ Phase 7（failure-archive schema + auto-retro）+ Phase 8（三任务端到端验证）。主 skill 本身不再扩；所有进化通过进化候选走 retro → 人审批 → 外部文档版本化。*
 
-*— v1.7 (defects #6) —*
+*— v1.8 (defects #3) —*

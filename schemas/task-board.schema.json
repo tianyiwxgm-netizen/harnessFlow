@@ -81,6 +81,42 @@
       }
     },
     "routing_events":          {"type": "array"},
+    "routing_matrix_consultation": {
+      "type": ["object", "null"],
+      "description": "v1.8 fix defects #3：ROUTE_SELECT → PLAN 转移前的 routing-matrix 查表证据，缺则 BLOCK ROUTING_CONSULTATION_MISSING",
+      "required": ["task_dimensions", "top_candidates", "decision", "rationale"],
+      "properties": {
+        "task_dimensions": {
+          "type": "object",
+          "required": ["size", "task_type", "risk"],
+          "properties": {
+            "size":      {"type": "string"},
+            "task_type": {"type": "string"},
+            "risk":      {"type": "string"}
+          }
+        },
+        "top_candidates": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["route_id", "raw_score", "adjusted_score"],
+            "properties": {
+              "route_id":       {"type": "string"},
+              "raw_score":      {"type": "number"},
+              "adjusted_score": {"type": "number"},
+              "reason":         {"type": ["string", "null"]}
+            },
+            "additionalProperties": true
+          }
+        },
+        "risk_overlay_applied": {"type": ["boolean", "null"]},
+        "auto_pick_top1":       {"type": ["boolean", "null"]},
+        "decision":             {"type": "string"},
+        "rationale":            {"type": "string", "minLength": 10}
+      },
+      "additionalProperties": true
+    },
     "supervisor_interventions":{"type": "array"},
     "retries":                 {"type": "array"},
     "red_lines":               {"type": "array"},
