@@ -17,6 +17,7 @@ retros/*.md
 retros/*.notes.json
 failure-archive.jsonl
 audit-reports/*.json
+archive/supervisor_wake/state/*.json
 
 # Keep .gitkeep if we ever add one
 !**/.gitkeep

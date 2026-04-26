@@ -337,3 +337,86 @@ v1 不支持。主 skill 拉起时参数一次性敲定。想变只能 RemoteTri
 ## § 10 版本记录
 
 - v1.0（2026-04-16）：首版，3 类干预实装 + 3 类占位 + 3 红线 skeleton + jsonl 事件流 + 异常退避表 + FAQ
+- v1.3（2026-04-26）：增补 § 11 脉冲模式（PostToolUse Wake Hook），解决 Agent 工具不支持 `run_in_background` 的工程约束。
+
+---
+
+## § 11 脉冲模式（v1.3 PostToolUse Wake Hook）
+
+> 设计动机：Claude Code `Agent` 工具不支持 `run_in_background`。supervisor 不能作为长进程后台轮询，必须改为"事件驱动短脉冲"——hook 链上每次 tool call 后触发一次启发式判断，必要时 emit 一条 `additionalContext` 指令让主 skill 在下一轮拉起一个一次性 supervisor 实例。
+
+### § 11.1 触发链
+
+```
+PostToolUse → hooks/PostToolUse-supervisor-wake.sh
+            → archive/supervisor_wake/cli.py → wake.should_pulse()
+            → 满足条件 → emit additionalContext 给主 skill
+            → 主 skill 下一轮 spawn Agent(subagent_type='harnessFlow:supervisor', mode='pulse')
+            → supervisor 跑一次 § 3 干预检测，写一条 INFO/WARN/BLOCK 到
+              supervisor-events/<task_id>.jsonl，立即 exit
+```
+
+### § 11.2 触发启发式（archive/supervisor_wake/wake.py）
+
+`should_pulse()` 在以下任一条件满足且**不在去重窗口内**时返回 should_pulse=True：
+
+| code | 触发条件 |
+|---|---|
+| `CLAUDE_MD_TOUCH` | 任何 Edit/Write 命中 `*/CLAUDE.md` |
+| `STATE_TRANSITION` | task-board.current_state 变化（与上次 supervisor 看到的不同） |
+| `TOOL_CALL_N` | 自上次 pulse 以来累计 ≥ 20 次 tool call |
+| `INITIAL` | 本 task 首次触发 |
+
+优先级：`CLAUDE_MD_TOUCH > STATE_TRANSITION > TOOL_CALL_N > INITIAL`（同时满足取第一个）。
+
+### § 11.3 5 分钟去重
+
+`DEDUP_WINDOW_SEC = 300`。窗口内即使命中触发条件也只 reason 里带 "would have triggered" 标记，不重发。每次实际 pulse 重置 `tool_call_count` 与 `last_pulse_ts`。状态文件：`archive/supervisor_wake/state/<task_id>.json`。
+
+### § 11.4 Pulse-mode subagent 行为
+
+被 hook additionalContext 指引拉起的 supervisor 实例应：
+
+1. 只读 `task-boards/<task_id>.json` + `skills-invoked/<task_id>.jsonl` 最后 50 行
+2. 跑一次 § 3 干预检测（drift / stuck / token_budget / Stub 4-6）
+3. 命中即按 § 5.2 schema 写一条事件到 `supervisor-events/<task_id>.jsonl`
+4. 不命中也写一条 `supervisor_pulse_clean` INFO 留 trace
+5. 完成立即 exit（不轮询，与 § 1.2 § 6 长驻模式互斥）
+
+每次 pulse 是独立短促的（< 30s）；状态全在 `archive/supervisor_wake/state/<task>.json`，subagent 自身无状态。
+
+### § 11.5 工程约束兼容性
+
+| 限制 | 应对 |
+|---|---|
+| Agent 工具无 `run_in_background` | hook 链脉冲 |
+| Hook 无法直接 spawn Agent | hook 写 `hookSpecificOutput.additionalContext`，主 skill 下一轮拉起 |
+| 主 skill 走神 / 上下文切换不会 fire pulse | tool call 计数兜底（每 20 次必触） |
+| 同一 session 多 task 并发 | 状态按 task_id 分文件 |
+| GNU `timeout` 在 macOS 缺失 | 用 Python `signal.alarm(5)` 实现超时 |
+
+### § 11.6 失败模式（最小侵入）
+
+- hook 出错 / Python 不在 PATH → exit 0（永不阻塞用户）
+- 无可识别 task_id（无活动 task-board，全 CLOSED/ABORTED） → exit 0
+- supervisor pulse spawn 失败（主 skill 忽略 additionalContext） → 下次 hook 再说，5 min 后重发
+- state 文件损坏 / JSON parse 失败 → 重建空 state 继续
+
+### § 11.7 注册位置
+
+`.claude/settings.local.json::hooks.PostToolUse[]` 第 2 项（无 matcher，所有 tool 都过）：
+
+```json
+{
+  "hooks": [
+    {
+      "type": "command",
+      "command": "bash \"<repo_root>/hooks/PostToolUse-supervisor-wake.sh\""
+    }
+  ]
+}
+```
+
+### § 11.8 测试
+
+`archive/tests/test_supervisor_wake.py` 13 case，覆盖：去重窗口、各触发码、状态持久、目录自建、payload 容错、状态文件损坏恢复、缺失 task-board 行为。
