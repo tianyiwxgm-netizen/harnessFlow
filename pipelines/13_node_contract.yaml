@@ -1,0 +1,359 @@
+# pipelines/13_node_contract.yaml
+# Slice A 单一真相源 — 13 节点 PMP 5 阶段全集契约
+# 引用：docs/superpowers/specs/2026-04-26-pipeline-graph-A-design.md § 3
+schema_version: "1.0"
+nodes:
+  # -------------------- Initiating --------------------
+  - node_id: N1
+    step: 1
+    phase: initiating
+    name: 任务采集
+    code: task_intake
+    owner_skill: "superpowers:brainstorming + harnessFlow §2 bootstrap"
+    layout: { x: 15, y: 170, w: 105, h: 60 }
+    inputs_required:
+      - { field: initial_user_input, must_exist: true }
+    outputs_produced:
+      - field: _derived.delivery_goal.user_initial_prompt
+        must_exist: true
+      - field: task_id
+        must_exist: true
+    writes_to_field:
+      - _derived.delivery_goal.user_initial_prompt
+    gate_predicate:
+      expression: "task_id != null AND _derived.delivery_goal.user_initial_prompt != null"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N1
+    dashboard_card_mapping: [delivery_goal]
+    edges_out:
+      - { to: N2, kind: forward }
+
+  - node_id: N2
+    step: 2
+    phase: initiating
+    name: 资料收集
+    code: library_collect
+    owner_skill: "native:Agent(@Explore) + WebSearch + ECC:docs-lookup"
+    layout: { x: 135, y: 170, w: 105, h: 60 }
+    inputs_required:
+      - { field: task_id, must_exist: true }
+      - { field: _derived.delivery_goal.user_initial_prompt, must_exist: true }
+    outputs_produced:
+      - field: _derived.project_library.docs
+        must_exist: false
+      - field: _derived.project_library.repos
+        must_exist: false
+      - field: _derived.project_library.process_docs
+        must_exist: false
+    writes_to_field:
+      - _derived.project_library.docs
+      - _derived.project_library.repos
+      - _derived.project_library.process_docs
+    gate_predicate:
+      expression: "len(_derived.project_library.docs) >= 1 OR len(_derived.project_library.repos) >= 1"
+      on_fail: WARN
+    supervisor_pulse_code: node_passed_N2
+    dashboard_card_mapping: [project_library]
+    edges_out:
+      - { to: N3, kind: forward }
+      - { to: N2, kind: rollback, label: "资料/任务不清" }
+
+  - node_id: N3
+    step: 3
+    phase: initiating
+    name: 目标分析+锁定
+    code: goal_analyze_lock
+    owner_skill: "superpowers:brainstorming + harnessFlow §3.3 goal-anchor"
+    layout: { x: 255, y: 170, w: 115, h: 60 }
+    inputs_required:
+      - { field: _derived.delivery_goal.user_initial_prompt, must_exist: true }
+      - { field: _derived.project_library, must_exist: false }
+    outputs_produced:
+      - field: goal_anchor
+        must_exist: true
+      - field: _derived.delivery_goal.locked_goal
+        must_exist: true
+    writes_to_field:
+      - goal_anchor
+      - _derived.delivery_goal.locked_goal
+    gate_predicate:
+      expression: "goal_anchor.hash != null AND _derived.delivery_goal.locked_goal != null AND len(_derived.delivery_goal.locked_goal) > 0"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N3
+    dashboard_card_mapping: [delivery_goal]
+    edges_out:
+      - { to: N4, kind: forward }
+
+  - node_id: N4
+    step: 4
+    phase: initiating
+    name: 项目章程
+    code: project_charter
+    owner_skill: "ECC:prp-prd §charter"
+    layout: { x: 385, y: 170, w: 105, h: 60 }
+    inputs_required:
+      - { field: _derived.delivery_goal, must_exist: true }
+      - { field: goal_anchor, must_exist: true }
+    outputs_produced:
+      - field: _derived.charter
+        must_exist: true
+    writes_to_field:
+      - _derived.charter
+    gate_predicate:
+      expression: "_derived.charter != null AND len(_derived.charter.milestones) >= 1"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N4
+    dashboard_card_mapping: []
+    edges_out:
+      - { to: N5, kind: forward }
+      - { to: N3, kind: rollback, label: "PRD 写不出" }
+
+  # -------------------- Planning --------------------
+  - node_id: N5
+    step: 5
+    phase: planning
+    name: PRD 编写
+    code: prd_write
+    owner_skill: "ECC:prp-prd 阿里风 8 章节"
+    layout: { x: 510, y: 170, w: 100, h: 60 }
+    inputs_required:
+      - { field: _derived.charter, must_exist: true }
+      - { field: _derived.delivery_goal, must_exist: true }
+      - { field: _derived.project_library, must_exist: true }
+    outputs_produced:
+      - field: _derived.prd
+        must_exist: true
+      - field: _derived.prd.features
+        must_exist: true
+      - field: _derived.prd.acceptance_criteria
+        must_exist: true
+    writes_to_field:
+      - _derived.prd
+    gate_predicate:
+      expression: "_derived.prd != null AND len(_derived.prd.features) >= 1 AND len(_derived.prd.acceptance_criteria) >= 1"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N5
+    dashboard_card_mapping: []
+    edges_out:
+      - { to: N6, kind: parallel_split }
+      - { to: N7, kind: parallel_split }
+      - { to: N4, kind: rollback, label: "PRD 写不出" }
+
+  - node_id: N6
+    step: 6
+    phase: planning
+    name: TDD 用例设计
+    code: tdd_design
+    owner_skill: "ECC:tdd-guide (业务维度 + N7 augment 后追加技术维度)"
+    layout: { x: 640, y: 78, w: 125, h: 60 }
+    inputs_required:
+      - { field: _derived.prd.acceptance_criteria, must_exist: true }
+      - { field: _derived.prd.features, must_exist: true }
+      - { field: _derived.tech_design, must_exist: false }
+    outputs_produced:
+      - field: tdd_cases.definitions
+        must_exist: true
+    writes_to_field:
+      - tdd_cases.definitions
+    gate_predicate:
+      expression: "len(tdd_cases.definitions) >= 1"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N6
+    dashboard_card_mapping: [tdd]
+    edges_out:
+      - { to: N8, kind: converge }
+      - { to: N5, kind: rollback, label: "PRD 写不出" }
+
+  - node_id: N7
+    step: 6
+    phase: planning
+    name: 详细技术方案
+    code: tech_design
+    owner_skill: "ECC:prp-plan §architecture"
+    layout: { x: 640, y: 270, w: 125, h: 60 }
+    inputs_required:
+      - { field: _derived.prd, must_exist: true }
+      - { field: _derived.project_library.repos, must_exist: false }
+    outputs_produced:
+      - field: _derived.tech_design
+        must_exist: true
+    writes_to_field:
+      - _derived.tech_design
+    gate_predicate:
+      expression: "_derived.tech_design != null AND _derived.tech_design.architecture != null"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N7
+    dashboard_card_mapping: []
+    edges_out:
+      - { to: N8, kind: converge }
+      - { to: N6, kind: augment, label: "⥃ 补技术 TDD" }
+
+  - node_id: N8
+    step: 7
+    phase: planning
+    name: 范围收口
+    code: scope_finalize
+    owner_skill: "superpowers:brainstorming (派生 + user_confirm dod_expression)"
+    layout: { x: 800, y: 170, w: 100, h: 60 }
+    inputs_required:
+      - { field: _derived.prd.features, must_exist: true }
+      - { field: tdd_cases.definitions, must_exist: true }
+      - { field: _derived.tech_design, must_exist: true }
+      - { field: _derived.delivery_goal.locked_goal, must_exist: true }
+    outputs_produced:
+      - field: _derived.scope.in_scope
+        must_exist: true
+      - field: _derived.scope.out_of_scope
+        must_exist: true
+    writes_to_field:
+      - _derived.scope.in_scope
+      - _derived.scope.out_of_scope
+    gate_predicate:
+      expression: "len(_derived.scope.in_scope) >= 1 AND len(_derived.scope.out_of_scope) >= 1 AND _derived.scope.dod_expression != null"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N8
+    dashboard_card_mapping: [scope]
+    edges_out:
+      - { to: N9, kind: forward }
+
+  - node_id: N9
+    step: 8
+    phase: planning
+    name: WBS 拆解
+    code: wbs_decompose
+    owner_skill: "ECC:prp-plan"
+    layout: { x: 915, y: 170, w: 95, h: 60 }
+    inputs_required:
+      - { field: _derived.scope.in_scope, must_exist: true }
+      - { field: _derived.tech_design, must_exist: true }
+      - { field: _derived.prd.features, must_exist: true }
+    outputs_produced:
+      - field: _derived.wbs
+        must_exist: true
+    writes_to_field:
+      - _derived.wbs
+    gate_predicate:
+      expression: "len(_derived.wbs) >= 1"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N9
+    dashboard_card_mapping: [wbs]
+    edges_out:
+      - { to: N10, kind: forward }
+
+  - node_id: N10
+    step: 9
+    phase: planning
+    name: 执行计划
+    code: execution_plan
+    owner_skill: "ECC:prp-plan §execution-order"
+    layout: { x: 1020, y: 170, w: 100, h: 60 }
+    inputs_required:
+      - { field: _derived.wbs, must_exist: true }
+      - { field: _derived.charter.milestones, must_exist: true }
+      - { field: _derived.dimensions, must_exist: false }
+    outputs_produced:
+      - field: _derived.execution_plan
+        must_exist: true
+    writes_to_field:
+      - _derived.execution_plan
+    gate_predicate:
+      expression: "_derived.execution_plan != null AND len(_derived.execution_plan.order) >= 1"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N10
+    dashboard_card_mapping: []
+    edges_out:
+      - { to: N11, kind: forward }
+
+  # -------------------- Executing --------------------
+  - node_id: N11
+    step: 10
+    phase: executing
+    name: 项目开发 LOOP
+    code: exec_node_loop
+    owner_skill: "ECC:prp-implement + ECC:tdd-guide + harnessFlow:verifier (per-WBS)"
+    layout: { x: 1140, y: 170, w: 135, h: 60 }
+    inputs_required:
+      - { field: _derived.wbs, must_exist: true }
+      - { field: tdd_cases.definitions, must_exist: true }
+      - { field: _derived.tech_design, must_exist: true }
+      - { field: _derived.execution_plan, must_exist: true }
+    outputs_produced:
+      - field: loop_history
+        must_exist: true
+      - field: stage_artifacts
+        must_exist: true
+      - field: tdd_cases.execution_results
+        must_exist: true
+    writes_to_field:
+      - loop_history
+      - stage_artifacts
+      - tdd_cases.execution_results
+    gate_predicate:
+      expression: "len(loop_history) >= 1 AND len(stage_artifacts) >= 1"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N11
+    dashboard_card_mapping: []
+    edges_out:
+      - { to: N12, kind: forward }
+      - { to: N6, kind: augment, label: "↩ 补 TDD" }
+
+  # -------------------- M&C --------------------
+  - node_id: N12
+    step: 11
+    phase: monitoring_controlling
+    name: 质量验证
+    code: quality_verify
+    owner_skill: "harnessFlow:verifier subagent + delivery-checklist 三段证据链"
+    layout: { x: 1295, y: 170, w: 115, h: 60 }
+    inputs_required:
+      - { field: tdd_cases.execution_results, must_exist: true }
+      - { field: stage_artifacts, must_exist: true }
+      - { field: _derived.scope.dod_expression, must_exist: true }
+      - { field: goal_anchor, must_exist: true }
+    outputs_produced:
+      - field: verifier_report
+        must_exist: true
+      - field: dod_expression
+        must_exist: true
+    writes_to_field:
+      - verifier_report
+      - dod_expression
+    gate_predicate:
+      expression: "verifier_report.verdict == 'PASS' AND len(verifier_report.red_lines_detected) == 0"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N12
+    dashboard_card_mapping: [supervision]
+    edges_out:
+      - { to: N13, kind: forward }
+      - { to: N11, kind: rollback, label: "FAIL → 重 loop" }
+
+  # -------------------- Closing --------------------
+  - node_id: N13
+    step: 12
+    phase: closing
+    name: 收尾归档
+    code: close_retro
+    owner_skill: "ECC:prp-commit + ECC:prp-pr + harnessFlow:retro-generator + harnessFlow:failure-archive-writer"
+    layout: { x: 1430, y: 170, w: 210, h: 60 }
+    inputs_required:
+      - { field: verifier_report, must_exist: true }
+      - { field: loop_history, must_exist: true }
+      - { field: stage_artifacts, must_exist: true }
+    outputs_produced:
+      - field: commit_sha
+        must_exist: true
+      - field: retro_link
+        must_exist: true
+      - field: archive_entry_link
+        must_exist: false
+    writes_to_field:
+      - commit_sha
+      - retro_link
+      - archive_entry_link
+    gate_predicate:
+      expression: "commit_sha != null AND retro_link != null"
+      on_fail: BLOCK
+    supervisor_pulse_code: node_passed_N13
+    dashboard_card_mapping: []
+    edges_out:
+      - { to: N12, kind: rollback, label: "commit/PR fail" }
