@@ -35,3 +35,28 @@ def test_n13_is_dag_terminal_no_forward_edges():
     n13 = get_node_def("N13")
     forward_edges = [e for e in n13.edges_out if e.get("kind") == "forward"]
     assert forward_edges == [], f"N13 should have no forward edges, got: {forward_edges}"
+
+
+from pipelines.contract_loader import emit_pipeline_graph
+
+
+def test_emit_pipeline_graph_for_size_m_writes_13_nodes(empty_task_board):
+    graph = emit_pipeline_graph(empty_task_board)
+    assert graph is not None
+    assert len(graph["nodes"]) == 13
+    assert all(n["status"] == "pending" for n in graph["nodes"])
+
+
+def test_emit_pipeline_graph_size_xs_returns_none(xs_task_board):
+    """A 路线 (size=XS) 豁免 pipeline_graph emit。"""
+    graph = emit_pipeline_graph(xs_task_board)
+    assert graph is None
+
+
+def test_emit_pipeline_graph_includes_edges(empty_task_board):
+    graph = emit_pipeline_graph(empty_task_board)
+    edge_kinds = {e["kind"] for e in graph["edges"]}
+    assert "forward" in edge_kinds
+    assert "parallel_split" in edge_kinds
+    assert "converge" in edge_kinds
+    assert "rollback" in edge_kinds
