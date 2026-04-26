@@ -489,6 +489,8 @@
               <span class="lg"><span class="dot" style="background:#e6a23c"></span>rolled_back</span>
               <span class="lg"><span class="dot" style="background:#b388ff"></span>augmenting</span>
             </span>
+            <el-button @click="pipelineFullscreen = true" size="small" type="primary" plain
+                       style="margin-left:auto;">🔍 全屏查看</el-button>
           </div>
           <div class="pipeline-svg-host">
             <svg viewBox="0 0 1660 400" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -550,6 +552,84 @@
             💡 提示：点击任意节点可查看 inputs / outputs / internal_workflow / output_templates 与 <strong>本任务实际数据</strong>
           </div>
         </div>
+
+        <!-- 🔍 全屏 Pipeline 视图 (整图截图用) -->
+        <el-dialog v-model="pipelineFullscreen" fullscreen
+                   :title="'🗺️ Pipeline 流水线 — 全屏视图 · ' + (detail && detail.task_id || '')"
+                   :show-close="true" :destroy-on-close="false">
+          <div v-if="pipelineData" style="width:100%; height:calc(100vh - 120px); display:flex; flex-direction:column;">
+            <div style="padding:8px 12px; background:#f5f7fa; border-radius:4px; margin-bottom:10px; font-size:13px; display:flex; gap:20px; align-items:center; flex-wrap:wrap;">
+              <span>进度 <strong>{{ pipelineData.progress.percentage }}%</strong>
+                ({{ pipelineData.progress.completed }}/{{ pipelineData.progress.total }})</span>
+              <span>当前状态: <strong>{{ pipelineData.current_state || '—' }}</strong></span>
+              <span v-if="pipelineData.current_node_id">当前节点: <strong>{{ pipelineData.current_node_id }}</strong></span>
+              <span style="display:inline-flex; gap:12px; align-items:center; font-size:11px; color:#606266;">
+                <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#67c23a; margin-right:4px;"></span>passed</span>
+                <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#409eff; margin-right:4px;"></span>running</span>
+                <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#c0c4cc; margin-right:4px;"></span>pending</span>
+                <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#f56c6c; margin-right:4px;"></span>failed</span>
+                <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#e6a23c; margin-right:4px;"></span>rolled_back</span>
+                <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#b388ff; margin-right:4px;"></span>augmenting</span>
+              </span>
+              <span style="margin-left:auto; color:#909399; font-size:11px;">💡 此视图按比例占满屏幕，可直接系统截屏 (Cmd+Shift+4)</span>
+            </div>
+            <div style="flex:1; overflow:auto; background:#fafafa; border:1px solid #e4e7ed; border-radius:4px; padding:8px;">
+              <svg viewBox="0 0 1660 400" preserveAspectRatio="xMidYMid meet"
+                   xmlns="http://www.w3.org/2000/svg"
+                   style="width:100%; height:100%; min-height:600px;">
+                <defs>
+                  <marker id="pl-arrow-fs" viewBox="0 0 10 10" refX="9" refY="5"
+                          markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#909399"/>
+                  </marker>
+                  <marker id="pl-arrow-green-fs" viewBox="0 0 10 10" refX="9" refY="5"
+                          markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#67c23a"/>
+                  </marker>
+                  <marker id="pl-arrow-purple-fs" viewBox="0 0 10 10" refX="9" refY="5"
+                          markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#b388ff"/>
+                  </marker>
+                  <marker id="pl-arrow-red-fs" viewBox="0 0 10 10" refX="9" refY="5"
+                          markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#f56c6c"/>
+                  </marker>
+                </defs>
+                <rect class="pl-phase-band" x="20"   y="30" width="320" height="350" fill="#fef0f0"/>
+                <rect class="pl-phase-band" x="350"  y="30" width="850" height="350" fill="#f0f9eb"/>
+                <rect class="pl-phase-band" x="1210" y="30" width="170" height="350" fill="#ecf5ff"/>
+                <rect class="pl-phase-band" x="1390" y="30" width="120" height="350" fill="#fdf6ec"/>
+                <rect class="pl-phase-band" x="1520" y="30" width="120" height="350" fill="#f2e6ff"/>
+                <text class="pl-phase-label" x="180"  y="22" text-anchor="middle">①启动 Initiating</text>
+                <text class="pl-phase-label" x="775"  y="22" text-anchor="middle">②规划 Planning</text>
+                <text class="pl-phase-label" x="1295" y="22" text-anchor="middle">③执行 Executing</text>
+                <text class="pl-phase-label" x="1450" y="22" text-anchor="middle">④监控 M&amp;C</text>
+                <text class="pl-phase-label" x="1580" y="22" text-anchor="middle">⑤收尾 Closing</text>
+
+                <g v-for="e in pipelineData.edges" :key="'fs_' + e.from + '_' + e.to + '_' + (e.kind || 'fwd')">
+                  <path :class="'pl-edge-' + (e.kind || 'forward')" :d="edgePath(e)"/>
+                  <text v-if="e.label" class="pl-edge-label"
+                        :x="edgeLabelXY(e).x" :y="edgeLabelXY(e).y" text-anchor="middle">
+                    {{ e.label }}
+                  </text>
+                </g>
+
+                <g v-for="n in pipelineData.nodes" :key="'fs_' + n.id" @click="openNodeDrawer(n)" style="cursor:pointer;">
+                  <rect :class="'pl-node-rect pl-node-status-' + (n.status || 'pending')"
+                        :x="n.layout.x" :y="n.layout.y"
+                        :width="n.layout.w" :height="n.layout.h"
+                        rx="6" ry="6" stroke-width="2"/>
+                  <text class="pl-node-step"
+                        :x="n.layout.x + 8" :y="n.layout.y + 14">{{ n.id }} · step {{ n.step }}</text>
+                  <text class="pl-node-text"
+                        :x="n.layout.x + n.layout.w / 2"
+                        :y="n.layout.y + n.layout.h / 2 + 4"
+                        text-anchor="middle">{{ n.name }}</text>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </el-dialog>
         </div>
       </template>
 
@@ -1519,6 +1599,7 @@ createApp({
     const pipelineData = ref(null);
     const activeNode = ref(null);
     const nodeDrawerVisible = ref(false);
+    const pipelineFullscreen = ref(false);
 
     const filteredTasks = computed(() => {
       const q = searchQuery.value.toLowerCase();
@@ -1780,7 +1861,7 @@ createApp({
       kbScopeType, kbKindType, healthTagType, metricKeyCn,
       selectTask, previewMd, jumpToKb, toggleAdmin,
       // Slice A pipeline_graph
-      pipelineData, activeNode, nodeDrawerVisible,
+      pipelineData, activeNode, nodeDrawerVisible, pipelineFullscreen,
       loadPipeline, openNodeDrawer, nodeStatusTagType,
       edgePath, edgeLabelXY,
     };
