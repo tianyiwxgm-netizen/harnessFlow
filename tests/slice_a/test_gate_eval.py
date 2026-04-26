@@ -49,3 +49,25 @@ def test_eval_forbidden_import_raises():
 def test_eval_forbidden_lambda_raises():
     with pytest.raises(GateEvalError, match="forbidden"):
         eval_predicate("lambda x: x", {})
+
+
+def test_eval_null_substring_in_field_name_preserved():
+    """Word-boundary replace: `null_field` must stay a Name, not become None_field."""
+    ctx = {"null_field": "set"}
+    assert eval_predicate("null_field != null", ctx) is True
+
+
+def test_eval_chained_comparison():
+    """Compare chain `1 < 2 < 3` evaluates with Python semantics → True."""
+    assert eval_predicate("1 < 2 < 3", {}) is True
+    assert eval_predicate("1 < 3 < 2", {}) is False
+
+
+def test_eval_empty_ctx_missing_field_is_false():
+    assert eval_predicate("a != null", {}) is False
+
+
+def test_eval_error_message_includes_expression():
+    """When eval fails, the original expression is in the error message — not just the AST node name."""
+    with pytest.raises(GateEvalError, match="lambda x: x"):
+        eval_predicate("lambda x: x", {})

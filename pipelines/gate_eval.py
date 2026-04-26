@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import ast
+import re
 from typing import Any
+
+_NULL_TOKEN_RE = re.compile(r"\bnull\b")
 
 
 class GateEvalError(Exception):
@@ -85,11 +88,16 @@ def eval_predicate(expr: str, ctx: dict) -> bool:
     """Eval a gate_predicate expression against task-board ctx.
 
     `null` literal → Python None. AND/OR (uppercase) accepted as alias.
+    `null` is replaced only at word boundaries so `null_field` is preserved.
     """
-    normalized = expr.replace(" AND ", " and ").replace(" OR ", " or ").replace("null", "None")
+    normalized = expr.replace(" AND ", " and ").replace(" OR ", " or ")
+    normalized = _NULL_TOKEN_RE.sub("None", normalized)
     try:
         tree = ast.parse(normalized, mode="eval")
     except SyntaxError as e:
-        raise GateEvalError(f"parse error: {e}")
-    result = _eval(tree, ctx)
+        raise GateEvalError(f"parse error in {expr!r}: {e}") from e
+    try:
+        result = _eval(tree, ctx)
+    except GateEvalError as e:
+        raise GateEvalError(f"{e} (in expr {expr!r})") from e
     return bool(result)
