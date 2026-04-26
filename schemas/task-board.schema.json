@@ -52,7 +52,20 @@
     "dod_expression": {"type": ["string", "null"]},
     "verifier_report": {"type": ["object", "null"]},
     "verifier_report_link": {"type": ["string", "null"]},
-    "artifacts":      {"type": "array"},
+    "artifacts":      {
+      "type": "array",
+      "description": "v1.6 fix defects #5: 严格 array-of-object，禁止字符串/null 元素，防 UI 后端 .get() AttributeError",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path":  {"type": "string"},
+          "type":  {"type": ["string", "null"]},
+          "note":  {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
     "state_history":  {
       "type": "array",
       "items": {

@@ -309,11 +309,39 @@ def _derive_summary(tb: dict) -> str:
     return window.strip() + "…"
 
 
+def _normalize_artifacts(raw: Any) -> list[dict]:
+    """v1.6 fix defects #5: 把 task-board.artifacts 归一为 list[dict].
+
+    schema 规定 artifacts 是 [{path, type, ...}]，但历史 LLM 写入存在
+    [str, str, ...] / [{path}, "str", null, ...] 等违例形态；UI 后端遇到
+    string 元素会 AttributeError ('str' has no .get) → /api/tasks 500 ISE
+    → 整个 UI 列表挂掉。
+
+    本函数把任意输入归一为 list[dict]：
+      - dict           → 原样保留
+      - str            → 降级 {"path": s, "type": "unknown"}
+      - 其他（None/list/int 等） → 直接丢弃 (silent skip)
+
+    UI 后端所有 artifacts 消费点必须先过本函数，避免 strict schema 没就位
+    前老旧 task-board 让前端整体崩。
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for item in raw:
+        if isinstance(item, dict):
+            out.append(item)
+        elif isinstance(item, str):
+            out.append({"path": item, "type": "unknown"})
+        # 其他类型静默跳过，不让单条脏数据拖垮整个端点
+    return out
+
+
 def _derive_delivery_goals(tb: dict) -> list[dict]:
     """From artifacts_expected[] + dod_expression booleans."""
     out = []
     expected = tb.get("artifacts_expected") or []
-    delivered = [a.get("path", "") for a in (tb.get("artifacts") or [])]
+    delivered = [a.get("path", "") for a in _normalize_artifacts(tb.get("artifacts"))]
 
     def is_done(item: str) -> bool:
         for d in delivered:
@@ -573,10 +601,17 @@ def _derive_wbs_packages(tb: dict) -> list[dict]:
 def _wbs_deliverables_for(tb: dict, state: str) -> list[dict]:
     """每 WBS 包对应的产出链接（从 stage_artifacts / artifacts 取相关条目）。"""
     out = []
-    for stage_rec in (tb.get("stage_artifacts") or []):
-        if stage_rec.get("stage_id", "").endswith(state) or state in (stage_rec.get("stage_id") or ""):
-            for art in stage_rec.get("artifacts", []) or []:
-                out.append({"ref": art.get("artifact_ref"), "location": art.get("location", "")})
+    stage_records = tb.get("stage_artifacts")
+    if not isinstance(stage_records, list):
+        return out
+    for stage_rec in stage_records:
+        if not isinstance(stage_rec, dict):
+            continue
+        stage_id = stage_rec.get("stage_id") or ""
+        if not (stage_id.endswith(state) or state in stage_id):
+            continue
+        for art in _normalize_artifacts(stage_rec.get("artifacts")):
+            out.append({"ref": art.get("artifact_ref"), "location": art.get("location", "")})
     return out
 
 

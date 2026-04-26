@@ -417,10 +417,38 @@ Agent({
 2. 读最新 task-board
 3. 写 `state_history[]` append entry：`{state, timestamp, trigger, from_state}`
 4. 更新 `current_state` + `stage`
-5. 原子 rename 写回
-6. 放锁
+5. **schema 强校验**（v1.6 fix defects #5）：写盘前用 `schemas/task-board.schema.json` 跑 `jsonschema.validate`，违例（含 `artifacts` 非 array-of-object）→ 立即 BLOCK，不落盘
+6. 原子 rename 写回
+7. 放锁
 
 **绝不**允许跳过状态（例如 `IMPL` 直接到 `COMMIT`）。违反 → Supervisor BLOCK + 红线。
+
+**v1.6 schema gate（伪代码）**：
+
+```python
+import json
+from pathlib import Path
+import jsonschema
+
+SCHEMA_PATH = Path("schemas/task-board.schema.json")
+
+def write_task_board(tb: dict, path: Path) -> None:
+    schema = json.loads(SCHEMA_PATH.read_text())
+    try:
+        jsonschema.validate(tb, schema)
+    except jsonschema.ValidationError as e:
+        # 单条违例 → 拒写 + BLOCK + 不污染盘上版本
+        supervisor_log("BLOCK", "SCHEMA_INVALID",
+                       diagnosis=f"task-board {path.name} 违反 schema：{e.message}",
+                       evidence=[str(path), e.json_path])
+        transition(tb, "PAUSED_ESCALATED")
+        return  # 不落盘
+    path.write_text(json.dumps(tb, ensure_ascii=False, indent=2))
+```
+
+**触发场景**：
+- 历史 LLM 习惯把 `artifacts` 写成 `["src/foo.py", "src/bar.py"]`（list[str]），而 schema 要求 `[{path, type, ...}, ...]` —— UI 后端 `/api/tasks` 直接 AttributeError → 整个面板挂掉（defects-report P1 #5 现场）
+- v1.6 起：写入端直接拒收，错误集中到任务自己的 PAUSED_ESCALATED + 用户感知 BLOCK，不会再让脏 board 流到下游 UI/auditor
 
 ### 7.2 save-session 触发
 
@@ -800,15 +828,21 @@ def sanity_check(task_board):
 - v1.2（Phase 6 落地）：Supervisor + Verifier subagent + DoD 原语库（commit f6b78b9）
 - v1.3（2026-04-18）：Supervisor wake PostToolUse 桥（fix defects #1，commit 59dcb25）
 - v1.4（2026-04-26）：Stop hook AUTO-RETRO-CLOSE 自动驱动收尾（fix defects #4，commit 3af6850）
-- **v1.5（2026-04-26，本次）：调度序列双层防御（fix defects-report-2026-04-26.md P1 #2）**
+- v1.5（2026-04-26）：调度序列双层防御（fix defects-report-2026-04-26.md P1 #2，commit 778c933）
   - 新增 `archive/sequence_verifier/` 包：`loader.py` + `verifier.py` + `__init__.py`
   - § 2.1 step 3 改硬约束：`list_must_load_memories()` + 必读 `feedback_workflow_*` / `feedback_prp_*`，缺则 `MEMORY_LOAD_INCOMPLETE` 红线
   - § 2.1 step 3.5 新增：`routing_decision_basis_record()` 写 task-board，提供路由依据可审计 trace
   - § 5.1 `execute_route()` 调度前调 `verify_route_sequence()` 校验 planned_steps 与 flow-catalog 一致；mismatch → `PAUSED_ESCALATED` + Supervisor BLOCK
   - 新增 19 测试 case（archive/tests/test_sequence_verifier.py），全 archive suite 119 PASS
+- **v1.6（2026-04-26，本次）：UI artifacts 类型容错 + schema 严格化双层防御（fix defects-report-2026-04-26.md P1 #5）**
+  - 新增 `ui/backend/mock_data._normalize_artifacts()`：把任意类型（dict / str / null / int）归一为 `list[dict]`，str 自动 lift 成 `{path, type:"unknown"}`，其他静默丢弃
+  - 应用于 `_derive_delivery_goals` (mock_data.py:344) + `_wbs_deliverables_for` (mock_data.py:606) 两处 `.get()` 现场
+  - `schemas/task-board.schema.json` `artifacts` 改为 strict `array-of-object` + `required:[path]`，配合 § 7.1 schema gate 写入端拦截
+  - § 7.1 状态转移写入新增 step 5：`jsonschema.validate` 写盘前强校验，违例 → `SCHEMA_INVALID` BLOCK + `PAUSED_ESCALATED`，不污染盘上 board
+  - 新增 9 测试 case（archive/tests/test_ui_artifacts_robustness.py），全 archive suite 128 PASS
 
 ---
 
 *主 skill 就位。下游依赖 Phase 6（Supervisor + Verifier subagent）+ Phase 7（failure-archive schema + auto-retro）+ Phase 8（三任务端到端验证）。主 skill 本身不再扩；所有进化通过进化候选走 retro → 人审批 → 外部文档版本化。*
 
-*— v1.5 (defects #2) —*
+*— v1.6 (defects #5) —*
