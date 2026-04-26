@@ -25,7 +25,12 @@ set -u
 # 不 set -e：我们要继续跑完所有模块再退出
 HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_ROOT="$(cd "$HARNESS_DIR/.." && pwd)"
-CLAUDE_DIR="$PROJECT_ROOT/.claude"
+# standalone repo: .claude/ is inside the repo; parent-repo: .claude/ is one level up
+if [ -d "$HARNESS_DIR/.claude" ]; then
+  CLAUDE_DIR="$HARNESS_DIR/.claude"
+else
+  CLAUDE_DIR="$PROJECT_ROOT/.claude"
+fi
 
 pass=0
 fail=0
@@ -57,8 +62,10 @@ if [ -L "$CLAUDE_DIR/commands/harnessFlow.md" ]; then
   else
     _fail "command symlink target missing: $target"
   fi
+elif [ -f "$CLAUDE_DIR/commands/harnessFlow.md" ]; then
+  _pass ".claude/commands/harnessFlow.md (standalone repo real file · /harnessFlow 已注册)"
 else
-  _fail ".claude/commands/harnessFlow.md not a symlink — /harnessFlow 将被 Claude Code 报 Unknown command"
+  _fail ".claude/commands/harnessFlow.md missing — /harnessFlow 将被 Claude Code 报 Unknown command"
 fi
 
 # === 模块 2: 4 个 subagent 软链 + name 字段 ===
