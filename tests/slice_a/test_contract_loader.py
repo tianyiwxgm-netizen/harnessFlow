@@ -28,3 +28,10 @@ def test_get_node_def_returns_n3_correctly():
 def test_get_node_def_unknown_id_raises():
     with pytest.raises(KeyError, match="N99"):
         get_node_def("N99")
+
+
+def test_n13_is_dag_terminal_no_forward_edges():
+    """N13 (closing/CLOSED) must have no forward edges — it's the DAG terminal."""
+    n13 = get_node_def("N13")
+    forward_edges = [e for e in n13.edges_out if e.get("kind") == "forward"]
+    assert forward_edges == [], f"N13 should have no forward edges, got: {forward_edges}"

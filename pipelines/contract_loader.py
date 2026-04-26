@@ -4,11 +4,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 import yaml
 
 CONTRACT_PATH = Path(__file__).resolve().parent / "13_node_contract.yaml"
+
+
+class IOSpec(TypedDict):
+    field: str
+    must_exist: bool
 
 
 @dataclass
@@ -20,8 +25,8 @@ class NodeDef:
     code: str
     owner_skill: str
     layout: dict
-    inputs_required: list[dict]
-    outputs_produced: list[dict]
+    inputs_required: list[IOSpec]
+    outputs_produced: list[IOSpec]
     writes_to_field: list[str]
     gate_predicate: dict
     supervisor_pulse_code: str
@@ -39,7 +44,10 @@ class Contract:
 def load_contract() -> Contract:
     with CONTRACT_PATH.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
-    nodes = [NodeDef(**n) for n in raw["nodes"]]
+    try:
+        nodes = [NodeDef(**n) for n in raw["nodes"]]
+    except TypeError as exc:
+        raise RuntimeError(f"contract yaml schema drift: {exc}") from exc
     return Contract(schema_version=raw["schema_version"], nodes=nodes)
 
 
