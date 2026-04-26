@@ -25,8 +25,8 @@ def test_backfill_aborted_marks_last_node_failed():
     }
     out = backfill_one(tb)
     pg = out["_derived"]["pipeline"]
-    failed_nodes = [n for n in pg["nodes"] if n["status"] == "failed"]
-    assert len(failed_nodes) >= 1
+    # IMPL was the last real state before ABORTED → step 11 (state_to_step["IMPL"]) is the failed node.
+    assert any(n["step"] == 11 and n["status"] == "failed" for n in pg["nodes"])
 
 
 def test_backfill_size_xs_skips():
