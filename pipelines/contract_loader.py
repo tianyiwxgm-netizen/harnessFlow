@@ -5,9 +5,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import yaml
+
+from pipelines.gate_eval import GateEvalError, eval_predicate
 
 CONTRACT_PATH = Path(__file__).resolve().parent / "13_node_contract.yaml"
 
@@ -98,3 +100,72 @@ def emit_pipeline_graph(task_board: dict) -> dict | None:
         "nodes": nodes_view,
         "edges": all_edges,
     }
+
+
+def _resolve_field(task_board: dict, field_path: str) -> Any:
+    cur: Any = task_board
+    for p in field_path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(p)
+        if cur is None:
+            return None
+    return cur
+
+
+def validate_node_io(
+    task_board: dict, node_id: str, phase: str
+) -> tuple[str, list[dict]]:
+    """Slice A node-level enter/exit gate.
+
+    phase: 'enter' or 'exit'
+    returns: (verdict, violations[])
+      verdict: 'OK' | 'BLOCK'
+      violations: list of {field, reason}
+    """
+    nd = get_node_def(node_id)
+    violations: list[dict] = []
+
+    if phase == "enter":
+        for req in nd.inputs_required:
+            if not req.get("must_exist"):
+                continue
+            field_path = req["field"]
+            val = _resolve_field(task_board, field_path)
+            empty = val is None or val == "" or val == [] or val == {}
+            if empty:
+                violations.append({
+                    "field": field_path,
+                    "reason": "required input missing or empty",
+                })
+        return ("BLOCK" if violations else "OK", violations)
+
+    if phase == "exit":
+        for out in nd.outputs_produced:
+            if not out.get("must_exist"):
+                continue
+            field_path = out["field"]
+            val = _resolve_field(task_board, field_path)
+            if val is None:
+                violations.append({
+                    "field": field_path,
+                    "reason": "declared output not produced",
+                })
+        if not violations:
+            try:
+                ok = eval_predicate(nd.gate_predicate["expression"], task_board)
+            except GateEvalError as e:
+                ok = False
+                violations.append({
+                    "field": "_gate",
+                    "reason": f"gate_predicate parse error: {e}",
+                })
+            if not ok and not violations:
+                violations.append({
+                    "field": "_gate",
+                    "reason": f"gate_predicate failed: {nd.gate_predicate['expression']}",
+                })
+        on_fail = nd.gate_predicate.get("on_fail", "BLOCK")
+        return (on_fail if violations else "OK", violations)
+
+    raise ValueError(f"unknown phase: {phase}")

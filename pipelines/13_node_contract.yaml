@@ -68,7 +68,7 @@ nodes:
     owner_skill: "superpowers:brainstorming + harnessFlow §3.3 goal-anchor"
     layout: { x: 255, y: 170, w: 115, h: 60 }
     inputs_required:
-      - { field: _derived.delivery_goal.user_initial_prompt, must_exist: true }
+      - { field: initial_user_input, must_exist: true }
       - { field: _derived.project_library, must_exist: false }
     outputs_produced:
       - field: goal_anchor
@@ -79,7 +79,7 @@ nodes:
       - goal_anchor
       - _derived.delivery_goal.locked_goal
     gate_predicate:
-      expression: "goal_anchor.hash != null AND _derived.delivery_goal.locked_goal != null AND len(_derived.delivery_goal.locked_goal) > 0"
+      expression: "goal_anchor.hash != null AND _derived.delivery_goal.locked_goal != null AND _derived.delivery_goal.locked_goal != ''"
       on_fail: BLOCK
     supervisor_pulse_code: node_passed_N3
     dashboard_card_mapping: [delivery_goal]
