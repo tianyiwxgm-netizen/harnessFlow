@@ -27,3 +27,11 @@ ui/ui.log
 
 # Git worktrees (superpowers)
 .worktrees/
+
+# Claude Code local settings (personal, not for repo)
+.claude/settings.local.json
+
+# Venv + coverage + egg-info
+.venv/
+.coverage
+*.egg-info/
