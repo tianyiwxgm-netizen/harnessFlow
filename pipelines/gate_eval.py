@@ -13,7 +13,7 @@ class GateEvalError(Exception):
 
 
 _ALLOWED_NODES = (
-    ast.Expression, ast.BoolOp, ast.Compare, ast.Name, ast.Constant,
+    ast.Expression, ast.BoolOp, ast.Compare, ast.Call, ast.Name, ast.Constant,
     ast.Attribute, ast.And, ast.Or, ast.Eq, ast.NotEq, ast.Lt, ast.LtE,
     ast.Gt, ast.GtE, ast.Load,
 )
@@ -48,6 +48,26 @@ def _eval(node: ast.AST, ctx: dict) -> Any:
         return node.value
     if isinstance(node, (ast.Name, ast.Attribute)):
         return _resolve(node, ctx)
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name):
+            raise GateEvalError("forbidden Call: func must be a bare name")
+        if node.func.id != "len":
+            raise GateEvalError(
+                f"forbidden Call: only len() is allowed, got {node.func.id!r}"
+            )
+        if node.keywords:
+            raise GateEvalError("forbidden Call: len() takes no keyword arguments")
+        if len(node.args) != 1:
+            raise GateEvalError("forbidden Call: len() takes exactly one argument")
+        arg_val = _eval(node.args[0], ctx)
+        if arg_val is None:
+            return 0
+        try:
+            return len(arg_val)
+        except TypeError:
+            raise GateEvalError(
+                f"len() argument is not measurable: {type(arg_val).__name__}"
+            )
     if isinstance(node, ast.BoolOp):
         vals = [_eval(v, ctx) for v in node.values]
         if isinstance(node.op, ast.And):
