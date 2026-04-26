@@ -23,6 +23,10 @@ pip install -e ".[dev]"
 # Verify environment
 pytest tests/shared -v   # 69 selfcheck tests, < 1s
 bash scripts/quality_gate.sh
+
+# Use as Claude Code slash command (no extra setup needed after clone)
+# Open this repo in Claude Code → type /harnessFlow <task description>
+# The .claude/commands/harnessFlow.md is auto-discovered by Claude Code
 ```
 
 ## Architecture Constraints (Hard)
