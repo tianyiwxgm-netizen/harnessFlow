@@ -35,7 +35,7 @@
 - **内存**:≥ 2GB(单 project 运行约 600-800MB)
 - **Node 20+**(仅 Dev 贡献者 build frontend 时需要 · End User **零 Node**)
 
-## 🚀 快速开始(从源码 · v1.0 release 前)
+## 🚀 快速开始(从源码)
 
 ```bash
 # 1. clone + 装依赖
@@ -44,26 +44,21 @@ cd harnessFlow
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
 
-# 2. 准备 .env(用 release 前手动)
+# 2. 准备 .env
 cat > .env <<EOF
 LLM_PROVIDER=claude       # claude / deepseek / doubao / local
 ANTHROPIC_API_KEY=sk-...  # 若 LLM_PROVIDER=claude
 EOF
 
-# 3. 跑测试验证装好(~2758 TC)
+# 3. 跑测试验证装好(753 E2E TC · ~41s)
 pytest tests/ -q --cov=app --cov-fail-under=85
 
-# 4. (可选)用作 Claude Code Skill · 在 Claude Code 内调用
-# 详见 CONTRIBUTING.md "Setup" 段
-# v1.1 计划补 BFF + Vue 3 production UI(见 README §"v1.1 roadmap")
+# 4. 用作 Claude Code Skill · 在 Claude Code 内调用 /harnessFlow
+# 详见 harnessFlow-skill.md 和 CONTRIBUTING.md "Setup" 段
 ```
 
-> **v1.0 release 后**(ETA 2-3 周):
-> ```bash
-> pip install harnessflow  # 假 PyPI 已发布
-> harnessflow serve         # CLI(需 pyproject.toml 补 [project.scripts])
-> ```
-> 当前本地跑只能 pytest / 分模块 Python import。
+> **v1.0 现状**:通过 `pytest` + Claude Code Skill 驱动 · 无独立 CLI 可执行文件。
+> v1.1 roadmap:生产级 BFF + Vue 3 frontend + `harnessflow` CLI 入口。
 
 ---
 
@@ -100,14 +95,13 @@ AI 卡死时(连续 3 次 rework · 硬红线命中 · tick drift 超阈):
 
 ### 场景 3:跨 session 恢复
 
-Claude crash / 机器重启后:
-```bash
-harnessflow resume <pid>
-```
+Claude crash / 机器重启后 · L1-09 提供 4 层恢复机制:
 - Tier 1:latest checkpoint 正常恢复(≤60s)
 - Tier 2:checkpoint 坏 · fallback 上一个 + 告警
 - Tier 3:events.jsonl 中间破损 · 跳恢复 + 告警
 - Tier 4:全坏 · **拒绝假恢复** · halt 告警
+
+恢复通过 `app.l1_09` Python API 或 Claude Code Skill 触发 · v1.1 补 CLI 入口。
 
 ---
 
@@ -166,9 +160,8 @@ harnessflow resume <pid>
 |:---|:---|
 | 加新 Skill | `skills/<my_skill>.md` + register · L1-05 自动发现 |
 | 调 DoD 基线阈值 | DoD YAML(`docs/3-3-Solution-Monitoring&Controlling/dod-specs/`) |
-| 接企业 SSO | `bff/auth/`(预留扩展点) |
 | 换 LLM 后端 | `.env`:`LLM_PROVIDER=deepseek/claude/doubao/local` |
-| 加新 L1 能力 | 参考 `docs/DEVELOPER_GUIDE.md § "加新 L1"` |
+| 加新 L1 能力 | 参考 `docs/3-1-Solution-Technical/` 内各 L1 Tech Design |
 | 加新 IC 契约 | `docs/3-1-Solution-Technical/integration/ic-contracts.md` + register |
 
 ---
@@ -177,7 +170,7 @@ harnessflow resume <pid>
 
 ```
 harnessflow/
-├── app/                       后端核心(10 L1 代码 + BFF)
+├── app/                       后端核心(10 L1 代码)
 │   ├── l1_09/                 韧性+审计(脊柱)
 │   ├── project_lifecycle/     L1-02
 │   ├── knowledge_base/        L1-06
@@ -186,11 +179,9 @@ harnessflow/
 │   ├── supervisor/            L1-07
 │   ├── multimodal/            L1-08
 │   ├── quality_loop/          L1-04(Quality Loop)
-│   ├── main_loop/             L1-01(心脏)
-│   └── bff/                   FastAPI 后端
-├── frontend/
-│   └── dist/                  Vite 预编译(End User 不用 build)
-├── tests/                     2758+ TC · 覆盖率 ≥85%
+│   └── main_loop/             L1-01(心脏)
+├── frontend/                  Vue 3 源码(开发者 build · End User 用 Skill)
+├── tests/                     753 E2E TC · 覆盖率 ≥85%
 ├── docs/                      设计文档 + 用户/开发者手册
 ├── projects/                  你的 project 数据(PM-14 分片)
 │   └── <pid>/
@@ -205,12 +196,11 @@ harnessflow/
 
 ## 📚 完整文档
 
-- **[USER_GUIDE.md](docs/USER_GUIDE.md)** — 用户手册(起步 + 典型流程 + 15 FAQ)
-- **[DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)** — 开发者手册(架构 + 扩展)
-- **[API_REFERENCE.md](docs/API_REFERENCE.md)** — 20 IC 契约 + BFF REST endpoint
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** — 10 L1 架构(含 PlantUML)
 - **[CHANGELOG.md](CHANGELOG.md)** — v1.0.0 变更清单
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** — 贡献指南(PR 规范 + DCO)
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — 贡献指南(PR 规范 + 架构约束)
+- **[harnessFlow-skill.md](harnessFlow-skill.md)** — Claude Code Skill 入口说明
+- **[docs/3-1-Solution-Technical/](docs/3-1-Solution-Technical/)** — 10 L1 技术设计文档(154 份)
+- **[docs/3-3-Monitoring-Controlling/](docs/3-3-Monitoring-Controlling/)** — DoD + 硬红线 + 质量规范
 
 ---
 
