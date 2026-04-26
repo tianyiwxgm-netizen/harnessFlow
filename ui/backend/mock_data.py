@@ -31,6 +31,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from pipeline_catalog import derive_pipeline_view
+
 
 HARNESS_ROOT = Path(__file__).resolve().parents[2]  # harnessFlow /
 
@@ -259,6 +261,7 @@ def _enrich_task_board(data: dict, path: Path) -> dict:
         "wbs": _derive_wbs_packages(data),                   # WBS 工作包树 (5 PMP 过程组)
         "monitoring": _derive_pmp_monitoring(data),          # PMP 10 知识领域监督
         "project_library": _derive_project_library(data),    # 项目资料库
+        "pipeline": derive_pipeline_view(data),               # Slice A: 13-node pipeline_graph view
         # legacy (kept for back-compat)
         "delivery_goals": _derive_delivery_goals(data),
         "plan": _derive_plan(data),

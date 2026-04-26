@@ -94,6 +94,14 @@ def task_md(task_id: str, path: str = Query(..., description="harnessFlow-root-r
     return PlainTextResponse(content, media_type="text/plain; charset=utf-8")
 
 
+@app.get("/api/tasks/{task_id}/pipeline")
+def task_pipeline(task_id: str):
+    b = get_task_board(task_id)
+    if not b:
+        raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
+    return (b.get("_derived") or {}).get("pipeline") or {}
+
+
 @app.get("/api/kb")
 def kb_list(kind: str | None = None, scope: str | None = None, project_id: str | None = None):
     entries = mock_knowledge_base()

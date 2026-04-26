@@ -254,6 +254,59 @@
   .artifact-kind.retro { background: #fef0f0; color: #f56c6c; }
   .artifact-kind.plan { background: #f0f9eb; color: #67c23a; }
   .artifact-kind.verifier_report { background: #f2e6ff; color: #8a2be2; }
+  /* ========= Slice A: pipeline_graph styles ========= */
+  .pipeline-wrap { background: #fafbfc; border: 1px solid #ebeef5; border-radius: 6px;
+                   padding: 14px; }
+  .pipeline-toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 12px;
+                       font-size: 12px; color: #606266; flex-wrap: wrap; }
+  .pipeline-progress { font-weight: 600; color: #303133; }
+  .pipeline-legend { display: flex; gap: 12px; font-size: 11px; flex-wrap: wrap; }
+  .pipeline-legend .lg { display: inline-flex; align-items: center; gap: 4px; }
+  .pipeline-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .pipeline-svg-host { width: 100%; overflow-x: auto; background: #fff;
+                       border: 1px solid #ebeef5; border-radius: 4px; padding: 8px 0; }
+  .pipeline-svg-host svg { display: block; min-width: 1660px; height: 400px; }
+  .pl-node-rect { cursor: pointer; transition: opacity 0.15s, stroke-width 0.15s; }
+  .pl-node-rect:hover { stroke-width: 3 !important; opacity: 0.92; }
+  .pl-node-status-passed     { fill: #67c23a; stroke: #4ca027; }
+  .pl-node-status-running    { fill: #409eff; stroke: #2c7be5; }
+  .pl-node-status-pending    { fill: #c0c4cc; stroke: #909399; }
+  .pl-node-status-failed     { fill: #f56c6c; stroke: #cf3a3a; }
+  .pl-node-status-rolled_back{ fill: #e6a23c; stroke: #c08020; }
+  .pl-node-status-augmenting { fill: #b388ff; stroke: #7e3ff2; }
+  .pl-node-text  { fill: #fff; font-size: 13px; font-weight: 600; pointer-events: none;
+                   font-family: -apple-system, 'PingFang SC', sans-serif; }
+  .pl-node-step  { fill: rgba(255,255,255,0.85); font-size: 10px; pointer-events: none; }
+  .pl-edge-forward       { stroke: #909399; stroke-width: 2; fill: none; marker-end: url(#pl-arrow); }
+  .pl-edge-parallel_split{ stroke: #67c23a; stroke-width: 2.2; fill: none; marker-end: url(#pl-arrow-green); }
+  .pl-edge-converge      { stroke: #67c23a; stroke-width: 2.2; fill: none; marker-end: url(#pl-arrow-green); }
+  .pl-edge-augment       { stroke: #b388ff; stroke-width: 2; stroke-dasharray: 5 4; fill: none; marker-end: url(#pl-arrow-purple); }
+  .pl-edge-rollback      { stroke: #f56c6c; stroke-width: 1.6; stroke-dasharray: 4 3; fill: none; marker-end: url(#pl-arrow-red); }
+  .pl-edge-label { fill: #606266; font-size: 10px; font-family: Menlo, monospace; }
+  .pl-phase-band { fill-opacity: 0.4; stroke: none; }
+  .pl-phase-label{ fill: #606266; font-size: 11px; font-weight: 600;
+                    font-family: -apple-system, 'PingFang SC', sans-serif; }
+  /* drawer 4 sections */
+  .pl-drawer-meta { background: #f5f7fa; padding: 10px 14px; border-radius: 4px;
+                    font-size: 12px; line-height: 1.7; margin-bottom: 14px; color: #606266; }
+  .pl-drawer-meta strong { color: #303133; }
+  .pl-section { margin-bottom: 18px; }
+  .pl-section-title { font-size: 13px; font-weight: 600; color: #303133;
+                      border-left: 3px solid #409eff; padding-left: 8px; margin-bottom: 8px; }
+  .pl-list-row { padding: 6px 0; border-bottom: 1px dashed #ebeef5; font-size: 12px;
+                  line-height: 1.6; color: #303133; }
+  .pl-list-row:last-child { border-bottom: 0; }
+  .pl-list-row .role { display: inline-block; min-width: 56px; padding: 1px 6px;
+                       font-size: 10px; border-radius: 3px; margin-right: 6px;
+                       background: #ecf5ff; color: #409eff; font-weight: 600; }
+  .pl-tpl-card { background: #fafbfc; border: 1px solid #ebeef5; border-radius: 4px;
+                  padding: 10px 12px; margin-bottom: 10px; font-size: 12px; }
+  .pl-tpl-card .tpl-name { font-weight: 600; color: #303133; margin-bottom: 4px; }
+  .pl-tpl-card .tpl-path { font-family: Menlo, monospace; font-size: 11px;
+                            color: #606266; margin-bottom: 6px; word-break: break-all; }
+  .pl-tpl-card .tpl-purpose { color: #606266; line-height: 1.6; }
+  .pl-wf-step  { padding: 4px 0; color: #606266; font-size: 12px; }
+  .pl-wf-step::before { content: "▸ "; color: #409eff; }
 </style>
 </head>
 <body>
@@ -413,396 +466,91 @@
           </div>
         </div>
 
-        <el-tabs v-model="activeTab" class="tabs-area">
-          <el-tab-pane name="delivery_goals">
-            <template #label>
-              <span>📘 项目交付目标</span>
-              <el-popover placement="bottom-start" :width="460" trigger="click" @click.stop>
-                <template #reference>
-                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
-                </template>
-                <div style="font-size:13px; line-height:1.7;">
-                  <strong>📘 项目交付目标</strong><br/>
-                  用 100-2000 字说明整个项目的<strong>整体目标</strong>。从初始提示词或相关文档提取，是实现的最终结果。<br/><br/>
-                  <strong>例</strong>：产出交付 1 个从 0 到 1 可生产视频的流水线页面；<strong>交付标准</strong>是可以自动生成 AI 视频。<br/><br/>
-                  <em style="color:#606266;">对应项目启动阶段的「项目章程」；是后续范围 / WBS / 监督的锚。</em>
-                </div>
-              </el-popover>
-            </template>
+        <div class="pipeline-only-view">
+        <div v-if="!pipelineData" class="empty-hint">加载中…</div>
+        <div v-else-if="!(pipelineData.nodes && pipelineData.nodes.length)" class="empty-hint">
+          此任务无 pipeline_graph 数据
+        </div>
+        <div v-else class="pipeline-wrap">
+          <div class="pipeline-toolbar">
+            <span class="pipeline-progress">
+              进度 {{ pipelineData.progress.percentage }}%
+              ({{ pipelineData.progress.completed }}/{{ pipelineData.progress.total }})
+            </span>
+            <span>当前状态: <strong>{{ pipelineData.current_state || '—' }}</strong></span>
+            <span v-if="pipelineData.current_node_id">
+              当前节点: <strong>{{ pipelineData.current_node_id }}</strong>
+            </span>
+            <span class="pipeline-legend">
+              <span class="lg"><span class="dot" style="background:#67c23a"></span>passed</span>
+              <span class="lg"><span class="dot" style="background:#409eff"></span>running</span>
+              <span class="lg"><span class="dot" style="background:#c0c4cc"></span>pending</span>
+              <span class="lg"><span class="dot" style="background:#f56c6c"></span>failed</span>
+              <span class="lg"><span class="dot" style="background:#e6a23c"></span>rolled_back</span>
+              <span class="lg"><span class="dot" style="background:#b388ff"></span>augmenting</span>
+            </span>
+          </div>
+          <div class="pipeline-svg-host">
+            <svg viewBox="0 0 1660 400" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="pl-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#909399"/>
+                </marker>
+                <marker id="pl-arrow-green" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#67c23a"/>
+                </marker>
+                <marker id="pl-arrow-purple" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#b388ff"/>
+                </marker>
+                <marker id="pl-arrow-red" viewBox="0 0 10 10" refX="9" refY="5"
+                        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#f56c6c"/>
+                </marker>
+              </defs>
+              <!-- PMP 5 phase bands (visual zones) -->
+              <rect class="pl-phase-band" x="20"   y="30" width="320" height="350" fill="#fef0f0"/>
+              <rect class="pl-phase-band" x="350"  y="30" width="850" height="350" fill="#f0f9eb"/>
+              <rect class="pl-phase-band" x="1210" y="30" width="170" height="350" fill="#ecf5ff"/>
+              <rect class="pl-phase-band" x="1390" y="30" width="120" height="350" fill="#fdf6ec"/>
+              <rect class="pl-phase-band" x="1520" y="30" width="120" height="350" fill="#f2e6ff"/>
+              <text class="pl-phase-label" x="180"  y="22" text-anchor="middle">①启动 Initiating</text>
+              <text class="pl-phase-label" x="775"  y="22" text-anchor="middle">②规划 Planning</text>
+              <text class="pl-phase-label" x="1295" y="22" text-anchor="middle">③执行 Executing</text>
+              <text class="pl-phase-label" x="1450" y="22" text-anchor="middle">④监控 M&amp;C</text>
+              <text class="pl-phase-label" x="1580" y="22" text-anchor="middle">⑤收尾 Closing</text>
 
-            <div class="section-header">项目交付目标（完整描述 {{ ((detail._derived || {}).delivery_goal || {}).description_length || 0 }} 字）</div>
-            <div class="detail-goal" style="max-height: 280px; overflow-y: auto;">
-              {{ ((detail._derived || {}).delivery_goal || {}).description || detail.initial_user_input || '—' }}
-            </div>
+              <!-- edges -->
+              <g v-for="e in pipelineData.edges" :key="e.from + '_' + e.to + '_' + (e.kind || 'fwd')">
+                <path :class="'pl-edge-' + (e.kind || 'forward')" :d="edgePath(e)"/>
+                <text v-if="e.label" class="pl-edge-label"
+                      :x="edgeLabelXY(e).x" :y="edgeLabelXY(e).y" text-anchor="middle">
+                  {{ e.label }}
+                </text>
+              </g>
 
-            <div class="section-header" style="margin-top:16px;">📐 交付标准（Definition of Done, 机器可 eval）</div>
-            <div v-if="(((detail._derived || {}).delivery_goal || {}).standards || []).length">
-              <div class="dod-standard" v-for="(s, i) in detail._derived.delivery_goal.standards" :key="'dod-' + i">
-                <el-icon color="#67c23a"><CircleCheck /></el-icon>
-                <code>{{ s }}</code>
-              </div>
-            </div>
-            <div v-else class="empty-hint">未拆解交付标准</div>
-
-            <div class="section-header" style="margin-top:16px;">📊 衡量参数</div>
-            <dl class="delivery-grid">
-              <dt>size</dt><dd>{{ detail.size }}</dd>
-              <dt>task_type</dt><dd>{{ detail.task_type }}</dd>
-              <dt>risk</dt><dd>{{ detail.risk }}</dd>
-              <dt>route</dt><dd>{{ detail.route_id || detail.route }}</dd>
-              <dt>expected artifacts</dt><dd>{{ (((detail._derived || {}).delivery_goal || {}).measurements || {}).expected_artifacts_count }}</dd>
-              <dt>final outcome</dt><dd>{{ (((detail._derived || {}).delivery_goal || {}).measurements || {}).final_outcome }}</dd>
-            </dl>
-
-            <div class="section-header" style="margin-top:16px;">💬 初始提示词</div>
-            <div style="padding:10px 14px; font-size:12px; color:#606266; font-style:italic; background:#f5f7fa; border-radius:4px;">
-              {{ ((detail._derived || {}).delivery_goal || {}).user_initial_prompt || '—' }}
-            </div>
-          </el-tab-pane>
-
-          <el-tab-pane name="scope">
-            <template #label>
-              <span>📏 项目范围</span>
-              <el-popover placement="bottom-start" :width="460" trigger="click" @click.stop>
-                <template #reference>
-                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
-                </template>
-                <div style="font-size:13px; line-height:1.7;">
-                  <strong>📏 项目范围</strong><br/>
-                  围绕交付目标要做的<strong>所有内容/功能</strong>。<br/><br/>
-                  <strong>例</strong>：视频知识库、视频生产流水线、脚本管理 等。<br/><br/>
-                  必须明确<strong>包含什么 + 不包含什么（Non-goal）</strong>，防 scope creep。
-                  <br/><em style="color:#606266;">对应项目规划阶段的「范围管理计划」。</em>
-                </div>
-              </el-popover>
-            </template>
-
-            <div class="section-header">三维 + 路线</div>
-            <div style="padding:10px 14px;">
-              <el-tag size="large" type="info">size: {{ (((detail._derived || {}).scope || {}).dimensions || {}).size }}</el-tag>
-              <el-tag size="large" type="info" style="margin-left:8px;">type: {{ (((detail._derived || {}).scope || {}).dimensions || {}).task_type }}</el-tag>
-              <el-tag size="large" :type="riskType(detail.risk)" style="margin-left:8px;">risk: {{ (((detail._derived || {}).scope || {}).dimensions || {}).risk }}</el-tag>
-              <el-tag size="large" type="primary" style="margin-left:8px;">route: {{ (((detail._derived || {}).scope || {}).dimensions || {}).route }}</el-tag>
-            </div>
-
-            <div class="section-header" style="margin-top:12px;">✅ 包含（In-Scope）</div>
-            <div style="padding:10px 14px; font-size:13px; line-height:1.7;">
-              {{ (((detail._derived || {}).scope || {}).included || []).join(' · ') || '—' }}
-            </div>
-
-            <div class="section-header" style="margin-top:12px;">❌ 不包含（Non-goal / Out-of-Scope）</div>
-            <ul v-if="(((detail._derived || {}).scope || {}).excluded || []).length"
-                 style="padding:10px 24px; font-size:13px; line-height:1.8; color:#606266;">
-              <li v-for="(x, i) in detail._derived.scope.excluded" :key="'ex-' + i">{{ x }}</li>
-            </ul>
-            <div v-else class="empty-hint">未显式声明 Non-goal（建议补，防 scope creep）</div>
-
-            <div class="section-header" style="margin-top:12px;">🎯 完整 Goal Anchor（可验证 sha256 锁）</div>
-            <div class="detail-goal" v-if="detail.goal_anchor && detail.goal_anchor.text">
-              <strong>sha256:</strong> <code>{{ (detail.goal_anchor.hash || '').slice(0, 16) }}…</code><br/>
-              <div style="margin-top:6px; max-height:240px; overflow-y:auto;">{{ detail.goal_anchor.text }}</div>
-            </div>
-          </el-tab-pane>
-
-          <el-tab-pane name="project_library">
-            <template #label>
-              <span>📖 项目资料库</span>
-              <el-popover placement="bottom-start" :width="440" trigger="click" @click.stop>
-                <template #reference>
-                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
-                </template>
-                <div style="font-size:13px; line-height:1.7;">
-                  <strong>📖 项目资料库（Project Knowledge Repository）</strong><br/>
-                  围绕整个项目的<strong>资料集合</strong>：仓库、文档、UI、过程文档、进度 等。
-                  跨 session 长期保留，作为新任务启动时的 context 注入。
-                </div>
-              </el-popover>
-            </template>
-
-            <div class="section-header">🗂 关联仓库（{{ (((detail._derived || {}).project_library || {}).repos || []).length }}）</div>
-            <div v-for="(r, i) in ((detail._derived || {}).project_library || {}).repos || []" :key="'repo-' + i"
-                  class="lib-row">
-              <span class="artifact-kind repo">repo</span>
-              <strong>{{ r.name }}</strong>
-              <a :href="r.url" target="_blank" style="color:#409eff;">{{ r.url }}</a>
-              <span style="color:#909399; font-family:Menlo,monospace; font-size:11px;">branch: {{ r.branch }}</span>
-              <span v-if="r.commit && r.commit !== '—'" style="color:#606266; font-family:Menlo,monospace; font-size:11px;">@ {{ r.commit.slice(0,8) }}</span>
-              <span style="margin-left:auto; font-size:11px; color:#606266;">{{ r.role }}</span>
-            </div>
-
-            <div class="section-header" style="margin-top:16px;">📄 文档（{{ (((detail._derived || {}).project_library || {}).docs || []).length }}）</div>
-            <div class="lib-row" v-for="(d, i) in ((detail._derived || {}).project_library || {}).docs || []" :key="'doc-' + i"
-                  @click="previewMd(d.local_path)">
-              <span class="artifact-kind" :class="d.type">{{ d.type }}</span>
-              <strong>{{ d.name }}</strong>
-              <span style="color:#909399; font-size:11px; font-family:Menlo,monospace;">{{ d.local_path }}</span>
-              <span style="margin-left:auto; font-size:11px; color:#606266;">{{ d.size_bytes }} bytes</span>
-              <el-icon><View /></el-icon>
-            </div>
-            <div v-if="!(((detail._derived || {}).project_library || {}).docs || []).length" class="empty-hint">无关联文档</div>
-
-            <div class="section-header" style="margin-top:16px;">🖥️ UI / Web 资源</div>
-            <div class="lib-row" v-for="(u, i) in ((detail._derived || {}).project_library || {}).ui || []" :key="'ui-' + i">
-              <span class="artifact-kind ui">ui</span>
-              <strong>{{ u.name }}</strong>
-              <a :href="u.url" target="_blank" style="color:#409eff;">{{ u.url }}</a>
-              <span style="margin-left:auto; font-size:11px; color:#606266;">{{ u.type }}</span>
-            </div>
-
-            <div class="section-header" style="margin-top:16px;">📋 过程文档</div>
-            <div class="lib-row" v-for="(p, i) in ((detail._derived || {}).project_library || {}).process_docs || []" :key="'pd-' + i"
-                  @click="previewMd(p.path)">
-              <span class="artifact-kind process">{{ p.kind }}</span>
-              <strong>{{ p.path }}</strong>
-              <span style="margin-left:auto; font-size:11px; color:#606266;">{{ p.description }}</span>
-              <el-icon><View /></el-icon>
-            </div>
-
-            <div class="section-header" style="margin-top:16px;">🔗 本任务引用的 KB 条目（{{ (detail.knowledge_refs || []).length }}）</div>
-            <div class="artifact-row" v-for="(r, i) in (detail.knowledge_refs || [])" :key="'kr-' + i"
-                  @click="jumpToKb(r.ref)">
-              <span class="artifact-kind" :class="'kb-' + r.kind">{{ r.kind }}</span>
-              <strong>{{ r.ref }}</strong>
-              <span style="color:#909399;">@{{ r.used_at_stage }}</span>
-              <span style="margin-left:auto; font-size:12px; color:#606266;">{{ r.why }}</span>
-            </div>
-            <div v-if="!(detail.knowledge_refs || []).length" class="empty-hint">无 KB 引用</div>
-          </el-tab-pane>
-
-          <el-tab-pane name="tdd">
-            <template #label>
-              <span>✅ TDD 质量</span>
-              <el-popover placement="bottom-start" :width="420" trigger="click" @click.stop>
-                <template #reference>
-                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
-                </template>
-                <div style="font-size:13px; line-height:1.7;">
-                  <strong>✅ TDD 质量</strong><br/>
-                  测试用例 + 运行结果 + 覆盖率 + flaky。<br/>
-                  所有 case PASS = 质量门放行。<br/>
-                  <em style="color:#606266;">对应项目规划与执行阶段的质量计划与控制。</em>
-                </div>
-              </el-popover>
-            </template>
-            <div style="display:none;">_placeholder_tdd_label_</div>
-            <div class="section-header">TDD cases（{{ (detail.tdd_cases || []).length }}）</div>
-            <div class="tdd-case" v-for="(c, i) in (detail.tdd_cases || [])" :key="'tc-' + i">
-              <el-icon v-if="c.status === 'pass'" color="#67c23a"><CircleCheck /></el-icon>
-              <el-icon v-else-if="c.status === 'fail'" color="#f56c6c"><CircleClose /></el-icon>
-              <el-icon v-else color="#909399"><Clock /></el-icon>
-              <strong :class="'tdd-' + c.status">{{ c.name }}</strong>
-              <span style="color:#909399; font-family:Menlo, monospace; font-size:11px;">{{ c.target }}</span>
-              <span style="margin-left:auto; color:#909399; font-size:11px;">{{ c.primitive }}</span>
-            </div>
-            <div v-if="!(detail.tdd_cases || []).length" class="empty-hint">无 TDD case（来自 verifier_report.evidence_checks）</div>
-
-            <div class="section-header" style="margin-top:16px;">pytest 结果</div>
-            <div v-if="detail.test_results && detail.test_results.total > 0" style="padding: 16px 0;">
-              <el-statistic :value="detail.test_results.total" title="Total" style="display:inline-block; width:20%;" />
-              <el-statistic :value="detail.test_results.passed" title="Passed" style="display:inline-block; width:20%;" value-style="color: #67c23a" />
-              <el-statistic :value="detail.test_results.failed" title="Failed" style="display:inline-block; width:20%;" value-style="color: #f56c6c" />
-              <el-statistic :value="detail.test_results.skipped" title="Skipped" style="display:inline-block; width:20%;" value-style="color: #909399" />
-              <el-statistic :value="(detail.test_results.flaky_rerun || []).length" title="Flaky" style="display:inline-block; width:20%;" />
-            </div>
-            <div v-else class="empty-hint">无 pytest 数据</div>
-          </el-tab-pane>
-
-          <el-tab-pane name="monitoring">
-            <template #label>
-              <span style="color:#909399;">🛡️ Harness 监督</span>
-              <el-popover placement="bottom-start" :width="500" trigger="click" @click.stop>
-                <template #reference>
-                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
-                </template>
-                <div style="font-size:13px; line-height:1.7;">
-                  <strong>🛡️ Harness 监督（8 大 agent-harness 维度）</strong><br/>
-                  参考 LangSmith / Langfuse / AgentOps / Arize / Datadog AI Agents Console 行业主流 agent observability 平台：
-                  <ul style="padding-left:20px; margin:6px 0;">
-                    <li><strong>目标保真度</strong>：goal_anchor sha256 漂移 / CLAUDE.md 篡改</li>
-                    <li><strong>计划对齐</strong>：实际 state 序列 vs 路线骨架偏差</li>
-                    <li><strong>真完成质量</strong>：Verifier 通过率 / 三段证据链 / DoD 布尔 eval</li>
-                    <li><strong>红线与安全</strong>：3 红线 + 跨项目 scope drift</li>
-                    <li><strong>进度与节奏</strong>：耗时 / 工具密度 / 空闲比</li>
-                    <li><strong>成本与预算</strong>：token / $ / context 占用</li>
-                    <li><strong>重试与 Loop</strong>：retry / santa-loop / replan 循环</li>
-                    <li><strong>用户协作</strong>：打断 / 澄清 / 废问题</li>
-                  </ul>
-                </div>
-              </el-popover>
-            </template>
-
-            <div class="section-header">8 大监督维度 · 实时快照（行业对齐：LangSmith / Langfuse / AgentOps / Arize）</div>
-            <div class="pmp-grid">
-              <div v-for="(area, key) in (detail._derived || {}).monitoring || {}" :key="'pmp-' + key"
-                    class="pmp-card" :class="'pmp-' + (area.health || 'green')">
-                <div class="pmp-card-head">
-                  <span class="pmp-card-title">{{ area.label || key }}</span>
-                  <span class="pmp-health-dot" :class="'dot-' + (area.health || 'green')"></span>
-                </div>
-                <div class="pmp-card-desc">{{ area.desc || '' }}</div>
-                <div class="pmp-card-body">
-                  <template v-for="(v, mk) in area" :key="'m-' + mk">
-                    <div class="pmp-metric" v-if="!['label','desc','health'].includes(mk)">
-                      <span class="pmp-metric-key">{{ metricKeyCn[mk] || mk }}</span>
-                      <span class="pmp-metric-val">{{ Array.isArray(v) ? v.join(', ') : (v === null ? '—' : v) }}</span>
-                    </div>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </el-tab-pane>
-
-          <el-tab-pane name="wbs">
-            <template #label>
-              <span>🔧 项目 WBS 工作包</span>
-              <el-popover placement="bottom-start" :width="460" trigger="click" @click.stop>
-                <template #reference>
-                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
-                </template>
-                <div style="font-size:13px; line-height:1.7;">
-                  <strong>🔧 WBS 工作包（Work Breakdown Structure）</strong><br/>
-                  围绕目标并交付范围拆解成分层工作包。<br/>
-                  从上到下最低分 <strong>5 级</strong>工作包，每个工作包建议 ≤ 8 小时 / 2 周。<br/><br/>
-                  <strong>常见类别</strong>：规划 / 方案 / 实现 / 实施 / 测试 / 运维。<br/>
-                  所有工作包完成 = 项目交付完成。<br/>
-                  <em style="color:#606266;">按 5 过程组（启动 / 规划 / 执行 / 监控 / 收尾）分组展示。</em>
-                </div>
-              </el-popover>
-            </template>
-
-            <div class="section-header">WBS 工作包树（{{ ((detail._derived || {}).wbs || []).length }} 个过程组 · 进度 {{ detail.progress_percentage || 0 }}%）</div>
-            <div v-if="((detail._derived || {}).wbs || []).length">
-              <div class="wbs-pg" v-for="(pg, i) in detail._derived.wbs" :key="'pg-' + i"
-                    :style="{ borderLeftColor: pg.color }">
-                <div class="wbs-pg-head">
-                  <span class="wbs-pg-name">{{ pg.name }}</span>
-                  <el-tag :type="pg.status === 'done' ? 'success' : (pg.status === 'in_progress' ? 'primary' : 'info')"
-                           size="small" style="margin-left:10px;">{{ pg.status }}</el-tag>
-                  <span style="margin-left:12px; font-size:11px; color:#909399;">
-                    {{ (pg.pkg_types || []).join(' · ') }}
-                  </span>
-                </div>
-                <div class="wbs-children">
-                  <div class="wbs-step" v-for="(c, j) in pg.children" :key="'wc-' + j">
-                    <el-icon v-if="c.status === 'done'" color="#67c23a" :size="14"><CircleCheck /></el-icon>
-                    <el-icon v-else-if="c.status === 'in_progress'" color="#409eff" :size="14"><Loading /></el-icon>
-                    <el-icon v-else color="#c0c4cc" :size="14"><Clock /></el-icon>
-                    <span class="wbs-step-name">{{ c.name }}</span>
-                    <el-tag size="small" :type="c.status === 'done' ? 'success' : (c.status === 'in_progress' ? 'primary' : 'info')"
-                             effect="plain" style="margin-left:6px;">{{ c.status }}</el-tag>
-                    <span v-if="c.timestamp" style="margin-left:auto; font-size:11px; color:#909399; font-family:Menlo,monospace;">
-                      {{ c.timestamp.slice(5, 16).replace('T', ' ') }}
-                    </span>
-                    <span v-if="(c.deliverables || []).length" style="margin-left:10px; font-size:11px; color:#8a2be2;">
-                      🧾 {{ c.deliverables.length }} 产出
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-else class="empty-hint">无 WBS（task_board 缺 state_history）</div>
-
-            <div class="section-header" style="margin-top:12px;">📌 WBS 分级 ambition</div>
-            <div style="padding:10px 14px; font-size:12px; color:#606266;">
-              v2 现实装 2 级（PMP 5 过程组 L1 + state L2）。v3 目标：自动从 skills_invoked / stage_artifacts 展开到 L3-L5 细节工作包。
-            </div>
-          </el-tab-pane>
-
-          <el-tab-pane label="⏱️ 执行时间轴" name="timeline">
-            <el-timeline>
-              <el-timeline-item v-for="(s, i) in (detail.state_history || [])" :key="i"
-                                 :type="stateTimelineType(s.state)" :timestamp="s.timestamp" placement="top">
-                <div class="timeline-state"><strong>{{ s.state }}</strong>
-                  <span class="timeline-trigger" v-if="s.trigger">← {{ s.trigger }}</span></div>
-                <div v-if="s.reason" style="color:#606266; font-size:12px; margin-top:3px;">{{ s.reason }}</div>
-              </el-timeline-item>
-            </el-timeline>
-          </el-tab-pane>
-
-          <el-tab-pane name="artifacts">
-            <template #label>
-              <span>📂 产出物链接</span>
-              <el-popover placement="bottom-start" :width="440" trigger="click" @click.stop>
-                <template #reference>
-                  <span style="margin-left:4px; cursor:help; color:#909399;">❓</span>
-                </template>
-                <div style="font-size:13px; line-height:1.7;">
-                  <strong>📂 产出物链接（Deliverables）</strong><br/>
-                  每个工作包的<strong>层级过程交付</strong>。<br/>
-                  <strong>不含代码细节</strong>；仅展示链接：仓库地址 + 分支 + 文档 URL / 下载地址。
-                </div>
-              </el-popover>
-            </template>
-
-            <div class="section-header">task-board.artifacts（{{ (detail.artifacts || []).length }} 项，仅链接 / 无代码）</div>
-            <div class="artifact-row" v-for="(a, i) in (detail.artifacts || [])" :key="'ta-' + i">
-              <span class="artifact-kind">{{ a.type || a.kind }}</span>
-              <span style="font-family:Menlo,monospace; font-size:12px;">{{ a.path }}</span>
-              <span style="color:#909399; margin-left:auto;">{{ a.note }}</span>
-            </div>
-            <div v-if="!(detail.artifacts || []).length" class="empty-hint">无 task-board.artifacts</div>
-
-            <div class="section-header" style="margin-top:16px;">文档文件（点击预览 md · 只读，不含源码）</div>
-            <div class="artifact-row" v-for="(f, i) in (detail._artifact_files || [])" :key="'af-' + i"
-                  @click="previewMd(f.path)">
-              <span class="artifact-kind" :class="f.kind">{{ f.kind }}</span>
-              <span>{{ f.name }}</span>
-              <span style="color:#909399; margin-left:auto;">{{ f.size_bytes }} bytes</span>
-              <el-icon><View /></el-icon>
-            </div>
-            <div v-if="!(detail._artifact_files || []).length" class="empty-hint">无关联文件</div>
-          </el-tab-pane>
-
-          <el-tab-pane label="🔄 Loop 历史" name="loop">
-            <div class="section-header">replan / santa-loop / retry-ladder 轨迹</div>
-            <div v-if="(detail.loop_history || []).length">
-              <div class="loop-item" v-for="(l, i) in detail.loop_history" :key="'lh-' + i">
-                <div><strong>iteration {{ l.iteration }}</strong> ·
-                     <el-tag size="small">{{ l.kind }}</el-tag>
-                     · outcome: <span :class="'tdd-' + l.outcome">{{ l.outcome }}</span></div>
-                <div class="trigger">trigger: {{ l.trigger }}</div>
-                <div v-if="l.rev_from" style="font-size:11px; color:#909399;">rev {{ l.rev_from }} → rev {{ l.rev_to }}</div>
-              </div>
-            </div>
-            <div v-else class="empty-hint">无 loop / retry — 这次是一气呵成 🎉</div>
-          </el-tab-pane>
-
-          <el-tab-pane label="📦 交付 Bundle" name="delivery">
-            <dl class="delivery-grid">
-              <dt>Primary artifact</dt><dd>{{ (detail.delivery_bundle || {}).primary_artifact || '—' }}</dd>
-              <dt>Commit SHA</dt><dd>{{ (detail.delivery_bundle || {}).commit_sha || '—' }}</dd>
-              <dt>PR URL</dt><dd>{{ (detail.delivery_bundle || {}).pr_url || '—' }}</dd>
-              <dt>Retro link</dt><dd>{{ (detail.delivery_bundle || {}).retro_link || '—' }}</dd>
-              <dt>Archive entry</dt><dd>{{ (detail.delivery_bundle || {}).archive_entry_link || '—' }}</dd>
-              <dt>User consumable</dt>
-              <dd><el-tag :type="(detail.delivery_bundle || {}).user_consumable ? 'success' : 'warning'">
-                {{ (detail.delivery_bundle || {}).user_consumable ? 'Yes' : 'Pending' }}</el-tag></dd>
-              <dt>Delivered at</dt><dd>{{ (detail.delivery_bundle || {}).delivered_at || '—' }}</dd>
-              <dt>Final outcome</dt>
-              <dd><el-tag :type="detail.final_outcome === 'success' ? 'success' : 'info'">
-                {{ detail.final_outcome || 'in progress' }}</el-tag></dd>
-            </dl>
-          </el-tab-pane>
-
-          <el-tab-pane label="🔍 Verifier 证据链" name="verifier">
-            <div v-if="detail.verifier_report">
-              <el-tag :type="detail.verifier_report.overall === 'PASS' ? 'success' : 'danger'" size="large">
-                {{ detail.verifier_report.overall }}
-              </el-tag>
-              <span style="margin-left:12px; color:#606266;">
-                evaluator: {{ detail.verifier_report.evaluator }}
-              </span>
-
-              <div class="section-header" style="margin-top:14px;">三段证据</div>
-              <div style="padding: 12px 16px; font-size: 13px; line-height: 1.7;">
-                <div><strong>存在证据:</strong> {{ ((detail.verifier_report.three_segments || {}).existence_evidence) || '—' }}</div>
-                <div style="margin-top:8px;"><strong>行为证据:</strong> {{ ((detail.verifier_report.three_segments || {}).behavior_evidence) || '—' }}</div>
-                <div style="margin-top:8px;"><strong>质量证据:</strong> {{ ((detail.verifier_report.three_segments || {}).quality_evidence) || '—' }}</div>
-              </div>
-            </div>
-            <div v-else class="empty-hint">暂无 verifier_report</div>
-          </el-tab-pane>
-        </el-tabs>
+              <!-- nodes -->
+              <g v-for="n in pipelineData.nodes" :key="n.id" @click="openNodeDrawer(n)" style="cursor:pointer;">
+                <rect :class="'pl-node-rect pl-node-status-' + (n.status || 'pending')"
+                      :x="n.layout.x" :y="n.layout.y"
+                      :width="n.layout.w" :height="n.layout.h"
+                      rx="6" ry="6" stroke-width="2"/>
+                <text class="pl-node-step"
+                      :x="n.layout.x + 8" :y="n.layout.y + 14">{{ n.id }} · step {{ n.step }}</text>
+                <text class="pl-node-text"
+                      :x="n.layout.x + n.layout.w / 2"
+                      :y="n.layout.y + n.layout.h / 2 + 4"
+                      text-anchor="middle">{{ n.name }}</text>
+              </g>
+            </svg>
+          </div>
+          <div style="margin-top:10px; font-size:11px; color:#909399;">
+            💡 提示：点击任意节点可查看 inputs / outputs / internal_workflow / output_templates 与 <strong>本任务实际数据</strong>
+          </div>
+        </div>
+        </div>
       </template>
 
       <template v-else-if="currentView === 'tasks' && !detail">
@@ -1380,6 +1128,347 @@
   <el-dialog v-model="mdDialogVisible" :title="mdDialogPath" width="70%" top="5vh">
     <div class="md-renderer" v-html="mdRendered"></div>
   </el-dialog>
+
+  <el-drawer v-model="nodeDrawerVisible" direction="rtl" size="50%"
+             :title="activeNode ? (activeNode.id + ' · ' + activeNode.name) : '节点详情'"
+             :destroy-on-close="true">
+    <div v-if="activeNode" style="padding: 0 4px;">
+      <div class="pl-drawer-meta">
+        <div><strong>阶段</strong>: {{ activeNode.phase }} ｜ <strong>step</strong>: {{ activeNode.step }} ｜
+             <strong>状态</strong>:
+             <el-tag :type="nodeStatusTagType(activeNode.status)" size="small" style="margin-left:4px;">
+               {{ activeNode.status || 'pending' }}
+             </el-tag>
+        </div>
+        <div><strong>负责 skill</strong>: <code>{{ activeNode.owner_skill }}</code></div>
+        <div v-if="activeNode.started_at || activeNode.completed_at">
+          <strong>时间戳</strong>:
+          <span v-if="activeNode.started_at">started {{ activeNode.started_at }}</span>
+          <span v-if="activeNode.completed_at"> · completed {{ activeNode.completed_at }}</span>
+        </div>
+      </div>
+
+      <div class="pl-section">
+        <div class="pl-section-title">📥 inputs（依赖输入 · {{ (activeNode.inputs || []).length }}）</div>
+        <div v-if="!activeNode.inputs || !activeNode.inputs.length" class="empty-hint">无依赖输入（启动节点）</div>
+        <div v-else>
+          <div v-for="(inp, i) in activeNode.inputs" :key="i" class="pl-list-row">
+            <span class="role">{{ inp.required ? 'required' : 'optional' }}</span>
+            <strong>{{ inp.name }}</strong>
+            <span style="color:#909399;"> · {{ inp.type }}</span>
+            <span v-if="inp.from"> · 来源 <code>{{ inp.from }}</code></span>
+            <div v-if="inp.field" style="margin:3px 0 0 62px; color:#606266; font-size:11px;">
+              字段路径: <code>{{ inp.field }}</code>
+            </div>
+            <div v-if="inp.desc" style="margin:3px 0 0 62px; color:#606266;">{{ inp.desc }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pl-section">
+        <div class="pl-section-title">📂 outputs（产出契约 · 静态 {{ (activeNode.outputs_static || []).length }} ／ 实际 {{ (activeNode.outputs_actual || []).length }}）</div>
+        <div v-if="!(activeNode.outputs_static && activeNode.outputs_static.length)" class="empty-hint">无产出契约</div>
+        <div v-else>
+          <div v-for="(out, i) in activeNode.outputs_static" :key="'s' + i" class="pl-list-row">
+            <span class="role">contract</span>
+            <code>{{ out.path }}</code>
+            <span style="color:#909399;"> · {{ out.type }}</span>
+            <span v-if="out.size_hint" style="color:#909399;"> · {{ out.size_hint }}</span>
+            <div v-if="out.consumed_by && out.consumed_by.length" style="margin:3px 0 0 62px; color:#606266; font-size:11px;">
+              下游消费: <code v-for="c in out.consumed_by" :key="c" style="margin-right:4px;">{{ c }}</code>
+            </div>
+            <div v-if="out.schema" style="margin:3px 0 0 62px; color:#606266; font-family:Menlo,monospace; font-size:11px;">
+              schema: {{ out.schema }}
+            </div>
+          </div>
+          <div v-if="activeNode.outputs_actual && activeNode.outputs_actual.length"
+               style="margin-top:10px; padding-top:8px; border-top:1px dashed #ebeef5;">
+            <div style="font-size:11px; color:#67c23a; font-weight:600; margin-bottom:4px;">✓ 实际产出</div>
+            <div v-for="(out, i) in activeNode.outputs_actual" :key="'a' + i" class="pl-list-row">
+              <span class="role" style="background:#f0f9eb; color:#67c23a;">actual</span>
+              <code>{{ out.path || out.field || out.name || JSON.stringify(out) }}</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pl-section">
+        <div class="pl-section-title">🔧 internal_workflow（内部工作流 · {{ (activeNode.internal_workflow || []).length }} 步）</div>
+        <div v-if="!activeNode.internal_workflow || !activeNode.internal_workflow.length" class="empty-hint">未声明内部工作流</div>
+        <div v-else>
+          <div v-for="(s, i) in activeNode.internal_workflow" :key="i" class="pl-wf-step">{{ s }}</div>
+        </div>
+      </div>
+
+      <div class="pl-section">
+        <div class="pl-section-title">📐 output_templates（产出模板 · {{ (activeNode.output_templates || []).length }} 份）</div>
+        <div v-if="!activeNode.output_templates || !activeNode.output_templates.length" class="empty-hint">未声明产出模板</div>
+        <div v-else>
+          <div v-for="(t, i) in activeNode.output_templates" :key="i" class="pl-tpl-card">
+            <div class="tpl-name">📄 {{ t.framework || t.name || ('模板 ' + (i + 1)) }}</div>
+            <div v-if="t.for" class="tpl-path">写入: {{ t.for }}</div>
+            <div v-if="t.skeleton" style="margin-top:6px; padding:8px; background:#fff;
+                      border:1px solid #ebeef5; border-radius:3px; font-family:Menlo,monospace;
+                      font-size:11px; white-space:pre-wrap; line-height:1.5; color:#303133;
+                      max-height:240px; overflow:auto;">{{ t.skeleton }}</div>
+            <div v-else-if="t.purpose || t.desc" class="tpl-purpose">{{ t.purpose || t.desc }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pl-section pl-actual-data" style="background:#fdf9f0; border-radius:6px; padding:12px;">
+        <div class="pl-section-title">📊 本任务实际数据（{{ activeNode.id }} · {{ activeNode.name }}）</div>
+
+        <!-- N1 任务采集 -->
+        <div v-if="activeNode.id === 'N1'">
+          <div class="pl-list-row"><span class="role">user_request</span>
+            <div style="margin-top:4px; padding:8px; background:#fff; border-radius:4px; font-size:12px; line-height:1.6;">{{ detail.user_request || detail.initial_user_input || ((detail._derived || {}).delivery_goal || {}).user_initial_prompt || '—' }}</div>
+          </div>
+          <div class="pl-list-row"><span class="role">task_id</span><code>{{ detail.task_id }}</code></div>
+          <div class="pl-list-row"><span class="role">created_at</span>{{ detail.created_at }}</div>
+          <div class="pl-list-row"><span class="role">scope</span>{{ detail._scope }}</div>
+          <div class="pl-list-row"><span class="role">三维</span>
+            <el-tag size="small">size: {{ detail.size }}</el-tag>
+            <el-tag size="small" type="info" style="margin-left:4px;">{{ detail.task_type }}</el-tag>
+            <el-tag size="small" :type="riskType(detail.risk)" style="margin-left:4px;">risk: {{ detail.risk }}</el-tag>
+          </div>
+        </div>
+
+        <!-- N2 资料收集 -->
+        <div v-else-if="activeNode.id === 'N2'">
+          <div v-if="!((detail._derived || {}).project_library)" class="empty-hint">未登记资料库</div>
+          <template v-else>
+            <div class="pl-list-row"><span class="role">repos · {{ (((detail._derived || {}).project_library || {}).repos || []).length }}</span>
+              <ul style="margin:4px 0 0 16px; padding:0; font-size:12px; color:#606266;">
+                <li v-for="(r, i) in ((detail._derived || {}).project_library || {}).repos || []" :key="i">{{ r.path || r }}</li>
+              </ul>
+            </div>
+            <div class="pl-list-row"><span class="role">docs · {{ (((detail._derived || {}).project_library || {}).docs || []).length }}</span>
+              <ul style="margin:4px 0 0 16px; padding:0; font-size:12px; color:#606266;">
+                <li v-for="(d, i) in ((detail._derived || {}).project_library || {}).docs || []" :key="i">
+                  <a href="javascript:void(0)" @click="previewMd(d.path || d)"><code>{{ d.path || d }}</code></a>
+                </li>
+              </ul>
+            </div>
+            <div class="pl-list-row"><span class="role">process_docs · {{ (((detail._derived || {}).project_library || {}).process_docs || []).length }}</span>
+              <ul style="margin:4px 0 0 16px; padding:0; font-size:12px; color:#606266;">
+                <li v-for="(p, i) in ((detail._derived || {}).project_library || {}).process_docs || []" :key="i">{{ p.path || p }}</li>
+              </ul>
+            </div>
+          </template>
+        </div>
+
+        <!-- N3 目标分析+锁定 -->
+        <div v-else-if="activeNode.id === 'N3'">
+          <div class="pl-list-row"><span class="role">delivery_goal</span>
+            <div style="margin-top:4px; padding:10px; background:#fff; border-left:3px solid #e6a23c; border-radius:4px; font-size:12px; line-height:1.7; max-height:240px; overflow-y:auto;">
+              {{ ((detail._derived || {}).delivery_goal || {}).description || detail.user_request || '—' }}
+            </div>
+          </div>
+          <div class="pl-list-row"><span class="role">三维</span>
+            size={{ detail.size }} · type={{ detail.task_type }} · risk={{ detail.risk }}
+          </div>
+          <div class="pl-list-row" v-if="detail.dod_expression">
+            <span class="role">DoD</span>
+            <ul v-if="Array.isArray(detail.dod_expression)" style="margin:4px 0 0 16px; padding:0; font-family:Menlo,monospace; font-size:11px; color:#606266;">
+              <li v-for="(d, i) in detail.dod_expression" :key="i"><code>{{ d }}</code></li>
+            </ul>
+            <pre v-else style="margin:4px 0 0; padding:8px; background:#fff; border-radius:4px; font-family:Menlo,monospace; font-size:11px; line-height:1.5; max-height:200px; overflow:auto; white-space:pre-wrap; word-break:break-all;">{{ detail.dod_expression }}</pre>
+          </div>
+        </div>
+
+        <!-- N4 项目章程 -->
+        <div v-else-if="activeNode.id === 'N4'">
+          <div v-if="!detail.goal_anchor" class="empty-hint">未生成 goal-anchor</div>
+          <template v-else>
+            <div class="pl-list-row"><span class="role">hash</span><code>{{ (detail.goal_anchor || {}).hash || '—' }}</code></div>
+            <div class="pl-list-row"><span class="role">claude_md</span><code>{{ (detail.goal_anchor || {}).claude_md_path || '—' }}</code></div>
+            <div class="pl-list-row" v-if="(detail.goal_anchor || {}).text">
+              <span class="role">text</span>
+              <div style="margin-top:4px; padding:8px; background:#fff; border-radius:4px; font-size:12px; line-height:1.6; max-height:200px; overflow-y:auto;">{{ detail.goal_anchor.text }}</div>
+            </div>
+            <div class="pl-list-row"><span class="role">route</span>{{ detail.route_id || detail.route || '—' }}</div>
+          </template>
+        </div>
+
+        <!-- N5 PRD 编写 -->
+        <div v-else-if="activeNode.id === 'N5'">
+          <div class="empty-hint">本任务未单独记录 PRD（v2.0 起 harnessFlow 主 skill 强制写入此字段）</div>
+        </div>
+
+        <!-- N6 TDD 用例设计 -->
+        <div v-else-if="activeNode.id === 'N6'">
+          <div v-if="!detail.tdd_cases || !detail.tdd_cases.length" class="empty-hint">未声明 TDD 用例</div>
+          <div v-else>
+            <div v-for="(c, i) in detail.tdd_cases" :key="i" class="pl-tpl-card" style="background:#fff;">
+              <div class="tpl-name">{{ c.id || ('case-' + (i + 1)) }}
+                <el-tag size="small" style="margin-left:6px;"
+                        :type="c.status === 'pass' ? 'success' : (c.status === 'fail' ? 'danger' : 'info')">
+                  {{ c.status || 'pending' }}
+                </el-tag>
+              </div>
+              <div v-if="c.given" style="font-size:11px; color:#606266; margin-top:4px;"><strong>given</strong>: {{ c.given }}</div>
+              <div v-if="c.when" style="font-size:11px; color:#606266;"><strong>when</strong>: {{ c.when }}</div>
+              <div v-if="c.then" style="font-size:11px; color:#606266;"><strong>then</strong>: {{ c.then }}</div>
+              <div v-if="c.verified_at" style="font-size:11px; color:#909399;">verified_at: {{ c.verified_at }}</div>
+              <div v-if="!c.given && !c.when && !c.then && (c.title || c.desc || c.name)" style="font-size:11px; color:#606266; margin-top:4px;">{{ c.title || c.desc || c.name }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- N7 详细技术方案 -->
+        <div v-else-if="activeNode.id === 'N7'">
+          <div class="empty-hint">本任务未单独记录详细技术方案（v2.0 起强制写入 tech_design + api_contracts）</div>
+        </div>
+
+        <!-- N8 范围收口 -->
+        <div v-else-if="activeNode.id === 'N8'">
+          <div class="pl-list-row"><span class="role">in-scope</span>
+            <ul v-if="(((detail._derived || {}).scope || {}).included || []).length" style="margin:4px 0 0 16px; padding:0; font-size:12px; color:#606266;">
+              <li v-for="(x, i) in ((detail._derived || {}).scope || {}).included || []" :key="i">{{ x }}</li>
+            </ul>
+            <span v-else style="color:#909399;">—</span>
+          </div>
+          <div class="pl-list-row"><span class="role">out-of-scope</span>
+            <ul v-if="(((detail._derived || {}).scope || {}).excluded || []).length" style="margin:4px 0 0 16px; padding:0; font-size:12px; color:#606266;">
+              <li v-for="(x, i) in ((detail._derived || {}).scope || {}).excluded || []" :key="i">{{ x }}</li>
+            </ul>
+            <span v-else style="color:#909399;">—</span>
+          </div>
+          <div class="pl-list-row" v-if="detail.dod_expression">
+            <span class="role">DoD 表达式</span>
+            <ul v-if="Array.isArray(detail.dod_expression)" style="margin:4px 0 0 16px; padding:0; font-family:Menlo,monospace; font-size:11px; color:#606266;">
+              <li v-for="(d, i) in detail.dod_expression" :key="i"><code>{{ d }}</code></li>
+            </ul>
+            <pre v-else style="margin:4px 0 0; padding:8px; background:#fff; border-radius:4px; font-family:Menlo,monospace; font-size:11px; line-height:1.5; max-height:200px; overflow:auto; white-space:pre-wrap; word-break:break-all;">{{ detail.dod_expression }}</pre>
+          </div>
+        </div>
+
+        <!-- N9 WBS 拆解 -->
+        <div v-else-if="activeNode.id === 'N9'">
+          <div v-if="!((detail._derived || {}).wbs || []).length" class="empty-hint">未拆解 WBS</div>
+          <div v-else>
+            <div v-for="(wp, i) in (detail._derived || {}).wbs || []" :key="i" class="pl-list-row" style="background:#fff; padding:8px; border-radius:4px; margin-bottom:6px;">
+              <span class="role">{{ wp.id || ('WP-' + (i + 1)) }}</span>
+              <strong>{{ wp.name || wp.title || wp.summary }}</strong>
+              <el-tag v-if="wp.status" size="small" style="margin-left:6px;"
+                      :type="wp.status === 'done' ? 'success' : (wp.status === 'fail' ? 'danger' : 'info')">{{ wp.status }}</el-tag>
+              <div v-if="wp.depends_on && wp.depends_on.length" style="margin:3px 0 0 62px; color:#606266; font-size:11px;">
+                依赖: <code v-for="(d, j) in wp.depends_on" :key="j" style="margin-right:4px;">{{ d }}</code>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- N10 执行计划 -->
+        <div v-else-if="activeNode.id === 'N10'">
+          <div v-if="!(detail._derived || {}).monitoring && !(detail._derived || {}).plan" class="empty-hint">未生成执行计划</div>
+          <template v-else>
+            <div class="pl-list-row" v-if="(detail._derived || {}).plan">
+              <span class="role">plan</span>
+              <pre style="margin:4px 0 0; padding:8px; background:#fff; border-radius:4px; font-size:11px; line-height:1.5; max-height:200px; overflow:auto;">{{ JSON.stringify((detail._derived || {}).plan, null, 2) }}</pre>
+            </div>
+            <div class="pl-list-row" v-if="(detail._derived || {}).monitoring">
+              <span class="role">PMP 监控</span>
+              <pre style="margin:4px 0 0; padding:8px; background:#fff; border-radius:4px; font-size:11px; line-height:1.5; max-height:280px; overflow:auto;">{{ JSON.stringify((detail._derived || {}).monitoring, null, 2) }}</pre>
+            </div>
+          </template>
+        </div>
+
+        <!-- N11 项目开发 LOOP -->
+        <div v-else-if="activeNode.id === 'N11'">
+          <div class="pl-list-row"><span class="role">loop_history · {{ (detail.loop_history || []).length }}</span></div>
+          <div v-if="!(detail.loop_history || []).length" class="empty-hint" style="margin-left:12px;">无 loop 记录</div>
+          <div v-for="(loop, i) in detail.loop_history || []" :key="i" class="pl-tpl-card" style="background:#fff;">
+            <div class="tpl-name">
+              <span v-if="loop.iteration !== undefined">iter #{{ loop.iteration }}</span>
+              <span v-else>{{ loop.wp_id || loop.id || ('loop-' + (i + 1)) }}</span>
+              <el-tag size="small" style="margin-left:6px;"
+                      :type="(loop.outcome || loop.status) === 'success' || (loop.outcome || loop.status) === 'done' ? 'success' : ((loop.outcome || loop.status) === 'fail' ? 'danger' : 'info')">
+                {{ loop.outcome || loop.status || '—' }}
+              </el-tag>
+              <el-tag v-if="loop.kind" size="small" type="info" style="margin-left:4px;">{{ loop.kind }}</el-tag>
+            </div>
+            <div v-if="loop.trigger" style="font-size:11px; color:#606266;">trigger: {{ loop.trigger }}</div>
+            <div v-if="loop.started_at" style="font-size:11px; color:#909399;">started: {{ loop.started_at }}</div>
+            <div v-if="loop.resolved_at" style="font-size:11px; color:#909399;">resolved: {{ loop.resolved_at }}</div>
+            <div v-if="loop.commit_sha" style="font-size:11px; color:#606266;">commit: <code>{{ loop.commit_sha }}</code></div>
+            <div v-if="loop.summary" style="font-size:11px; color:#606266; margin-top:4px;">{{ loop.summary }}</div>
+          </div>
+
+          <div class="pl-list-row" style="margin-top:10px;"><span class="role">stage_artifacts · {{ (detail.stage_artifacts || []).length }}</span></div>
+          <div v-if="(detail.stage_artifacts || []).length" style="max-height:240px; overflow-y:auto;">
+            <div v-for="(sa, i) in detail.stage_artifacts || []" :key="i" style="margin:6px 0 0 12px; padding:6px 8px; background:#fff; border-radius:3px; font-size:11px;">
+              <div style="color:#909399;"><code>{{ sa.stage_id || sa.stage || '—' }}</code> <span v-if="sa.ts">· {{ sa.ts }}</span></div>
+              <ul v-if="(sa.artifacts || []).length" style="margin:3px 0 0 14px; padding:0; color:#606266;">
+                <li v-for="(art, j) in sa.artifacts" :key="j">
+                  <code>{{ art.artifact_ref || art.kind || 'artifact' }}</code>: <code style="font-size:10px;">{{ art.location || art.path || '—' }}</code>
+                  <span v-if="art.size_bytes" style="color:#909399;"> ({{ art.size_bytes }}B)</span>
+                </li>
+              </ul>
+              <div v-else style="color:#606266;"><code>{{ sa.path || JSON.stringify(sa).slice(0, 80) }}</code></div>
+            </div>
+          </div>
+          <div v-else class="empty-hint" style="margin-left:12px;">无 stage_artifacts</div>
+
+          <div class="pl-list-row" style="margin-top:10px;"><span class="role">supervisor · {{ (detail.supervisor_interventions || []).length }}</span></div>
+          <div v-if="!(detail.supervisor_interventions || []).length" class="empty-hint" style="margin-left:12px;">无监督事件</div>
+          <div v-for="(s, i) in detail.supervisor_interventions || []" :key="i" style="margin:4px 0 0 12px; font-size:11px;">
+            <el-tag size="small" :type="s.level === 'BLOCK' ? 'danger' : (s.level === 'WARN' ? 'warning' : 'info')">{{ s.level }}</el-tag>
+            <code style="margin-left:4px;">{{ s.code }}</code>
+            <span v-if="s.diagnosis" style="color:#606266;"> · {{ s.diagnosis }}</span>
+          </div>
+        </div>
+
+        <!-- N12 质量验证 -->
+        <div v-else-if="activeNode.id === 'N12'">
+          <div v-if="!detail.verifier_report" class="empty-hint">未生成 verifier_report</div>
+          <template v-else>
+            <div class="pl-list-row"><span class="role">verdict</span>
+              <el-tag size="small"
+                      :type="detail.verifier_report.overall === 'PASS' ? 'success' : (detail.verifier_report.overall === 'FAIL' ? 'danger' : 'warning')">
+                {{ detail.verifier_report.overall }}
+              </el-tag>
+              <span v-if="detail.verifier_report.round" style="margin-left:6px; color:#909399;">round {{ detail.verifier_report.round }}</span>
+              <span v-if="detail.verifier_report.ts" style="margin-left:6px; color:#909399; font-size:10px;">{{ detail.verifier_report.ts }}</span>
+            </div>
+            <div class="pl-list-row"><span class="role">evidence_checks · {{ (detail.verifier_report.evidence_checks || []).length }}</span></div>
+            <div v-for="(ec, i) in detail.verifier_report.evidence_checks || []" :key="i" style="margin:4px 0 0 12px; font-size:11px; padding:6px; background:#fff; border-radius:3px;">
+              <el-tag size="small" :type="ec.status === 'PASS' ? 'success' : (ec.status === 'FAIL' ? 'danger' : 'info')">{{ ec.status }}</el-tag>
+              <code style="margin-left:4px; font-size:10px;">{{ ec.condition || ec.check || ec.predicate }}</code>
+              <div v-if="ec.evidence" style="margin-top:3px; color:#606266;">{{ ec.evidence }}</div>
+            </div>
+            <div class="pl-list-row" v-if="(detail.verifier_report.red_lines_detected || []).length" style="margin-top:8px;">
+              <span class="role" style="background:#fde2e2; color:#f56c6c;">red_lines</span>
+              <el-tag v-for="r in detail.verifier_report.red_lines_detected" :key="r" size="small" type="danger" style="margin-left:4px;">{{ r }}</el-tag>
+            </div>
+          </template>
+        </div>
+
+        <!-- N13 收尾归档 -->
+        <div v-else-if="activeNode.id === 'N13'">
+          <div class="pl-list-row"><span class="role">final_outcome</span>
+            <el-tag size="small" :type="detail.final_outcome === 'success' ? 'success' : 'danger'">{{ detail.final_outcome || '—' }}</el-tag>
+          </div>
+          <div class="pl-list-row" v-if="detail.commit_sha"><span class="role">commit</span><code>{{ detail.commit_sha }}</code></div>
+          <div class="pl-list-row" v-if="detail.closed_at"><span class="role">closed_at</span>{{ detail.closed_at }}</div>
+          <div class="pl-list-row" v-if="detail.retro_link"><span class="role">retro</span>
+            <a href="javascript:void(0)" @click="previewMd(detail.retro_link)"><code>{{ detail.retro_link }}</code></a>
+          </div>
+          <div class="pl-list-row" v-if="detail.archive_entry_link"><span class="role">archive</span><code>{{ detail.archive_entry_link }}</code></div>
+          <div v-if="(detail.evolution_suggestions || []).length" class="pl-list-row">
+            <span class="role">evolution · {{ detail.evolution_suggestions.length }}</span>
+            <ul style="margin:4px 0 0 16px; padding:0; font-size:11px; color:#606266;">
+              <li v-for="(e, i) in detail.evolution_suggestions" :key="i">{{ e.suggestion || e.note || (typeof e === 'string' ? e : JSON.stringify(e)) }}</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- fallback -->
+        <div v-else class="empty-hint">该节点暂无映射的实际数据视图</div>
+      </div>
+    </div>
+  </el-drawer>
 </div>
 
 <script>
@@ -1398,6 +1487,11 @@ const API = {
   async projects() { return (await fetch('/api/projects')).json(); },
   async stats() { return (await fetch('/api/stats')).json(); },
   async admin() { return (await fetch('/api/admin')).json(); },
+  async pipeline(id) {
+    const r = await fetch('/api/tasks/' + encodeURIComponent(id) + '/pipeline');
+    if (!r.ok) return null;
+    return r.json();
+  },
 };
 
 // marked config (no highlight — sidestep CDN MIME issue)
@@ -1410,7 +1504,6 @@ createApp({
     const selectedTaskId = ref(null);
     const searchQuery = ref('');
     const currentView = ref('tasks');
-    const activeTab = ref('delivery_goals');
     const kbEntries = ref([]);
     const kbKindFilter = ref('');
     const kbScopeFilter = ref('');
@@ -1422,6 +1515,10 @@ createApp({
     const adminData = ref({});
     const adminSection = ref('engine_config');
     const previousView = ref('tasks');
+    // Slice A: pipeline_graph state
+    const pipelineData = ref(null);
+    const activeNode = ref(null);
+    const nodeDrawerVisible = ref(false);
 
     const filteredTasks = computed(() => {
       const q = searchQuery.value.toLowerCase();
@@ -1547,9 +1644,89 @@ createApp({
 
     async function selectTask(id) {
       selectedTaskId.value = id;
-      activeTab.value = 'delivery_goals';
+      pipelineData.value = null;
+      nodeDrawerVisible.value = false;
+      activeNode.value = null;
       const r = await API.task(id);
       detail.value = r;
+      loadPipeline();
+    }
+
+    async function loadPipeline() {
+      if (!selectedTaskId.value) return;
+      if (pipelineData.value) return;
+      const r = await API.pipeline(selectedTaskId.value);
+      pipelineData.value = r || { nodes: [], edges: [], progress: { percentage: 0, completed: 0, total: 0 } };
+    }
+
+    function openNodeDrawer(node) {
+      activeNode.value = node;
+      nodeDrawerVisible.value = true;
+    }
+
+    function nodeStatusTagType(s) {
+      switch (s) {
+        case 'passed':       return 'success';
+        case 'running':      return 'primary';
+        case 'failed':       return 'danger';
+        case 'rolled_back':  return 'warning';
+        case 'augmenting':   return 'info';
+        default:             return 'info';
+      }
+    }
+
+    function _nodeCenter(n, side) {
+      // side: 'left' | 'right' | 'top' | 'bottom'
+      const cx = n.layout.x + n.layout.w / 2;
+      const cy = n.layout.y + n.layout.h / 2;
+      if (side === 'left')  return { x: n.layout.x, y: cy };
+      if (side === 'right') return { x: n.layout.x + n.layout.w, y: cy };
+      if (side === 'top')   return { x: cx, y: n.layout.y };
+      if (side === 'bottom')return { x: cx, y: n.layout.y + n.layout.h };
+      return { x: cx, y: cy };
+    }
+
+    function _nodeById(id) {
+      if (!pipelineData.value) return null;
+      return pipelineData.value.nodes.find(n => n.id === id);
+    }
+
+    function edgePath(e) {
+      const a = _nodeById(e.from), b = _nodeById(e.to);
+      if (!a || !b) return '';
+      const kind = e.kind || 'forward';
+      // rollback: top-side curve back
+      if (kind === 'rollback') {
+        const p1 = _nodeCenter(a, 'top'), p2 = _nodeCenter(b, 'top');
+        const midX = (p1.x + p2.x) / 2;
+        const midY = Math.min(p1.y, p2.y) - 50;
+        return `M ${p1.x} ${p1.y} Q ${midX} ${midY} ${p2.x} ${p2.y}`;
+      }
+      // augment: dashed top arc (lazy increment)
+      if (kind === 'augment') {
+        const p1 = _nodeCenter(a, 'top'), p2 = _nodeCenter(b, 'top');
+        const midX = (p1.x + p2.x) / 2;
+        const midY = Math.min(p1.y, p2.y) - 30;
+        return `M ${p1.x} ${p1.y} Q ${midX} ${midY} ${p2.x} ${p2.y}`;
+      }
+      // forward / parallel_split / converge: right→left straight horizontal-ish
+      const p1 = _nodeCenter(a, 'right');
+      const p2 = _nodeCenter(b, 'left');
+      // smooth horizontal cubic
+      const dx = (p2.x - p1.x) * 0.5;
+      return `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}`;
+    }
+
+    function edgeLabelXY(e) {
+      const a = _nodeById(e.from), b = _nodeById(e.to);
+      if (!a || !b) return { x: 0, y: 0 };
+      const kind = e.kind || 'forward';
+      if (kind === 'rollback' || kind === 'augment') {
+        const p1 = _nodeCenter(a, 'top'), p2 = _nodeCenter(b, 'top');
+        return { x: (p1.x + p2.x) / 2, y: Math.min(p1.y, p2.y) - (kind === 'rollback' ? 40 : 22) };
+      }
+      const p1 = _nodeCenter(a, 'right'), p2 = _nodeCenter(b, 'left');
+      return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 - 6 };
     }
 
     async function previewMd(path) {
@@ -1594,7 +1771,7 @@ createApp({
     onMounted(load);
 
     return {
-      tasks, detail, selectedTaskId, searchQuery, currentView, activeTab,
+      tasks, detail, selectedTaskId, searchQuery, currentView,
       kbEntries, kbKindFilter, kbScopeFilter, projects, stats,
       mdDialogVisible, mdDialogPath, mdRendered,
       adminData, adminSection,
@@ -1602,6 +1779,10 @@ createApp({
       stateTagType, riskType, stateTimelineType, progressFillClass,
       kbScopeType, kbKindType, healthTagType, metricKeyCn,
       selectTask, previewMd, jumpToKb, toggleAdmin,
+      // Slice A pipeline_graph
+      pipelineData, activeNode, nodeDrawerVisible,
+      loadPipeline, openNodeDrawer, nodeStatusTagType,
+      edgePath, edgeLabelXY,
     };
   },
 }).use(ElementPlus).component('Grid', ELIcons.Grid)
