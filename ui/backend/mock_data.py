@@ -31,7 +31,12 @@ import re
 from pathlib import Path
 from typing import Any
 
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from pipeline_catalog import derive_pipeline_view
+from pipelines.card_emptiness import derive_card_states
 
 
 HARNESS_ROOT = Path(__file__).resolve().parents[2]  # harnessFlow /
@@ -267,6 +272,8 @@ def _enrich_task_board(data: dict, path: Path) -> dict:
         "plan": _derive_plan(data),
         "supervision": _derive_supervision(data),
     }
+    # Slice A · Task 3.2: 6 卡 emptiness 状态（黄警示数据源）
+    data["_derived"]["cards"] = derive_card_states(data)
 
     # Add artifact file pointers (for Artifacts Index view)
     data["_artifact_files"] = _discover_artifacts_for(tid, data)

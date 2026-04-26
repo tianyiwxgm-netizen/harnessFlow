@@ -28,11 +28,25 @@ def _resolve(tb: dict, path: str) -> Any:
 def is_card_empty(card_id: str, task_board: dict) -> bool:
     """Return True if the card has no/insufficient data to display."""
     if card_id == "delivery_goal":
-        v = _resolve(task_board, "_derived.delivery_goal.locked_goal")
+        # Tolerant of multiple key shapes: locked_goal (canonical) | description / summary_short (mock_data shape)
+        v = (
+            _resolve(task_board, "_derived.delivery_goal.locked_goal")
+            or _resolve(task_board, "_derived.delivery_goal.description")
+            or _resolve(task_board, "_derived.delivery_goal.summary_short")
+        )
         return not v
     if card_id == "scope":
-        in_s = _resolve(task_board, "_derived.scope.in_scope") or []
-        out_s = _resolve(task_board, "_derived.scope.out_of_scope") or []
+        # Tolerant of both key pairs: in_scope/out_of_scope (canonical) | included/excluded (mock_data shape)
+        in_s = (
+            _resolve(task_board, "_derived.scope.in_scope")
+            or _resolve(task_board, "_derived.scope.included")
+            or []
+        )
+        out_s = (
+            _resolve(task_board, "_derived.scope.out_of_scope")
+            or _resolve(task_board, "_derived.scope.excluded")
+            or []
+        )
         return len(in_s) == 0 and len(out_s) == 0
     if card_id == "project_library":
         docs = _resolve(task_board, "_derived.project_library.docs") or []

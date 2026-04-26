@@ -268,6 +268,11 @@
   .pipeline-svg-host svg { display: block; min-width: 1660px; height: 400px; }
   .pl-node-rect { cursor: pointer; transition: opacity 0.15s, stroke-width 0.15s; }
   .pl-node-rect:hover { stroke-width: 3 !important; opacity: 0.92; }
+  /* Slice A · Task 3.2: 6 卡黄警示样式 */
+  .card-empty-warning { border: 1px solid #e6a23c !important; background: #fdf6ec !important;
+                        border-radius: 4px; padding: 8px; }
+  .card-empty-hint { color: #b88230; font-size: 11px; padding: 6px 10px; background: #fdf6ec;
+                     border-radius: 3px; margin-top: 6px; border-left: 3px solid #e6a23c; }
   .pl-node-status-passed     { fill: #67c23a; stroke: #4ca027; }
   .pl-node-status-running    { fill: #409eff; stroke: #2c7be5; }
   .pl-node-status-pending    { fill: #c0c4cc; stroke: #909399; }
@@ -1315,7 +1320,10 @@
         </div>
 
         <!-- N2 资料收集 -->
-        <div v-else-if="activeNode.id === 'N2'">
+        <div v-else-if="activeNode.id === 'N2'" :class="cardWarningClass('project_library')">
+          <div v-if="isCardEmpty('project_library')" class="card-empty-hint">
+            ⚠️ 等待 {{ cardWaitingNode('project_library') }} · {{ cardWaitingNodeName('project_library') }} 写入
+          </div>
           <div v-if="!((detail._derived || {}).project_library)" class="empty-hint">未登记资料库</div>
           <template v-else>
             <div class="pl-list-row"><span class="role">repos · {{ (((detail._derived || {}).project_library || {}).repos || []).length }}</span>
@@ -1339,7 +1347,10 @@
         </div>
 
         <!-- N3 目标分析+锁定 -->
-        <div v-else-if="activeNode.id === 'N3'">
+        <div v-else-if="activeNode.id === 'N3'" :class="cardWarningClass('delivery_goal')">
+          <div v-if="isCardEmpty('delivery_goal')" class="card-empty-hint">
+            ⚠️ 等待 {{ cardWaitingNode('delivery_goal') }} · {{ cardWaitingNodeName('delivery_goal') }} 写入
+          </div>
           <div class="pl-list-row"><span class="role">delivery_goal</span>
             <div style="margin-top:4px; padding:10px; background:#fff; border-left:3px solid #e6a23c; border-radius:4px; font-size:12px; line-height:1.7; max-height:240px; overflow-y:auto;">
               {{ ((detail._derived || {}).delivery_goal || {}).description || detail.user_request || '—' }}
@@ -1377,7 +1388,10 @@
         </div>
 
         <!-- N6 TDD 用例设计 -->
-        <div v-else-if="activeNode.id === 'N6'">
+        <div v-else-if="activeNode.id === 'N6'" :class="cardWarningClass('tdd')">
+          <div v-if="isCardEmpty('tdd')" class="card-empty-hint">
+            ⚠️ 等待 {{ cardWaitingNode('tdd') }} · {{ cardWaitingNodeName('tdd') }} 写入
+          </div>
           <div v-if="!detail.tdd_cases || !detail.tdd_cases.length" class="empty-hint">未声明 TDD 用例</div>
           <div v-else>
             <div v-for="(c, i) in detail.tdd_cases" :key="i" class="pl-tpl-card" style="background:#fff;">
@@ -1402,7 +1416,10 @@
         </div>
 
         <!-- N8 范围收口 -->
-        <div v-else-if="activeNode.id === 'N8'">
+        <div v-else-if="activeNode.id === 'N8'" :class="cardWarningClass('scope')">
+          <div v-if="isCardEmpty('scope')" class="card-empty-hint">
+            ⚠️ 等待 {{ cardWaitingNode('scope') }} · {{ cardWaitingNodeName('scope') }} 写入
+          </div>
           <div class="pl-list-row"><span class="role">in-scope</span>
             <ul v-if="(((detail._derived || {}).scope || {}).included || []).length" style="margin:4px 0 0 16px; padding:0; font-size:12px; color:#606266;">
               <li v-for="(x, i) in ((detail._derived || {}).scope || {}).included || []" :key="i">{{ x }}</li>
@@ -1425,7 +1442,10 @@
         </div>
 
         <!-- N9 WBS 拆解 -->
-        <div v-else-if="activeNode.id === 'N9'">
+        <div v-else-if="activeNode.id === 'N9'" :class="cardWarningClass('wbs')">
+          <div v-if="isCardEmpty('wbs')" class="card-empty-hint">
+            ⚠️ 等待 {{ cardWaitingNode('wbs') }} · {{ cardWaitingNodeName('wbs') }} 写入
+          </div>
           <div v-if="!((detail._derived || {}).wbs || []).length" class="empty-hint">未拆解 WBS</div>
           <div v-else>
             <div v-for="(wp, i) in (detail._derived || {}).wbs || []" :key="i" class="pl-list-row" style="background:#fff; padding:8px; border-radius:4px; margin-bottom:6px;">
@@ -1501,7 +1521,10 @@
         </div>
 
         <!-- N12 质量验证 -->
-        <div v-else-if="activeNode.id === 'N12'">
+        <div v-else-if="activeNode.id === 'N12'" :class="cardWarningClass('supervision')">
+          <div v-if="isCardEmpty('supervision')" class="card-empty-hint">
+            ⚠️ 等待 {{ cardWaitingNode('supervision') }} · {{ cardWaitingNodeName('supervision') }} 写入
+          </div>
           <div v-if="!detail.verifier_report" class="empty-hint">未生成 verifier_report</div>
           <template v-else>
             <div class="pl-list-row"><span class="role">verdict</span>
@@ -1600,6 +1623,14 @@ createApp({
     const activeNode = ref(null);
     const nodeDrawerVisible = ref(false);
     const pipelineFullscreen = ref(false);
+
+    // Slice A · Task 3.2: 6 卡 emptiness 黄警示 helpers
+    const cardStates = computed(() => (detail.value?._derived?.cards) || []);
+    const findCard = (id) => cardStates.value.find(c => c.card_id === id) || {};
+    const isCardEmpty = (id) => !!findCard(id).is_empty;
+    const cardWaitingNode = (id) => findCard(id).waiting_for_node || '';
+    const cardWaitingNodeName = (id) => findCard(id).waiting_for_node_name || '';
+    const cardWarningClass = (id) => isCardEmpty(id) ? 'card-empty-warning' : '';
 
     const filteredTasks = computed(() => {
       const q = searchQuery.value.toLowerCase();
@@ -1864,6 +1895,8 @@ createApp({
       pipelineData, activeNode, nodeDrawerVisible, pipelineFullscreen,
       loadPipeline, openNodeDrawer, nodeStatusTagType,
       edgePath, edgeLabelXY,
+      // Slice A · Task 3.2: 6 卡 emptiness 黄警示
+      cardStates, isCardEmpty, cardWaitingNode, cardWaitingNodeName, cardWarningClass,
     };
   },
 }).use(ElementPlus).component('Grid', ELIcons.Grid)

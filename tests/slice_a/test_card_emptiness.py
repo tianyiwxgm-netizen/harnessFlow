@@ -47,3 +47,15 @@ def test_derive_card_states_returns_six_entries(empty_task_board):
     states = derive_card_states(empty_task_board)
     assert len(states) == 6
     assert all("card_id" in s and "is_empty" in s and "waiting_for_node" in s for s in states)
+
+
+def test_scope_filled_with_included_excluded_legacy_keys(empty_task_board):
+    """Mock data shape uses included/excluded — predicate must accept both pairs."""
+    empty_task_board["_derived"] = {"scope": {"included": ["x"], "excluded": ["y"]}}
+    assert is_card_empty("scope", empty_task_board) is False
+
+
+def test_delivery_goal_filled_with_description_legacy_key(empty_task_board):
+    """Mock data shape uses description/summary_short — predicate must accept those too."""
+    empty_task_board["_derived"] = {"delivery_goal": {"description": "项目交付描述..."}}
+    assert is_card_empty("delivery_goal", empty_task_board) is False
