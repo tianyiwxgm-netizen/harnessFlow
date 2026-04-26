@@ -14,15 +14,12 @@ nodes:
     inputs_required:
       - { field: initial_user_input, must_exist: true }
     outputs_produced:
-      - field: _derived.delivery_goal.user_initial_prompt
-        must_exist: true
       - field: task_id
         must_exist: true
     writes_to_field:
-      - _derived.delivery_goal.user_initial_prompt
       - task_id
     gate_predicate:
-      expression: "task_id != null AND _derived.delivery_goal.user_initial_prompt != null"
+      expression: "task_id != null AND initial_user_input != null"
       on_fail: BLOCK
     supervisor_pulse_code: node_passed_N1
     dashboard_card_mapping: [delivery_goal]
@@ -38,7 +35,7 @@ nodes:
     layout: { x: 135, y: 170, w: 105, h: 60 }
     inputs_required:
       - { field: task_id, must_exist: true }
-      - { field: _derived.delivery_goal.user_initial_prompt, must_exist: true }
+      - { field: initial_user_input, must_exist: true }
     outputs_produced:
       - field: _derived.project_library.docs
         must_exist: false
