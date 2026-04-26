@@ -67,7 +67,31 @@ CLAUDE.md / 用户显式指令 > **harnessFlow 主 skill** > gstack skill routin
      "time_budget": {"started_at": "<now UTC>"}
    }
    ```
-   存储路径：`harnessFlow /task-boards/<task_id>.json`（协议见 task-board § 5）
+
+   **存储路径解析协议**（v1.7 fix defects-report-2026-04-26.md P1 #6）：
+
+   ```python
+   from archive.path_resolver import resolve_task_board_path
+
+   tb_path = resolve_task_board_path(task_id)  # 绝对 Path
+   tb_path.write_text(json.dumps(tb, ensure_ascii=False, indent=2))
+   ```
+
+   `resolve_task_board_path` 内部按以下优先级返绝对路径，**不许**主 skill 自己拼字符串：
+
+   1. `HARNESSFLOW_DIR` 环境变量（覆盖一切，主用于测试 / 多 repo 切换）
+   2. `git rev-parse --show-toplevel` 找 repo root（且 root.name == "harnessFlow"）
+   3. 兜底常量绝对路径 `/Users/zhongtianyi/work/code/harnessFlow/task-boards/`
+
+   v1.7 之前文字写的是 `harnessFlow /task-boards/<task_id>.json`（末尾带空格），
+   LLM 在 skill 加载环境（plugins cache / .claude/skills）解析为相对子目录，
+   导致 bootstrap 创建的 task-board 写到错位置，UI 后端读不到 → 用户每次手动
+   `cp` 才能修复（defects-report P1 #6 直击点）。
+
+   **同样的 resolve 入口**用于 retros / supervisor-events / failure-archive.jsonl：
+   `resolve_retros_dir()` / `resolve_supervisor_events_dir()` / `resolve_failure_archive_path()`。
+
+   协议见 task-board § 5。
 
 2. **读 CLAUDE.md** 找已有 `goal-anchor` block（若有），作为跨 session resume 的锚；若无，推迟到 § 3 生成
 
@@ -769,7 +793,7 @@ def sanity_check(task_board):
 为避免 L/XL 任务中数百次 tool call 触发锁+fsync 导致写放大，**分层写入**：
 
 - **轻量 append（不过锁）**：`skills_invoked[]` 改写到独立 append-only jsonl 日志
-  - 路径：`harnessFlow /task-boards/<task_id>.skills_invoked.jsonl`
+  - 路径：`resolve_task_boards_dir() / "<task_id>.skills_invoked.jsonl"`（v1.7 fix #6 后用 archive.path_resolver 统一入口；原文 `harnessFlow /...` 末尾空格已废弃）
   - 每次 tool call 前 `open(path, "a").write(json.dumps(entry) + "\n")`，**不用** `.lock` + `fsync`
   - 关闭前（进 `RETRO_CLOSE`）主 skill 一次性读全量 jsonl → 聚合进 task-board `skills_invoked[]`
 - **重写（过锁）**：以下事件才触发 `with_task_lock` + 原子 rename + fsync
@@ -834,15 +858,20 @@ def sanity_check(task_board):
   - § 2.1 step 3.5 新增：`routing_decision_basis_record()` 写 task-board，提供路由依据可审计 trace
   - § 5.1 `execute_route()` 调度前调 `verify_route_sequence()` 校验 planned_steps 与 flow-catalog 一致；mismatch → `PAUSED_ESCALATED` + Supervisor BLOCK
   - 新增 19 测试 case（archive/tests/test_sequence_verifier.py），全 archive suite 119 PASS
-- **v1.6（2026-04-26，本次）：UI artifacts 类型容错 + schema 严格化双层防御（fix defects-report-2026-04-26.md P1 #5）**
+- v1.6（2026-04-26）：UI artifacts 类型容错 + schema 严格化双层防御（fix defects-report-2026-04-26.md P1 #5，commit 4dde45e）
   - 新增 `ui/backend/mock_data._normalize_artifacts()`：把任意类型（dict / str / null / int）归一为 `list[dict]`，str 自动 lift 成 `{path, type:"unknown"}`，其他静默丢弃
   - 应用于 `_derive_delivery_goals` (mock_data.py:344) + `_wbs_deliverables_for` (mock_data.py:606) 两处 `.get()` 现场
   - `schemas/task-board.schema.json` `artifacts` 改为 strict `array-of-object` + `required:[path]`，配合 § 7.1 schema gate 写入端拦截
   - § 7.1 状态转移写入新增 step 5：`jsonschema.validate` 写盘前强校验，违例 → `SCHEMA_INVALID` BLOCK + `PAUSED_ESCALATED`，不污染盘上 board
   - 新增 9 测试 case（archive/tests/test_ui_artifacts_robustness.py），全 archive suite 128 PASS
+- **v1.7（2026-04-26，本次）：bootstrap task-board 路径解析单一入口（fix defects-report-2026-04-26.md P1 #6）**
+  - 新增 `archive/path_resolver.py`：`resolve_harnessflow_root()` / `resolve_task_board_path(task_id)` / `resolve_retros_dir()` / `resolve_supervisor_events_dir()` / `resolve_failure_archive_path()`
+  - 解析优先级：`HARNESSFLOW_DIR` env > `git rev-parse --show-toplevel` (且 repo.name=harnessFlow) > 默认绝对路径 `/Users/zhongtianyi/work/code/harnessFlow`
+  - § 2.1 step 1 重写：废弃 `harnessFlow /task-boards/<task_id>.json`（末尾空格 typo），改 `resolve_task_board_path(task_id)` 单一入口；§ 8.2 skills_invoked.jsonl 同步
+  - 新增 11 测试 case（archive/tests/test_path_resolver.py），全 archive suite 139 PASS
 
 ---
 
 *主 skill 就位。下游依赖 Phase 6（Supervisor + Verifier subagent）+ Phase 7（failure-archive schema + auto-retro）+ Phase 8（三任务端到端验证）。主 skill 本身不再扩；所有进化通过进化候选走 retro → 人审批 → 外部文档版本化。*
 
-*— v1.6 (defects #5) —*
+*— v1.7 (defects #6) —*
