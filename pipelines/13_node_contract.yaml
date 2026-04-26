@@ -20,6 +20,7 @@ nodes:
         must_exist: true
     writes_to_field:
       - _derived.delivery_goal.user_initial_prompt
+      - task_id
     gate_predicate:
       expression: "task_id != null AND _derived.delivery_goal.user_initial_prompt != null"
       on_fail: BLOCK
@@ -54,6 +55,7 @@ nodes:
       on_fail: WARN
     supervisor_pulse_code: node_passed_N2
     dashboard_card_mapping: [project_library]
+    # self-loop rollback: 资料量不足时再次进 N2 抓取（OR 表达式允许 docs 或 repos 任一 ≥1 即过）
     edges_out:
       - { to: N3, kind: forward }
       - { to: N2, kind: rollback, label: "资料/任务不清" }
@@ -106,7 +108,7 @@ nodes:
     dashboard_card_mapping: []
     edges_out:
       - { to: N5, kind: forward }
-      - { to: N3, kind: rollback, label: "PRD 写不出" }
+      - { to: N3, kind: rollback, label: "章程不达标" }
 
   # -------------------- Planning --------------------
   - node_id: N5
@@ -120,12 +122,9 @@ nodes:
       - { field: _derived.charter, must_exist: true }
       - { field: _derived.delivery_goal, must_exist: true }
       - { field: _derived.project_library, must_exist: true }
+    # convention: parent _derived.prd covers all sub-fields (.features, .acceptance_criteria, etc.)
     outputs_produced:
       - field: _derived.prd
-        must_exist: true
-      - field: _derived.prd.features
-        must_exist: true
-      - field: _derived.prd.acceptance_criteria
         must_exist: true
     writes_to_field:
       - _derived.prd
@@ -162,7 +161,7 @@ nodes:
     dashboard_card_mapping: [tdd]
     edges_out:
       - { to: N8, kind: converge }
-      - { to: N5, kind: rollback, label: "PRD 写不出" }
+      - { to: N5, kind: rollback, label: "无法出 TDD" }
 
   - node_id: N7
     step: 6
@@ -205,9 +204,12 @@ nodes:
         must_exist: true
       - field: _derived.scope.out_of_scope
         must_exist: true
+      - field: _derived.scope.dod_expression
+        must_exist: true
     writes_to_field:
       - _derived.scope.in_scope
       - _derived.scope.out_of_scope
+      - _derived.scope.dod_expression
     gate_predicate:
       expression: "len(_derived.scope.in_scope) >= 1 AND len(_derived.scope.out_of_scope) >= 1 AND _derived.scope.dod_expression != null"
       on_fail: BLOCK
@@ -313,11 +315,8 @@ nodes:
     outputs_produced:
       - field: verifier_report
         must_exist: true
-      - field: dod_expression
-        must_exist: true
     writes_to_field:
       - verifier_report
-      - dod_expression
     gate_predicate:
       expression: "verifier_report.verdict == 'PASS' AND len(verifier_report.red_lines_detected) == 0"
       on_fail: BLOCK
