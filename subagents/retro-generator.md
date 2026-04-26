@@ -19,6 +19,13 @@ tools: Read, Glob, Bash, Write
 2. `VERIFY FAIL → PAUSED_ESCALATED`：红线触发或 DoD 未过，保留现场供用户和下次迭代参考
 3. `任意状态 → ABORTED`：用户主动终止或不可恢复，也写 retro（标记 `final_outcome=aborted`）
 4. `PAUSED_ESCALATED 恢复后 → RETRO_CLOSE`：恢复路径也要一份 retro 收口
+5. **`Stop hook AUTO-RETRO-CLOSE 自动触发`（v1.4 / defects #4）**：当用户准备退出 Claude Code，
+   `hooks/Stop-final-gate.sh` 检测到 task `current_state == COMMIT` 且 `verifier_report.overall == PASS`
+   但缺 retro 或 archive 时，会输出 JSON `{"decision":"block","reason":"AUTO-RETRO-CLOSE: ..."}`
+   阻止 Stop。主 skill 下一轮收到 reason 后**必须**为命中的每个 task 并发拉起本 subagent
+   + `failure-archive-writer`，跑完后把 task-board.current_state 改为 CLOSED + 写 closed_at +
+   final_outcome，再让用户重新触发 Stop。这条路径的目的是兜底"用户敲 ESC / 关 Claude Code 时
+   半成品 task 没收口"导致下次启动被 Stop hook 阻塞的孤儿任务问题。
 
 ### 1.2 A 路线豁免
 

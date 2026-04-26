@@ -20,13 +20,27 @@
 #            * the pointed jsonl line validates against
 #              schemas/failure-archive.schema.json (when jsonschema+python avail)
 #
+# v1.4 addition (defects #4 — auto RETRO_CLOSE):
+#   - 检测到 task `current_state == COMMIT` 且 `verifier_report.overall == PASS`
+#     且 route != A 时，**不**直接 exit 2 阻塞，改为输出 JSON
+#     `{"decision":"block","reason":"AUTO-RETRO-CLOSE: spawn retro-generator
+#     + failure-archive-writer for task X"}`，让主 skill 下一轮接管收尾。
+#   - 老的硬阻塞路径（其它非终态）仍走 stderr + exit 2。
+#
 # Exit codes:
-#   0  clean stop
+#   0  clean stop OR auto-retro-close emitted (model continues next turn)
 #   2  gate failed — Claude Code surfaces this to the user
+#
+# Env overrides (testing):
+#   HARNESSFLOW_DIR  override repo root (default: parent of this script)
 
 set -u
 
-HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${HARNESSFLOW_DIR:-}" ]; then
+  HARNESS_DIR="$HARNESSFLOW_DIR"
+else
+  HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
 BOARDS_DIR="$HARNESS_DIR/task-boards"
 RETROS_DIR="$HARNESS_DIR/retros"
 ARCHIVE_PATH="$HARNESS_DIR/failure-archive.jsonl"
@@ -38,20 +52,25 @@ fi
 
 fail_count=0
 msg_file=$(mktemp)
-trap 'rm -f "$msg_file"' EXIT
+auto_retro_file=$(mktemp)
+trap 'rm -f "$msg_file" "$auto_retro_file"' EXIT
 
 for tb in "$BOARDS_DIR"/*.json; do
   [ -f "$tb" ] || continue
 
-  python3 - "$tb" "$RETROS_DIR" "$msg_file" "$ARCHIVE_PATH" "$SCHEMA_PATH" <<'PY'
+  python3 - "$tb" "$RETROS_DIR" "$msg_file" "$ARCHIVE_PATH" "$SCHEMA_PATH" "$auto_retro_file" <<'PY'
 import json, os, re, sys
 from datetime import datetime, timezone, timedelta
-tb_path, retros_dir, msg_path, archive_path, schema_path = sys.argv[1:6]
+tb_path, retros_dir, msg_path, archive_path, schema_path, auto_retro_path = sys.argv[1:7]
 task_id = os.path.splitext(os.path.basename(tb_path))[0]
 
 def emit(m):
     with open(msg_path, "a", encoding="utf-8") as f:
         f.write(m + "\n")
+
+def queue_auto_retro(task_id, route, reason_code):
+    with open(auto_retro_path, "a", encoding="utf-8") as f:
+        f.write(f"{task_id}|{route}|{reason_code}\n")
 
 try:
     tb = json.load(open(tb_path, encoding="utf-8"))
@@ -100,6 +119,32 @@ if state == "ABORTED":
             emit(f"task {task_id} [{route}/ABORTED]: archive_entry_link missing (Phase 7 non-A route requires final_outcome=aborted entry)")
             sys.exit(1)
     sys.exit(0)
+
+# v1.4 AUTO-RETRO-CLOSE 路径（defects #4）
+# state == COMMIT + verifier PASS + 非 A 路线 + 缺 retro/archive
+# → 不阻塞 Stop，把 task 排入 auto_retro_pending，等 BASH 末尾打包 JSON 通知主 skill。
+# 命中此分支的任务会得到一次"自动收尾"，不再像 v1.3 那样要求用户手动恢复。
+if state == "COMMIT" and route != "A":
+    vr_overall = (tb.get("verifier_report") or {}).get("overall")
+    if vr_overall == "PASS":
+        retro_link_field = tb.get("retro_link")
+        retro_path_md = os.path.join(retros_dir, f"{task_id}.md")
+        retro_present = os.path.isfile(retro_path_md) or (
+            retro_link_field and os.path.isfile(retro_link_field)
+        )
+        archive_entry_link = tb.get("archive_entry_link")
+        # 三种情况都归 auto-retro-close 兜：缺 retro / 缺 archive / 都齐但没 transition
+        # （后者通常是 retro+archive subagent 跑完了但主 skill 忘记改 current_state）
+        if not retro_present:
+            queue_auto_retro(task_id, route, "missing_retro")
+            sys.exit(0)
+        if not archive_entry_link:
+            queue_auto_retro(task_id, route, "missing_archive")
+            sys.exit(0)
+        queue_auto_retro(task_id, route, "missing_transition")
+        sys.exit(0)
+    # COMMIT but verify FAIL/未跑 → 不算可自动收尾，落老硬阻塞分支
+
 if state != "CLOSED":
     emit(f"task {task_id}: not terminal (state={state}) — please CLOSED/ABORTED/PAUSED before stop")
     sys.exit(1)
@@ -190,6 +235,47 @@ PY
     fail_count=$((fail_count + rc))
   fi
 done
+
+# v1.4 AUTO-RETRO-CLOSE: 优先级高于 fail_count（先驱动收尾，再下次 stop 才校验）
+if [ -s "$auto_retro_file" ]; then
+  python3 - "$auto_retro_file" <<'PY'
+import json, sys
+path = sys.argv[1]
+items = []
+for ln in open(path, encoding="utf-8"):
+    ln = ln.strip()
+    if not ln:
+        continue
+    parts = (ln.split("|") + ["-", "-"])[:3]
+    items.append({"task_id": parts[0], "route": parts[1], "reason_code": parts[2]})
+task_list = ", ".join(it["task_id"] for it in items)
+spawn_lines = []
+for it in items:
+    spawn_lines.append(
+        f"  - task_id={it['task_id']} (route={it['route']}, reason={it['reason_code']}): "
+        f"spawn Agent(subagent_type='harnessFlow:retro-generator', task_id='{it['task_id']}') "
+        f"+ Agent(subagent_type='harnessFlow:failure-archive-writer', task_id='{it['task_id']}'); "
+        f"after both return, transition state to CLOSED + write closed_at + final_outcome."
+    )
+spawn_block = "\n".join(spawn_lines)
+reason = (
+    f"[harnessFlow Stop gate] AUTO-RETRO-CLOSE pending for {len(items)} task(s): {task_list}.\n"
+    f"These tasks finished COMMIT with verifier_report.overall == PASS but lack retro/archive/CLOSED transition. "
+    f"Resume now (do NOT stop): for each task below, dispatch retro-generator and failure-archive-writer "
+    f"in parallel, then close the task-board:\n{spawn_block}"
+)
+out = {
+    "decision": "block",
+    "reason": reason,
+    "systemMessage": (
+        f"harnessFlow: auto-resuming {len(items)} task(s) into RETRO_CLOSE chain "
+        f"(see reason for spawn instructions)."
+    ),
+}
+print(json.dumps(out, ensure_ascii=False))
+PY
+  exit 0
+fi
 
 if [ "$fail_count" -gt 0 ]; then
   printf '[harnessFlow Stop gate] FAIL:\n' >&2

@@ -18,6 +18,11 @@ tools: Read, Glob, Bash, Write
 1. **VERIFY → RETRO_CLOSE**：Verifier verdict=PASS 的正常收口（小概率走 `final_outcome=success` 分支；默认不写 archive 以减噪，由主 skill 传 `write_on_success=True` 显式开启）
 2. **VERIFY FAIL → PAUSED_ESCALATED / 恢复 → RETRO_CLOSE**：假完成或 DoD 未过，**必须**归档
 3. **任意状态 → ABORTED**：用户主动终止或不可恢复，归档 `final_outcome=aborted` 一条
+4. **Stop hook AUTO-RETRO-CLOSE（v1.4 / defects #4）**：`hooks/Stop-final-gate.sh` 检测到
+   `current_state == COMMIT + verifier_report.overall == PASS + 缺 retro/archive` 时，
+   输出 JSON `{"decision":"block","reason":"..."}` 让主 skill 接管。主 skill 收到 reason 后
+   并发拉起本 subagent + `retro-generator`，跑完后把 task-board.current_state 改为 CLOSED。
+   `reason` 字段为 `auto_retro_close_recovery`，schema 同正常归档。
 
 **A 路线（size=XS）豁免**：Verifier PASS 后直接进 CLOSED，不过 RETRO_CLOSE，不调本 subagent（delivery-checklist § 7.2 carve-out）。
 
