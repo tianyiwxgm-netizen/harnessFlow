@@ -319,73 +319,112 @@ if not result["complete"]:
 
 ---
 
+## § 4.5 Pipeline Bootstrap 协议（这章回答：路线选定后，怎么生成 pipeline_graph 蓝图）
+
+对应状态机 `ROUTE_SELECT → PLAN`（边 E3 中段）；A 路线（size=XS）跳过本节直接进 § 5。
+
+### 4.5.1 触发时机
+
+`route_id` 已写入 task-board 的瞬间（即 § 4.3 用户 pick 后的下一步），主 skill **强制**：
+
+1. 检查 `size != "XS"`；若 XS（A 路线）→ skip（state-machine § 8.1 既有低频 tick 模式不变）
+2. 调 `pipelines.contract_loader.emit_pipeline_graph(task_board)`
+3. 把返回的 13-node 蓝图写到 `task_board.pipeline_graph`
+4. 写 task-board 加新 entry `state_history[] += {state: "PIPELINE_EMITTED", timestamp, trigger: "route_select_completed"}`（这是逻辑标记，不算独立 current_state）
+5. 进 § 5 执行调度
+
+### 4.5.2 节点级 BLOCK 强制（Q1=A）
+
+§ 5.1 主循环改造：每 step（即每个 pipeline 节点）执行前后必须调
+`pipelines.contract_loader.validate_node_io(task_board, node_id, phase)`：
+
+```python
+def execute_pipeline_node(node_id: str, task_board: dict):
+    # 入口
+    verdict, violations = validate_node_io(task_board, node_id, phase="enter")
+    if verdict == "BLOCK":
+        supervisor_log("BLOCK", "DOD_GAP_ALERT",
+                       f"node {node_id} missing required inputs",
+                       violations)
+        transition(task_board, "PAUSED_ESCALATED")
+        return False
+
+    # 派发 owner_skill (read from contract)
+    nd = get_node_def(node_id)
+    result = dispatch(nd.owner_skill, task_board)
+
+    # 出口（含 gate_predicate eval）
+    verdict, violations = validate_node_io(task_board, node_id, phase="exit")
+    if verdict == "BLOCK":
+        supervisor_log("BLOCK", "DOD_GAP_ALERT",
+                       f"node {node_id} gate FAIL",
+                       violations)
+        # 标节点 failed，转 PAUSED_ESCALATED（Slice B 实现 rollback 真 runtime）
+        update_pipeline_node_status(task_board, node_id, "failed")
+        transition(task_board, "PAUSED_ESCALATED")
+        return False
+
+    # 成功：标 passed + 触发 supervisor pulse（§ 4.5.3）
+    update_pipeline_node_status(task_board, node_id, "passed")
+    spawn_supervisor_pulse(task_board, nd.supervisor_pulse_code)
+    return True
+```
+
+### 4.5.3 Per-node Supervisor Pulse（Q3=A）
+
+每节点完成后强制：
+
+```python
+def spawn_supervisor_pulse(task_board: dict, code: str):
+    # spawn lightweight Supervisor subagent for this node
+    Agent({
+        "subagent_type": "harnessFlow:supervisor",
+        "description": f"per-node pulse {code}",
+        "prompt": f"""
+任务 <task_id>。节点 {code} 刚完成。读 task-board.pipeline_graph 当前节点
+outputs；按 harnessFlow.md § 4.3 的 6 类干预规则输出 INFO/WARN/BLOCK 到
+task-board.supervisor_interventions[]。同 code 5 min 内自动去重。
+"""
+    })
+```
+
+注意：pulse 失败（dispatch 异常 / 超时）→ 降级 INFO + 记
+`supervisor_interventions[].dispatch_failed=true`，**不阻塞主流程**（spec § 4.3）。
+
+### 4.5.4 Dashboard 6 卡黄警示（Q5=A）
+
+主 skill 不直接管渲染；dashboard backend 通过
+`pipelines.card_emptiness.derive_card_states(task_board)` 获取每张卡
+`is_empty / waiting_for_node`，frontend 据此加 `.card-empty-warning`
+样式（spec § 5）。
+
+---
+
 ## § 5 执行调度（这章回答：每条路线 IMPL 阶段调什么 skill、按什么序）
 
 **硬规则**：所有调度序列在 `flow-catalog.md` 定死；本节只给**调用 DSL 骨架**，不重写规则。
 
 ### 5.1 调用 DSL 模板
 
+**Slice A 改造**：A 路线仍按 flow-catalog § 2 直跑；其余路线必有 `pipeline_graph[]`，主循环按 DAG 拓扑序 walk 节点（每节点的 enter/exit gate + retry ladder + stage 校验已下沉到 § 4.5.2 的 `execute_pipeline_node`）。
+
 ```python
 def execute_route(route_id: str, task_board: dict):
-    # 读 flow-catalog 对应 § 查具体调度序列
-    seq = load_route_sequence(route_id)  # e.g. from flow-catalog.md § 4 for C
+    if route_id == "A":
+        # A 路线无 pipeline_graph（§ 4.5.1）；走原 flow-catalog § 2 序列
+        return execute_route_a(task_board)
 
-    # v1.5 fix defects #2：调度任何 ECC/SP skill 前先 verify planned_steps 与 flow-catalog 一致
-    # 防止 LLM 自由裁量 substitute（例如把 ECC:prp-plan 偷换成 SP:writing-plans）
-    from archive.sequence_verifier.verifier import verify_route_sequence
-    planned_steps = [step["tool"] for step in seq]            # e.g. ["SP:brainstorming", "ECC:prp-prd", ...]
-    flow_catalog_path = Path(__file__).resolve().parent / "flow-catalog.md"
-    verify_report = verify_route_sequence(
-        route_id, planned_steps, flow_catalog_path,
-        allow_missing_steps=task_board.get("c_lite_skipped_steps", []),  # C-lite 降级允许省略的 step
-    )
-    task_board.setdefault("sequence_verifications", []).append(verify_report)
-    if not verify_report["match"]:
-        supervisor_log("BLOCK", verify_report["reason_code"], verify_report["reason_msg"])
-        transition(task_board, "PAUSED_ESCALATED")
-        return  # 主 skill 等用户 / Supervisor 决议，禁止静默推进
+    # 其他路线必有 pipeline_graph[]，按 DAG 拓扑序 walk
+    pg = task_board["pipeline_graph"]
+    supervisor = spawn_supervisor(task_board)  # § 6 sidecar
 
-    # sidecar 拉起（§ 6）
-    supervisor = spawn_supervisor(task_board)
-
-    for step in seq:
-        # v1.1: stage-contract 入口校验（stage-contracts.md § 9）
-        verdict, violations = validate_stage_io(task_board, step["stage_id"], phase="enter")
-        if verdict == "BLOCK":
-            supervisor_log("BLOCK", "DOD_GAP_ALERT", f"missing inputs for {step['stage_id']}", violations)
-            transition(task_board, "PAUSED_ESCALATED")
-            return
-
-        # 状态转移 guard
-        if not state_machine.allowed(task_board["current_state"], step["enter"]):
-            block_and_report()
-        transition(task_board, step["enter"])
-
-        # 执行 step（可能是 Skill/Agent/Bash/Edit 等）
-        skills_invoked_write(step)  # 写 skills_invoked[] 前置
-
-        result = call_tool(step["tool"], step["args"])
-
-        # retry ladder 集成（state-machine § 4.3）
-        if result.is_error():
-            err_class = classify_error(result)
-            recovery = try_recover(task_board["current_state"], err_class, task_board["retries"])
-            if recovery == "escalate":
-                transition(task_board, "PAUSED_ESCALATED")
-                return
-            else:
-                retries_append(task_board, recovery)
-                continue  # retry current step
-
-        # 成功推进 — 写 outputs + 再校验 stage-contract 出口
-        task_board_write(step["outputs"])
-        stage_artifacts_append(task_board, step["stage_id"], step["outputs"])
-        verdict, violations = validate_stage_io(task_board, step["stage_id"], phase="exit")
-        if verdict == "BLOCK":
-            supervisor_log("BLOCK", "DOD_GAP_ALERT", f"stage {step['stage_id']} produced incomplete outputs or gate FAIL", violations)
-            transition(task_board, "PAUSED_ESCALATED")
-            return
+    for node in topo_sort(pg["nodes"], pg["edges"]):
+        ok = execute_pipeline_node(node["node_id"], task_board)
+        if not ok:
+            return  # PAUSED_ESCALATED already set by execute_pipeline_node
 ```
+
+**保留语义**：v1.5 sequence_verifier、retry ladder、validate_stage_io 等机制并未删除——它们在 `execute_pipeline_node` (§ 4.5.2) 内部按节点维度执行。flow-catalog 仍是真相源（节点 → owner_skill 的映射在 13_node_contract.yaml 中显式声明）。
 
 ### 5.5 `validate_stage_io` — v1.1 stage-contract 入口 / 出口校验器
 
