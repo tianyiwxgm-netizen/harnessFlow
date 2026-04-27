@@ -124,6 +124,17 @@
                     └──────────┘
 ```
 
+#### § 2.1.1 PIPELINE_EMITTED 逻辑标记（Slice A 新增）
+
+`ROUTE_SELECT → PLAN` 边内（即 E3）插入一个**不占独立 current_state** 的逻辑步：
+主 skill 在写完 `route_id` 后、进入 `PLAN` 状态前，**强制**调
+`pipelines.contract_loader.emit_pipeline_graph(task_board)`，把 13-node
+蓝图写到 `task_board.pipeline_graph`，并 append `state_history[]` 一笔
+`{state: "PIPELINE_EMITTED", trigger: "post_route_select"}`（这是审计标记，
+`current_state` 跳过此值不停留）。
+
+A 路线（`size == XS`）跳过本步，`pipeline_graph` 保持 `null`。
+
 ### 2.2 非主路径（异常/软终态分支）
 
 ```
