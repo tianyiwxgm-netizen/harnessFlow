@@ -39,6 +39,52 @@
 | `route_changes[]` | array of `{from_route, to_route, reason, approved_by, timestamp}` | `[]` | 主 skill / Supervisor | 路线切换 | retro / evolution | 路线切换审计（含降级） |
 | `skills_invoked[]` | array of `{source, name, at_state, timestamp}` | `[]` | 主 skill（每次 tool call 前写） | tool call 前 | retro | 调用轨迹（来源前缀见 flow-catalog § 1.2） |
 | `stage_artifacts[]` | array of `{stage_id, produced_at, artifacts[{artifact_ref, location, size_bytes, schema_valid}], gate_eval{predicate, result, evaluated_at}}` | `[]` | 主 skill（每阶段退出时写） | stage exit | Verifier / Supervisor / Stop gate | **v1.1 新增**：stage-contract 产物追踪（stage-contracts.md § 10），`validate_stage_io` 的输入；任一 `artifacts[].missing` 或 `gate_eval.result==false` → Supervisor `DOD_GAP_ALERT` |
+| `pipeline_graph` | object `{schema_version, emitted_at, nodes[], edges[]}` | `null` | 主 skill `@PIPELINE_EMIT`（ROUTE_SELECT 后） | `pipelines.contract_loader.emit_pipeline_graph()` 一次性 emit | dashboard / Supervisor / Verifier | **Slice A 新增**：13-节点 PMP 蓝图，节点完成时 `nodes[i].status` += `passed/running/failed/rolled_back`；edges 含 forward/parallel_split/converge/rollback/augment |
+| `supervision_graph` | object | `null` | （Slice C 落地） | — | — | **Slice C 占位**：6-节点监督流水线，本片仅 schema 占位不写入 |
+| `prd` | object `{背景, 目标, 用户故事[], 功能[], 验收标准[], 原型链接, 技术方案, 风险[]}` | `null` | 主 skill `@PLAN`（C/E 路线） | N5 节点完成时 | dashboard / retro | **Slice A 新增**：阿里风 PRD 八段；A/B/D/F 路线 null |
+| `execution_plan` | object `{wbs_ref, gantt[{wp_id, start, end, depends_on[]}]}` | `null` | 主 skill `@PLAN` | N10 节点完成时 | dashboard / retro | **Slice A 新增**：WBS 时间+顺序+依赖 |
+| `tdd_cases.definitions[]` | array of `{case_id, given, when, then, priority}` | `[]` | 主 skill `@PLAN` | N6 节点完成时 | Verifier / dashboard TDD 卡 | **Slice A 拆分**：原 `tdd_cases[]` 的"定义"段，写在 N6 |
+| `tdd_cases.execution_results[]` | array of `{case_id, status, evidence_path, executed_at}` | `[]` | 主 skill `@IMPL` / Verifier `@VERIFY` | N11 节点 loop 内 + N12 验证时 | retro | **Slice A 拆分**：原 `tdd_cases[]` 的"执行"段，写在 N11/N12 |
+
+#### § 1.2.1 pipeline_graph 详细 schema（Slice A 新增）
+
+```json
+{
+  "pipeline_graph": {
+    "schema_version": "1.0",
+    "emitted_at": "2026-04-26T18:30:00Z",
+    "nodes": [
+      {
+        "node_id": "N3",
+        "step": 3,
+        "phase": "initiating",
+        "name": "目标分析+锁定",
+        "owner_skill": "superpowers:brainstorming",
+        "layout": {"x": 255, "y": 170, "w": 105, "h": 60},
+        "writes_to_field": ["goal_anchor", "_derived.delivery_goal.locked_goal"],
+        "status": "passed",
+        "started_at": "2026-04-26T18:31:10Z",
+        "completed_at": "2026-04-26T18:33:42Z"
+      }
+    ],
+    "edges": [
+      {"from": "N5", "to": "N6", "kind": "parallel_split", "label": null},
+      {"from": "N6", "to": "N8", "kind": "converge", "label": null},
+      {"from": "N12", "to": "N11", "kind": "rollback", "label": "FAIL → 重 loop"}
+    ]
+  }
+}
+```
+
+`nodes[i].status` 取值：`pending | running | passed | failed | rolled_back | augmenting`。
+
+每节点完成时，主 skill 同时 append 一条 `state_history[]`（已存在）+ 写
+`pipeline_graph.nodes[i]` 状态/时间戳，并触发 `supervisor_pulse_code`（见
+`pipelines/13_node_contract.yaml`）spawn 一次 Supervisor pulse。
+
+任一节点 `validate_node_io(phase='exit')` 返 BLOCK → `current_state →
+PAUSED_ESCALATED`，节点 status 标 `failed`，Supervisor 写
+`DOD_GAP_ALERT` 红线。
 
 ### 1.3 度量与预算字段
 
