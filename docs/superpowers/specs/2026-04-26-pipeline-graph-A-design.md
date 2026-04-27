@@ -2,7 +2,7 @@
 
 > **范围**：Slice A（A→B→C 三切片路线第 1 片，见 memory `project_harnessflow_pipeline_graph_abc.md`）
 > **创建**：2026-04-26
-> **状态**：待用户 review
+> **状态**：已落地（plan 9 phases 全绿）
 > **关联 plan**：`docs/superpowers/plans/2026-04-26-pipeline-graph-A.md`（Slice A 落地后写）
 
 ---
@@ -373,3 +373,16 @@ python scripts/backfill_pipeline_graph.py --apply
 1. **用户 review 本 spec**，确认 6 个 Q 锁定无误
 2. 若批准 → 调 `superpowers:writing-plans` skill 写实施 plan（拆 M1-M7 为 ≤ 5 分钟 step）
 3. 若有改动 → 改 spec 后再 review
+
+### 9.1 落地进度（2026-04-27 收口）
+
+- 2026-04-26 — Slice A spec 写就，6 个 Q 锁定
+- 2026-04-26 — Slice A plan 写就（`docs/superpowers/plans/2026-04-26-pipeline-graph-A.md`，9 phases / 16 tasks）
+- 2026-04-27 — Slice A M1-M7 全部交付，49 tests 全绿，dashboard API 验证通过；切换到 Slice B 准备
+  - M1 13_node_contract.yaml + contract_loader + emit_pipeline_graph
+  - M2 harnessFlow-skill § 4.5 PIPELINE_EMIT
+  - M3 task-board-template § 1.2.1 schema
+  - M4 gate_eval AST + validate_node_io enter/exit
+  - M5 card_emptiness 6 卡 + frontend 黄警示
+  - M6 backfill_pipeline_graph + 20 历史 task 回填
+  - M7 record_supervisor_pulse + 5min 去重
