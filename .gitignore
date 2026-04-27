@@ -27,6 +27,11 @@ archive/supervisor_wake/state/*.json
 ui/.ui.pid
 ui/ui.log
 
+# Test E2E artifacts (regenerated on every run; keep .gitkeep)
+tests/e2e/artifacts/*.png
+tests/e2e/artifacts/*.webm
+tests/e2e/artifacts/*.zip
+
 # Git worktrees (superpowers)
 .worktrees/
 
