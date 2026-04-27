@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, TypedDict
@@ -169,3 +169,42 @@ def validate_node_io(
         return (on_fail if violations else "OK", violations)
 
     raise ValueError(f"unknown phase: {phase}")
+
+
+DEDUP_WINDOW_SEC = 5 * 60  # 5 min per harnessFlow.md § 7.7
+
+
+def record_supervisor_pulse(
+    task_board: dict, code: str, node_id: str | None = None
+) -> dict:
+    """Record a per-node supervisor pulse intervention; dedup within 5 min by code."""
+    ivs = task_board.setdefault("supervisor_interventions", [])
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=DEDUP_WINDOW_SEC)
+
+    for iv in reversed(ivs):
+        if iv.get("code") != code:
+            continue
+        ts = iv.get("timestamp")
+        if not ts:
+            continue
+        try:
+            iv_t = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if iv_t >= cutoff:
+            iv["count"] = iv.get("count", 1) + 1
+            iv["last_at"] = now.isoformat(timespec="seconds")
+            return iv
+
+    new_iv = {
+        "severity": "INFO",
+        "code": code,
+        "diagnosis": f"node pulse: {code}",
+        "suggested_action": None,
+        "evidence": [],
+        "timestamp": now.isoformat(timespec="seconds"),
+        "context": {"node_id": node_id} if node_id else {},
+    }
+    ivs.append(new_iv)
+    return new_iv
